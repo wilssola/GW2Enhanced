@@ -1,0 +1,9 @@
+# Static C/C++ runtime: CTranslate2 is built with /MT, so neither the DLL nor
+# the translator depends on the player's Visual C++ Redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# The translator links the official CTranslate2 DLL (scripts/fetch-ctranslate2.ps1);
+# ct2rs' build script looks for its import library here.
+[env]
+LIBRARY_PATH = { value = "translator/vendor/ctranslate2-4.8.4", relative = true }
