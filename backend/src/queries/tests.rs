@@ -1,0 +1,313 @@
+//! Runs every built statement against the real migration in SQLite.
+
+use rusqlite::Connection;
+use rusqlite::types::Value as Sql;
+use sea_query::Value;
+
+use super::*;
+
+fn db() -> Connection {
+    let c = Connection::open_in_memory().unwrap();
+    c.execute_batch(include_str!("../../migrations/0001_init.sql")).unwrap();
+    c
+}
+
+fn params(v: &Values) -> Vec<Sql> {
+    v.0.iter()
+        .map(|v| match v {
+            Value::Bool(b) => b.map(|b| Sql::Integer(b as i64)).unwrap_or(Sql::Null),
+            Value::TinyInt(x) => x.map(|x| Sql::Integer(x as i64)).unwrap_or(Sql::Null),
+            Value::SmallInt(x) => x.map(|x| Sql::Integer(x as i64)).unwrap_or(Sql::Null),
+            Value::Int(x) => x.map(|x| Sql::Integer(x as i64)).unwrap_or(Sql::Null),
+            Value::BigInt(x) => x.map(Sql::Integer).unwrap_or(Sql::Null),
+            Value::TinyUnsigned(x) => x.map(|x| Sql::Integer(x as i64)).unwrap_or(Sql::Null),
+            Value::SmallUnsigned(x) => x.map(|x| Sql::Integer(x as i64)).unwrap_or(Sql::Null),
+            Value::Unsigned(x) => x.map(|x| Sql::Integer(x as i64)).unwrap_or(Sql::Null),
+            Value::BigUnsigned(x) => x.map(|x| Sql::Integer(x as i64)).unwrap_or(Sql::Null),
+            Value::Float(x) => x.map(|x| Sql::Real(x as f64)).unwrap_or(Sql::Null),
+            Value::Double(x) => x.map(Sql::Real).unwrap_or(Sql::Null),
+            Value::String(x) => x.clone().map(Sql::Text).unwrap_or(Sql::Null),
+            Value::Char(x) => x.map(|x| Sql::Text(x.to_string())).unwrap_or(Sql::Null),
+            other => panic!("unexpected value {other:?}"),
+        })
+        .collect()
+}
+
+fn exec(c: &Connection, (sql, v): &Q) -> usize {
+    c.execute(sql, rusqlite::params_from_iter(params(v)))
+        .unwrap_or_else(|e| panic!("{e}\n{sql}"))
+}
+
+fn rows(c: &Connection, (sql, v): &Q) -> Vec<Vec<Sql>> {
+    let mut st = c.prepare(sql).unwrap_or_else(|e| panic!("{e}\n{sql}"));
+    let n = st.column_count();
+    st.query_map(rusqlite::params_from_iter(params(v)), |r| {
+        (0..n).map(|i| r.get::<_, Sql>(i)).collect()
+    })
+    .unwrap()
+    .map(Result::unwrap)
+    .collect()
+}
+
+fn text(v: &Sql) -> &str {
+    match v {
+        Sql::Text(s) => s,
+        other => panic!("not text: {other:?}"),
+    }
+}
+
+fn int(v: &Sql) -> i64 {
+    match v {
+        Sql::Integer(i) => *i,
+        other => panic!("not int: {other:?}"),
+    }
+}
+
+const K1: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const K2: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const T1: &str = "cccccccccccccccccccccccccccccccc";
+const EVIL: &str = "x'); DROP TABLE texts; --";
+
+fn contribute(c: &Connection, ip: &str) {
+    let texts = serde_json::json!([{"k": K1, "en": "Sword"}, {"k": K2, "en": EVIL}]).to_string();
+    let pairs = serde_json::json!([{"g": 1601, "k": K1}]).to_string();
+    let trs = serde_json::json!([{"id": T1, "k": K1, "tr": "Espada", "src": "argos"}]).to_string();
+    let rows = ContributionRows {
+        texts: &texts,
+        pairs: &pairs,
+        trs: &trs,
+        ip_hash: ip,
+        lang: "pt-BR",
+        now: "2026-01-01T00:00:00Z",
+        game_build: Some(209026),
+    };
+    for q in contribution(&rows) {
+        assert!(
+            !q.0.contains("DROP") && !q.0.contains("Espada") && !q.0.contains(ip),
+            "data leaked into SQL: {}",
+            q.0
+        );
+        exec(c, &q);
+    }
+}
+
+#[test]
+fn contribution_stores_rows_counts_reporters_and_queues() {
+    let c = db();
+    contribute(&c, "ip1");
+    contribute(&c, "ip2");
+    let t = rows(&c, &texts_by_keys(&serde_json::json!([K1, K2]).to_string()));
+    assert_eq!(t.len(), 2);
+    assert!(t.iter().any(|r| text(&r[1]) == EVIL));
+    assert!(t.iter().all(|r| int(&r[3]) == 2), "distinct reporters");
+    let q = rows(&c, &queue_due(i64::MAX, 100));
+    let kinds: Vec<&str> = q.iter().map(|r| text(&r[1])).collect();
+    assert_eq!(kinds.iter().filter(|k| **k == "text").count(), 2);
+    assert!(kinds.contains(&"pair") && kinds.contains(&"translation"));
+    assert!(q.iter().any(|r| text(&r[2]) == format!("1601:{K1}")));
+    let p = rows(&c, &pairs_for_ids("[1601]"));
+    assert_eq!(
+        (int(&p[0][0]), int(&p[0][2]), text(&p[0][3]), text(&p[0][4])),
+        (1601, 2, "pending", "pending")
+    );
+    // The texts table survived the hostile English text.
+    assert_eq!(rows(&c, &stats("pt-BR", 5, 0.8))[0].len(), 4);
+}
+
+#[test]
+fn conflicting_pair_is_rejected_on_insert() {
+    let c = db();
+    contribute(&c, "ip1");
+    exec(&c, &set_pair_state(1601, K1, "trusted", "now"));
+    let pairs = serde_json::json!([{"g": 1601, "k": K2}]).to_string();
+    let rows_in = ContributionRows {
+        texts: "[]",
+        pairs: &pairs,
+        trs: "[]",
+        ip_hash: "ip3",
+        lang: "pt-BR",
+        now: "now",
+        game_build: None,
+    };
+    for q in contribution(&rows_in) {
+        exec(&c, &q);
+    }
+    let p = rows(&c, &pairs_for_ids("[1601]"));
+    let k2 = p.iter().find(|r| text(&r[1]) == K2).unwrap();
+    assert_eq!(text(&k2[3]), "rejected");
+}
+
+#[test]
+fn review_votes_current_and_listing() {
+    let c = db();
+    contribute(&c, "ip1");
+    exec(&c, &set_text_state(K1, "trusted", "ai: ok", "t1"));
+    exec(&c, &set_review(T1, "passed", "ai: ok", "t1"));
+    let cand = rows(
+        &c,
+        &current_candidates(&serde_json::json!([{"k": K1, "l": "pt-BR"}]).to_string()),
+    );
+    assert_eq!(text(&cand[0][6]), "t1");
+    let cur = CurrentRow {
+        text_key: K1,
+        lang: "pt-BR",
+        translation_id: T1,
+        score: 0.0,
+        up: 0,
+        down: 0,
+        now: "t1",
+    };
+    exec(&c, &current_upsert(&cur));
+    // Same translation again: updated_at stays.
+    exec(
+        &c,
+        &current_upsert(&CurrentRow {
+            now: "t2",
+            score: 0.2,
+            ..cur
+        }),
+    );
+    assert_eq!(exec(&c, &vote_insert(T1, "ip9", 1, "t")), 1);
+    assert_eq!(exec(&c, &vote_insert(T1, "ip9", -1, "t")), 0, "one vote per IP");
+    exec(&c, &recount_votes(&serde_json::json!([T1]).to_string()));
+    let v = rows(&c, &translations_votes(&serde_json::json!([T1]).to_string()));
+    assert_eq!((int(&v[0][1]), int(&v[0][2])), (1, 0));
+    exec(&c, &set_score(T1, 0.2065));
+    let r = rows(&c, &vote_result(T1));
+    assert_eq!((int(&r[0][0]), int(&r[0][2])), (1, 1));
+    for sort in [ListSort::Worst, ListSort::Best, ListSort::Recent] {
+        let l = rows(&c, &list_texts("pt-BR", sort, None, 31, 0));
+        assert_eq!(l.len(), 1);
+        assert_eq!(text(&l[0][2]), T1);
+    }
+    let found = rows(&c, &list_texts("pt-BR", ListSort::Recent, Some("%esp%"), 31, 0));
+    assert_eq!(found.len(), 1);
+    assert!(
+        rows(&c, &list_texts("pt-BR", ListSort::Recent, Some("%\\%%"), 31, 0)).is_empty(),
+        "escaped %"
+    );
+    let alt = rows(&c, &passed_translations("pt-BR", &serde_json::json!([K1]).to_string()));
+    assert_eq!(text(&alt[0][2]), "Espada");
+    exec(&c, &set_pair_state(1601, K1, "trusted", "t"));
+    let ids = rows(&c, &trusted_ids(&serde_json::json!([K1]).to_string()));
+    assert_eq!(text(&ids[0][1]), "1601");
+    let page = rows(&c, &release_page("pt-BR", "", 5000));
+    assert_eq!(
+        (text(&page[0][1]), text(&page[0][2]), text(&page[0][4])),
+        ("Sword", "Espada", "1601")
+    );
+    exec(
+        &c,
+        &current_upsert(&CurrentRow {
+            now: "t3",
+            score: 0.2065,
+            up: 1,
+            ..cur
+        }),
+    );
+    let s = rows(&c, &stats("pt-BR", 1, 0.1));
+    assert_eq!((int(&s[0][0]), int(&s[0][1]), int(&s[0][2])), (1, 1, 1));
+    exec(&c, &current_delete(K1, "pt-BR"));
+    assert!(rows(&c, &list_texts("pt-BR", ListSort::Best, None, 31, 0)).is_empty());
+}
+
+#[test]
+fn corrections_admin_and_queue() {
+    let c = db();
+    contribute(&c, "ip1");
+    let id = "dddddddddddddddddddddddddddddddd";
+    for q in correction(id, K1, "pt-BR", EVIL, "ip5", "now") {
+        assert!(!q.0.contains("DROP"));
+        exec(&c, &q);
+    }
+    assert_eq!(text(&rows(&c, &translation_target(id))[0][2]), "pending");
+    assert_eq!(text(&rows(&c, &text_get(K1))[0][0]), "Sword");
+    exec(&c, &hide_corrections_only_by("ip5"));
+    assert_eq!(text(&rows(&c, &translation_target(id))[0][2]), "hidden");
+    for q in unhide_translation(id, "now") {
+        exec(&c, &q);
+    }
+    assert_eq!(text(&rows(&c, &translation_target(id))[0][2]), "pending");
+    exec(&c, &hide_translation(id, "admin: troll"));
+    let d = rows(&c, &translation_details(id));
+    assert_eq!(text(&d[0][13]), "Sword");
+    assert_eq!(text(&rows(&c, &translation_reporters(id))[0][0]), "ip5");
+    exec(&c, &vote_insert(T1, "ip5", 1, "t"));
+    assert!(rows(&c, &translation_votes(T1)).len() == 1);
+    assert_eq!(rows(&c, &votes_by_ip("ip5")).len(), 1);
+    exec(&c, &delete_votes_by_ip("ip5"));
+    assert!(rows(&c, &votes_by_ip("ip5")).is_empty());
+    // Queue lease / retry / delete.
+    let due = rows(&c, &queue_due(0, 100));
+    let ids: Vec<i64> = due.iter().map(|r| int(&r[0])).collect();
+    exec(&c, &queue_lease(&serde_json::json!(ids).to_string(), 1000));
+    assert!(rows(&c, &queue_due(0, 100)).is_empty());
+    exec(&c, &queue_retry(ids[0], 0));
+    assert_eq!(rows(&c, &queue_due(0, 100)).len(), 1);
+    exec(&c, &queue_delete(&serde_json::json!(ids).to_string()));
+    assert!(rows(&c, &queue_due(i64::MAX, 100)).is_empty());
+    exec(&c, &set_text_state(K1, "trusted", "x", "t"));
+    exec(&c, &enqueue_pairs_of_texts(&serde_json::json!([K1]).to_string(), "t"));
+    assert_eq!(rows(&c, &queue_due(i64::MAX, 100)).len(), 1);
+}
+
+#[test]
+fn bans_rates_kv_counters_releases_backup() {
+    let c = db();
+    exec(&c, &ban_upsert("h1", "ip", "spam", "t"));
+    exec(&c, &ban_upsert("h1", "ip", "spam again", "t"));
+    assert_eq!(rows(&c, &ban_check("zz", "h1")).len(), 1);
+    exec(&c, &ban_delete("h1"));
+    assert!(rows(&c, &ban_check("h1", "h1")).is_empty());
+    exec(&c, &rate_put("vote:h", 3.5, 10));
+    exec(&c, &rate_put("vote:h", 2.5, 20));
+    let r = rows(&c, &rate_get("vote:h"));
+    assert_eq!((&r[0][0], int(&r[0][1])), (&Sql::Real(2.5), 20));
+    assert_eq!(exec(&c, &rate_cleanup(21)), 1);
+    exec(&c, &kv_put("stats:pt-BR", "{}", "t"));
+    exec(&c, &kv_put("stats:pt-BR", "{\"a\":1}", "t"));
+    assert_eq!(text(&rows(&c, &kv_get("stats:pt-BR"))[0][0]), "{\"a\":1}");
+    exec(&c, &kv_delete("stats:pt-BR"));
+    exec(&c, &counter_increment("downloads"));
+    assert_eq!(int(&rows(&c, &counter_get("downloads"))[0][0]), 1);
+    assert_eq!(rows(&c, &max_version("pt-BR"))[0][0], Sql::Null);
+    for v in 1..=2 {
+        let r = NewRelease {
+            lang: "pt-BR",
+            version: v,
+            created_at: "t",
+            files: "[]",
+            manifest: "{\"m\":1}",
+            content_hash: "h",
+            records: 0,
+        };
+        for q in release_insert(&r) {
+            exec(&c, &q);
+        }
+    }
+    assert_eq!(int(&rows(&c, &active_release("pt-BR"))[0][0]), 2);
+    exec(&c, &release_activate("pt-BR", 1));
+    assert_eq!(int(&rows(&c, &active_release("pt-BR"))[0][0]), 1);
+    assert_eq!(text(&rows(&c, &active_manifest("pt-BR"))[0][0]), "{\"m\":1}");
+    assert_eq!(rows(&c, &release_list("pt-BR")).len(), 2);
+    assert_eq!(rows(&c, &release_exists("pt-BR", 2)).len(), 1);
+    assert_eq!(int(&rows(&c, &max_version("pt-BR"))[0][0]), 2);
+    contribute(&c, "ip1");
+    for t in BackupTable::ALL {
+        let page = rows(&c, &backup_page(t, 0, 5000));
+        if t == BackupTable::Texts {
+            assert_eq!(page.len(), 2);
+            assert_eq!(int(&page[0][0]), 1);
+        }
+    }
+    assert_eq!(BackupTable::ReviewQueue.name(), "review_queue");
+}
+
+#[test]
+fn sql_never_contains_values() {
+    let (sql, values) = ban_check(EVIL, EVIL);
+    assert!(!sql.contains(EVIL));
+    assert_eq!(values.0.len(), 4, "{sql}");
+    let (sql, _) = list_texts("pt-BR", ListSort::Worst, Some(EVIL), 31, 0);
+    assert!(!sql.contains("DROP"), "{sql}");
+}
