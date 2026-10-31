@@ -1,0 +1,50 @@
+# GW2 Enhanced backend (Rust, workers-rs). See README.md for deploy steps.
+name = "gw2translated"
+main = "build/index.js"
+compatibility_date = "2026-10-01"
+
+# Served at https://gw2translated.<account-subdomain>.workers.dev
+# (workers.dev URLs always include the account subdomain).
+workers_dev = true
+# Custom domain instead / as well (needs a zone on the account):
+# routes = [{ pattern = "api.example.com", custom_domain = true }]
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+# Scheduled jobs (must match CRON_* in src/app/mod.rs):
+#   */5 * * * *  review queue (AI + reporter agreement), stats refresh
+#   0 6 * * *    dictionary release build (skipped when unchanged or pinned)
+#   30 6 * * *   D1 -> R2 backup
+[triggers]
+crons = ["*/5 * * * *", "0 6 * * *", "30 6 * * *"]
+
+# Release builds and backups gzip tens of MB: needs the Workers Paid plan.
+[limits]
+cpu_ms = 300000
+
+[observability]
+enabled = true
+
+[vars]
+LANGS = "pt-BR"
+NIM_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
+NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+REVIEW_BATCH = "200"
+TURNSTILE_SITE_KEY = ""
+# Optional: only accept Turnstile tokens issued for this hostname.
+TURNSTILE_HOSTNAME = ""
+DOWNLOAD_URL = "https://github.com/wilssola/GW2Enhanced/releases/latest"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gw2translated"
+database_id = "00000000-0000-0000-0000-000000000000" # replace with `wrangler d1 create` output
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "gw2translated"
+
+# Secrets (wrangler secret put NAME), never in this file:
+#   NVIDIA_API_KEY, TURNSTILE_SECRET, RELEASE_SIGNING_KEY, ADMIN_TOKEN, IP_SALT
