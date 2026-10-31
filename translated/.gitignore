@@ -1,0 +1,5 @@
+/data/pending/
+/dist/
+/translator/vendor/
+# Big model for the GPU mode: built by scripts/convert-big-model.ps1, shipped as a download.
+/data/models/*-big/
