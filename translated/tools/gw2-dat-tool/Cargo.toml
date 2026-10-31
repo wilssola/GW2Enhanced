@@ -1,0 +1,11 @@
+[package]
+name = "gw2-dat-tool"
+version = "0.1.0"
+edition = "2024"
+description = "Read-only Gw2.dat reader used by GW2 Translated"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+byteorder = "1"
+clap = { version = "4", features = ["derive"] }
