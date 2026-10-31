@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GW2 Translated — Guild Wars 2 em português</title>
+<meta name="description" content="Tradução de Guild Wars 2 para português feita pela comunidade: compare o original com a tradução, vote e sugira correções.">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="/fonts/cinzel.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/eb-garamond.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+</head>
+<body data-sitekey="__TURNSTILE_SITE_KEY__">
+<!-- Shared SVG filters (original artwork: brush edges and paper fibres). -->
+<svg class="defs" aria-hidden="true" focusable="false" width="0" height="0">
+  <defs>
+    <filter id="ragged" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.035 0.06" numOctaves="3" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="brush" x="-5%" y="-20%" width="110%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.09" numOctaves="4" seed="3" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="drybrush" x="-5%" y="-20%" width="110%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.09" numOctaves="4" seed="3" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.0025 0.22" numOctaves="3" seed="11" result="grain"/>
+      <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -10 7.7" result="holes"/>
+      <feComposite in="d" in2="holes" operator="in"/>
+    </filter>
+    <linearGradient id="red" x1="0" y1="0" x2="1" y2="0.35">
+      <stop offset="0" stop-color="#e1261c"/>
+      <stop offset="0.55" stop-color="#c41a14"/>
+      <stop offset="1" stop-color="#9e0f0b"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="utility">
+  <nav class="utility-links" aria-label="Links">
+    <a href="/v1/download">Baixar o mod</a>
+    <a href="https://github.com/wilssola/GW2Enhanced">Código-fonte</a>
+    <a href="#como-funciona">Como funciona</a>
+  </nav>
+  <span class="tag" aria-label="Idioma: português do Brasil"><span>Idioma</span><b>PT-BR</b></span>
+</div>
+
+<header class="masthead">
+  <svg class="stroke" viewBox="0 0 1200 300" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+    <path filter="url(#brush)" fill="url(#red)" d="M-40 40 C 180 10, 420 30, 640 22 S 1000 8, 1110 30 L 1100 205 C 900 236, 640 222, 420 246 S 90 262, -40 236 Z"/>
+    <path filter="url(#drybrush)" fill="#7d0b08" opacity=".55" d="M-20 196 C 220 214, 520 196, 760 206 S 1010 196, 1080 186 L 1078 214 C 860 236, 520 228, 260 246 S 40 252, -20 240 Z"/>
+    <path filter="url(#drybrush)" fill="#ff5a3c" opacity=".22" d="M40 58 C 300 44, 560 60, 820 48 L 820 70 C 560 84, 300 70, 40 86 Z"/>
+    <path filter="url(#brush)" fill="#111" d="M880 10 C 980 0, 1120 6, 1240 0 L 1240 248 C 1140 258, 1040 236, 960 250 C 1010 190, 1000 120, 1040 70 C 990 60, 920 40, 880 10 Z"/>
+  </svg>
+  <div class="masthead-inner">
+    <div class="brand">
+      <p class="kicker">Guild Wars 2 em português</p>
+      <h1>GW2 Translated</h1>
+    </div>
+    <nav class="mainnav" aria-label="Seções">
+      <a href="#textos">Traduções</a>
+      <a href="#metricas">Progresso</a>
+      <a class="cta" href="/v1/download">Baixar agora</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section id="metricas" class="section" aria-labelledby="t-metricas">
+    <p class="kicker">Progresso da comunidade</p>
+    <h2 id="t-metricas">O dicionário até agora</h2>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="plaques">
+      <div class="plaque paper"><b id="s-translated">–</b><span>dos textos traduzidos</span></div>
+      <div class="plaque paper"><b id="s-perfect">–</b><span>aprovados pela comunidade</span></div>
+      <div class="plaque paper"><b id="s-texts">–</b><span>textos conhecidos</span></div>
+      <div class="plaque paper"><b id="s-downloads">–</b><span>downloads do mod</span></div>
+    </div>
+    <div class="progress" aria-hidden="true"><i id="s-bar"></i></div>
+  </section>
+
+  <section id="textos" class="section" aria-labelledby="t-textos">
+    <p class="kicker">Original e tradução lado a lado</p>
+    <h2 id="t-textos">Textos do jogo</h2>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="toolbar">
+      <div class="tabs" role="group" aria-label="Ordenar">
+        <button class="gbtn" data-sort="recent" aria-pressed="true">Recentes</button>
+        <button class="gbtn" data-sort="best" aria-pressed="false">Melhores</button>
+        <button class="gbtn" data-sort="worst" aria-pressed="false">Piores</button>
+      </div>
+      <label class="search">
+        <span class="sr">Buscar</span>
+        <input id="q" type="search" maxlength="100" placeholder="Buscar em inglês ou português…" autocomplete="off">
+      </label>
+    </div>
+    <div id="list" aria-live="polite"></div>
+    <div class="more"><button id="more" class="pennant" hidden>Carregar mais</button></div>
+  </section>
+
+  <section id="como-funciona" class="section how" aria-labelledby="t-how">
+    <p class="kicker">Como funciona</p>
+    <h2 id="t-how">Feito por quem joga</h2>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="paper prose">
+      <p>O mod traduz o jogo no seu computador. Quem quiser pode enviar textos novos e traduções; tudo passa por verificação automática antes de entrar no dicionário.</p>
+      <p>Aqui você compara o texto original em inglês com a tradução, vota nas melhores e sugere correções. Cada pessoa tem um voto por tradução.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>Projeto de fã, sem afiliação com a ArenaNet ou NCSOFT. Guild Wars 2 é marca registrada da ArenaNet/NCSOFT.</p>
+  <p class="small">Fontes Cinzel, EB Garamond e Barlow Condensed sob a licença SIL Open Font License.</p>
+</footer>
+
+<dialog id="dlg" class="paper-dialog" aria-labelledby="dlg-title">
+  <h2 id="dlg-title"></h2>
+  <div id="dlg-body"></div>
+  <div class="ts" id="ts"></div>
+  <p class="note" id="dlg-note" role="alert"></p>
+  <div class="row">
+    <button id="dlg-cancel" class="gbtn" type="button">Cancelar</button>
+    <button id="dlg-ok" class="gbtn primary" type="button" disabled>Enviar</button>
+  </div>
+</dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
