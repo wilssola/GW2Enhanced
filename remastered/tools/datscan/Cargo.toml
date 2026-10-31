@@ -1,0 +1,9 @@
+[package]
+name = "datscan"
+version = "0.1.0"
+edition = "2024"
+description = "Counts Gw2.dat entries by content magic (finds videos, audio, etc.)"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
