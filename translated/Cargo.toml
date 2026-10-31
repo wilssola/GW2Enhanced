@@ -1,0 +1,42 @@
+[workspace]
+members = [".", "installer", "tools/gw2-dat-tool", "tools/gw2-translate", "translator"]
+resolver = "3"
+
+[package]
+name = "gw2translated"
+version = "0.1.0"
+edition = "2024"
+description = "Plug-and-play translation of Guild Wars 2 (version.dll proxy)"
+license = "MIT"
+
+[lib]
+name = "version"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+hudhook = { version = "0.9", default-features = false, features = ["dx11"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+retour = "0.3"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinHttp",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Performance",
+    "Win32_System_ProcessStatus",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
