@@ -1,0 +1,5 @@
+# Local translation model binaries are stored in Git LFS.
+data/models/**/*.bin filter=lfs diff=lfs merge=lfs -text
+data/models/**/*.model filter=lfs diff=lfs merge=lfs -text
+# Dictionaries: UTF-8 text with \n, never converted.
+*.jsonl text eol=lf
