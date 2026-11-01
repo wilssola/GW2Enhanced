@@ -1,0 +1,11 @@
+[package]
+name = "texrdo"
+version = "0.1.0"
+edition = "2024"
+description = "Block-reuse RDO for BCn DDS + zstd (size/quality study and pack post-pass)"
+license = "MIT"
+
+[dependencies]
+texture2ddecoder = "0.1"
+zstd = "0.13"
+rayon = "1"
