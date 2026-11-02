@@ -1,0 +1,23 @@
+[project]
+name = "gw2-remastered-tools"
+version = "0.1.0"
+description = "Tools that produce the GW2 Remastered HD texture pack"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+batch = ["numpy", "pillow>=11", "torch", "spandrel"]
+dev = ["pytest>=8", "ruff>=0.11"]
+
+[tool.setuptools]
+py-modules = []
+
+[tool.pytest.ini_options]
+testpaths = ["tools"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
