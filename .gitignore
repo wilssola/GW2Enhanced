@@ -1,0 +1,9 @@
+target/
+# Reverse-engineering work folder (decompilations, copies of the game exe).
+/re/
+*.pdb
+__pycache__/
+.venv/
+.env
+.env.*
+.dev.vars
