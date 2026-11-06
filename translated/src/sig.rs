@@ -84,6 +84,16 @@ pub const CHAT_DISPATCH: Site = Site {
     name: "chat dispatch",
     sig: "40 53 55 56 57 41 54 41 56 48 81 EC 88 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 24 70 8B 41 04 4D 8B E0 FF C8 4C 8B F2 48 8B F1 83 F8 4A 0F 87",
 };
+/// Adds a tab to the chat tab manager, both new tabs and the ones saved in `Local.dat`.
+pub const CHAT_ADD_TAB: Site = Site {
+    name: "chat add_tab",
+    sig: "48 89 5C 24 18 48 89 54 24 10 56 57 41 56 48 83 EC 30 48 8B F9 48 8B F2 48 81 C1 88 00 00 00 E8 ?? ?? ?? ?? 4C 8D B7 9C 00 00 00 33 DB",
+};
+/// Receives the decoded default name of a tab and calls the tab's `set_name`.
+pub const CHAT_DEFAULT_NAME: Site = Site {
+    name: "chat default_name",
+    sig: "48 8B 03 48 8D 54 24 20 48 8B CB FF 90 ?? ?? ?? ?? 48 8B 4C 24 40 48 33 CC E8",
+};
 /// Clears and rebuilds all lines of a chat tab.
 pub const CHAT_REBUILD: Site = Site {
     name: "chat rebuild",
@@ -128,6 +138,8 @@ pub const ALL: &[Site] = &[
     CACHETICK,
     FRAME_REBUILD,
     CHAT_DISPATCH,
+    CHAT_ADD_TAB,
+    CHAT_DEFAULT_NAME,
     CHAT_REBUILD,
     BUBBLE_SET_CONTENT,
     BUBBLE_HANDLER,
