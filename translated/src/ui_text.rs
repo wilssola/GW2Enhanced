@@ -12,6 +12,7 @@ pub enum T {
     Options,
     Translate,
     LiveTranslate,
+    WebTranslate,
     Collect,
     Contribute,
     ContributeHint,
@@ -62,6 +63,7 @@ fn en(t: T) -> &'static str {
         T::Options => "Options",
         T::Translate => "Translate the game",
         T::LiveTranslate => "Translate missing texts on this PC",
+        T::WebTranslate => "Translate the Trading Post and Gem Store pages",
         T::Collect => "Collect untranslated texts",
         T::Contribute => "Help improve the translation",
         T::ContributeHint => {
@@ -126,6 +128,7 @@ fn pt_br(t: T) -> &'static str {
         T::Options => "Opções",
         T::Translate => "Traduzir o jogo",
         T::LiveTranslate => "Traduzir no PC o que faltar",
+        T::WebTranslate => "Traduzir as páginas da Companhia Comercial e da Loja de Gemas",
         T::Collect => "Coletar textos sem tradução",
         T::Contribute => "Ajudar a melhorar a tradução",
         T::ContributeHint => {

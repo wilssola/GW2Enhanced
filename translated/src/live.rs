@@ -11,6 +11,9 @@
 //! request a refresh: the idea is for the translation to exist before the speech bubble
 //! or the chat appears, because those keep the text they received and don't ask again.
 //!
+//! Web page texts (see `web.rs`) have a queue of their own: their translations
+//! go to `web_local.jsonl`, which is never uploaded, and back to the page.
+//!
 //! Only translates with the client in English: the model is English → Portuguese.
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -46,6 +49,8 @@ static VERSION: AtomicUsize = AtomicUsize::new(0);
 enum Kind {
     /// Game text on screen.
     Urgent,
+    /// Text on a web page.
+    Web,
     /// Game text about to be shown: the server just sent its decryption key.
     Soon,
     /// Game text loaded but not displayed yet.
@@ -53,7 +58,7 @@ enum Kind {
 }
 
 /// Order in which the queues are served.
-const PRIORITY: [Kind; 3] = [Kind::Urgent, Kind::Soon, Kind::Ahead];
+const PRIORITY: [Kind; 4] = [Kind::Urgent, Kind::Web, Kind::Soon, Kind::Ahead];
 
 static ON_SCREEN: AtomicUsize = AtomicUsize::new(0);
 static AHEAD: AtomicUsize = AtomicUsize::new(0);
@@ -116,6 +121,11 @@ pub fn prefetch(english: &str, id: Option<u32>) {
     enqueue(english, Kind::Ahead, id);
 }
 
+/// Text shown on a web page without a translation.
+pub fn request_web(english: &str) {
+    enqueue(english, Kind::Web, None);
+}
+
 /// Text whose key just arrived from the server: it is about to be shown.
 pub fn soon(english: &str, id: Option<u32>) {
     enqueue(english, Kind::Soon, id);
@@ -130,8 +140,12 @@ pub struct Setup {
     pub gpu_runtime: PathBuf,
     pub port_file: PathBuf,
     pub local_file: PathBuf,
+    /// Where translations of web page texts go (`web_local.jsonl`).
+    pub web_file: PathBuf,
     /// Translations already present in `local.jsonl`.
     pub known: HashMap<String, String>,
+    /// Web page texts already in `web_local.jsonl`.
+    pub known_web: HashSet<String>,
 }
 
 pub fn start(setup: Setup) {
@@ -250,6 +264,20 @@ fn translate(port: u16, texts: &[String]) -> std::io::Result<Vec<String>> {
     }
 }
 
+/// Appends translations of web page texts to `web_local.jsonl`.
+fn append_web(path: &Path, pairs: &[(String, String)]) -> std::io::Result<()> {
+    let mut w = crate::records::Appender::open(path)?;
+    for (en, tr) in pairs {
+        w.write(&crate::records::Translation {
+            en: en.clone(),
+            tr: tr.clone(),
+            src: Some(LOCAL_SOURCE.into()),
+            ids: Vec::new(),
+        })?;
+    }
+    w.flush()
+}
+
 /// Appends translations made on this PC to `local.jsonl`, with the text IDs
 /// seen for each one.
 fn append_local(path: &Path, pairs: &[(String, String)]) -> std::io::Result<()> {
@@ -270,7 +298,7 @@ fn append_local(path: &Path, pairs: &[(String, String)]) -> std::io::Result<()> 
 
 fn worker(setup: Setup, rx: Receiver<(String, Kind)>) {
     let mut seen: HashSet<String> = setup.known.keys().cloned().collect();
-    let mut q = Queues::default();
+    let mut q = Queues::new(&setup.known_web);
     let mut sidecar: Option<Sidecar> = None;
     let mut failures = 0;
     let (mut total, mut total_ahead) = (0usize, 0usize);
@@ -311,7 +339,7 @@ fn worker(setup: Setup, rx: Receiver<(String, Kind)>) {
             q.push(item, &mut seen);
         }
         if refresh::current_lang() != Some(0) {
-            q = Queues::default();
+            q = Queues::new(&setup.known_web);
             continue;
         }
         let Some((kind, chunk)) = q.next_batch() else { continue };
@@ -322,7 +350,7 @@ fn worker(setup: Setup, rx: Receiver<(String, Kind)>) {
         {
             if failures >= 3 {
                 // Translator is broken: drop the queue and just go back to waiting.
-                q = Queues::default();
+                q = Queues::new(&setup.known_web);
                 continue;
             }
             sidecar = spawn(&setup);
@@ -340,6 +368,14 @@ fn worker(setup: Setup, rx: Receiver<(String, Kind)>) {
                     .zip(out)
                     .filter(|(en, pt)| !pt.trim().is_empty() && !crate::dict::unusable(en, pt))
                     .collect();
+                if kind == Kind::Web {
+                    if let Err(e) = append_web(&setup.web_file, &pairs) {
+                        log!("live translation: error writing {}: {e}", setup.web_file.display());
+                    }
+                    crate::web::deliver(&pairs);
+                    QUEUED.store(q.len(), Ordering::Relaxed);
+                    continue;
+                }
                 if let Err(e) = append_local(&setup.local_file, &pairs) {
                     log!("live translation: error writing {}: {e}", setup.local_file.display());
                 }
@@ -382,7 +418,11 @@ fn worker(setup: Setup, rx: Receiver<(String, Kind)>) {
                 log!("live translation: batch failed: {e}");
                 // Accepted again the next time it shows up.
                 for t in &chunk {
-                    seen.remove(t);
+                    if kind == Kind::Web {
+                        q.web_seen.remove(t);
+                    } else {
+                        seen.remove(t);
+                    }
                 }
                 failures += 1;
                 if let Some(mut s) = sidecar.take() {
@@ -394,10 +434,13 @@ fn worker(setup: Setup, rx: Receiver<(String, Kind)>) {
 }
 
 /// Queues by priority: text on screen (speech bubbles, cutscenes, story),
-/// then text about to be shown, then text translated ahead of time.
+/// then web pages, then text about to be shown, then text translated ahead of time.
 #[derive(Default)]
 struct Queues {
     urgent: VecDeque<String>,
+    web: VecDeque<String>,
+    /// Web page texts translated or queued (apart from the game's: a page has its own file).
+    web_seen: HashSet<String>,
     soon: VecDeque<String>,
     ahead: VecDeque<String>,
     /// Texts already shown on screen without a translation: whichever queue
@@ -406,6 +449,13 @@ struct Queues {
 }
 
 impl Queues {
+    fn new(known_web: &HashSet<String>) -> Self {
+        Queues {
+            web_seen: known_web.clone(),
+            ..Default::default()
+        }
+    }
+
     /// Whether any of `texts` was shown on screen (forgets them).
     fn shown(&mut self, texts: &[(String, String)]) -> bool {
         let mut any = false;
@@ -420,18 +470,25 @@ impl Queues {
     }
 
     fn len(&self) -> usize {
-        self.urgent.len() + self.soon.len() + self.ahead.len()
+        self.urgent.len() + self.web.len() + self.soon.len() + self.ahead.len()
     }
 
     fn queue(&mut self, kind: Kind) -> &mut VecDeque<String> {
         match kind {
             Kind::Urgent => &mut self.urgent,
+            Kind::Web => &mut self.web,
             Kind::Soon => &mut self.soon,
             Kind::Ahead => &mut self.ahead,
         }
     }
 
     fn push(&mut self, (text, kind): (String, Kind), seen: &mut HashSet<String>) {
+        if kind == Kind::Web {
+            if self.web_seen.insert(text.clone()) {
+                self.web.push_back(text);
+            }
+            return;
+        }
         if kind == Kind::Urgent {
             self.on_screen.insert(text.clone());
         }
@@ -456,7 +513,7 @@ impl Queues {
     fn next_batch(&mut self) -> Option<(Kind, Vec<String>)> {
         let kind = PRIORITY.into_iter().find(|&k| !self.queue(k).is_empty())?;
         let q = self.queue(kind);
-        let size = if matches!(kind, Kind::Urgent | Kind::Soon) {
+        let size = if matches!(kind, Kind::Urgent | Kind::Web | Kind::Soon) {
             BATCH
         } else {
             BACKGROUND_BATCH
@@ -485,9 +542,11 @@ mod tests {
             model,
             port_file: dir.path().join("port.txt"),
             local_file: dir.path().join("local.jsonl"),
+            web_file: dir.path().join("web_local.jsonl"),
             model_big: dir.path().join("big"),
             gpu_runtime: dir.path().join("gpu"),
             known: HashMap::new(),
+            known_web: HashSet::new(),
         };
         let mut sc = spawn(&setup).expect("translator started");
         let out = translate(
@@ -505,5 +564,23 @@ mod tests {
             std::fs::read_to_string(&setup.local_file).unwrap(),
             "{\"en\":\"a\",\"tr\":\"b\",\"src\":\"argos\",\"ids\":[3,9]}\n"
         );
+    }
+}
+
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+
+    #[test]
+    fn web_texts_have_their_own_queue() {
+        let mut seen = HashSet::from(["Armor".to_owned()]);
+        let mut q = Queues::new(&HashSet::from(["Old".to_owned()]));
+        q.push(("Armor".into(), Kind::Web), &mut seen);
+        q.push(("Old".into(), Kind::Web), &mut seen);
+        q.push(("Armor".into(), Kind::Web), &mut seen);
+        q.push(("Later".into(), Kind::Ahead), &mut seen);
+        assert_eq!(q.len(), 2);
+        assert_eq!(q.next_batch(), Some((Kind::Web, vec!["Armor".to_owned()])));
+        assert_eq!(q.next_batch(), Some((Kind::Ahead, vec!["Later".to_owned()])));
     }
 }

@@ -6,7 +6,7 @@
 # Contents (the installer expects exactly this):
 #   GW2Translated-Installer.exe
 #   version.dll
-#   GW2Translated\languages\<language>\dictionary.jsonl
+#   GW2Translated\languages\<language>\dictionary.jsonl, web.jsonl
 #   GW2Translated\translator\gw2translated-translator.exe
 #   GW2Translated\translator\ctranslate2.dll, libiomp5md.dll        (official CTranslate2 build)
 #   GW2Translated\translator\msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll   (VC++ runtime, app-local)
@@ -60,7 +60,7 @@ foreach ($dll in $vcRuntime) {
 foreach ($lang in Get-ChildItem data\languages -Directory) {
     $dst = "$data\languages\$($lang.Name)"
     New-Item -ItemType Directory -Force $dst | Out-Null
-    Copy-Item "$($lang.FullName)\dictionary.jsonl" $dst
+    Copy-Item "$($lang.FullName)\dictionary.jsonl", "$($lang.FullName)\web.jsonl" $dst
 }
 $bigModels = @()
 foreach ($model in Get-ChildItem data\models -Directory) {

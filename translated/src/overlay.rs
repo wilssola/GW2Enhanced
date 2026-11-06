@@ -114,6 +114,7 @@ impl Overlay {
                         ui.separator();
                         self.flag(ui, Flag::Translate, T::Translate);
                         self.flag(ui, Flag::LiveTranslate, T::LiveTranslate);
+                        self.flag(ui, Flag::WebTranslate, T::WebTranslate);
                     }
                     2 => {
                         ui.text(self.t(T::WizDeviceTitle));
@@ -252,6 +253,7 @@ impl Overlay {
                 ui.text(self.t(T::Options));
                 self.flag(ui, Flag::Translate, T::Translate);
                 self.flag(ui, Flag::LiveTranslate, T::LiveTranslate);
+                self.flag(ui, Flag::WebTranslate, T::WebTranslate);
                 let mut collect = runtime::get(Flag::Autocollect) && runtime::get(Flag::SeedDecode);
                 if ui.checkbox(self.t(T::Collect), &mut collect) {
                     runtime::set(Flag::Autocollect, collect);

@@ -27,6 +27,7 @@ pub mod runtime;
 pub mod sig;
 mod ui_text;
 mod upload;
+mod web;
 
 use std::ffi::c_void;
 use std::path::PathBuf;
@@ -147,7 +148,11 @@ fn init() {
             gpu_runtime: st.paths.gpu_runtime_dir(),
             port_file: st.paths.translator_dir().join("port.txt"),
             local_file: st.paths.local(),
+            web_file: st.paths.web_local(),
             known: known.into_map(),
+            known_web: records::read::<records::Translation>(&st.paths.web_local())
+                .map(|r| r.records.into_iter().map(|t| t.en).collect())
+                .unwrap_or_default(),
         });
         // Sends nothing unless the player agreed (checked on every cycle).
         upload::start(upload::Setup {
@@ -165,6 +170,9 @@ fn init() {
             bubble::install(&img);
         }
         None => log!("game image not found; nothing to do"),
+    }
+    if let Some(st) = STATE.get() {
+        web::install(st.paths.language_dir().join("web.jsonl"), st.paths.web_local(), &st.dict);
     }
     if let Some(st) = STATE.get().filter(|s| s.config.overlay) {
         overlay::install(

@@ -26,7 +26,7 @@ const DLL_MARKER: &[u8] = b"GW2TRANSLATED-DLL-MARKER";
 const BACKUP: &str = "version.dll.antes-do-gw2translated";
 const DATA_DIR: &str = "GW2Translated";
 /// Package files that are always updated, per language.
-const SHIPPED: &[&str] = &["dictionary.jsonl"];
+const SHIPPED: &[&str] = &["dictionary.jsonl", "web.jsonl"];
 /// Package files from older versions, removed on install.
 const OBSOLETE: &[&str] = &["strings.jsonl", "ids.jsonl"];
 const STEAM_APP_DIR: &str = r"steamapps\common\Guild Wars 2";

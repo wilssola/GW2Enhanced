@@ -54,6 +54,10 @@ impl Paths {
     pub fn local(&self) -> PathBuf {
         self.language_dir().join("local.jsonl")
     }
+    /// Translations of web page texts made on this PC (never uploaded).
+    pub fn web_local(&self) -> PathBuf {
+        self.language_dir().join("web_local.jsonl")
+    }
     pub fn translator_dir(&self) -> PathBuf {
         self.data.join("translator")
     }

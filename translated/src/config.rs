@@ -32,6 +32,8 @@ pub struct Config {
     pub live_translate: bool,
     /// Reapply translations to text already displayed (automatically and via the key).
     pub live_refresh: bool,
+    /// Translate the game's web pages (Trading Post, Gem Store, Wizard's Vault).
+    pub web_translate: bool,
     /// Virtual key code for the manual refresh (default F10).
     pub refresh_key: u32,
     /// Show the overlay.
@@ -87,6 +89,7 @@ impl Default for Config {
             seed_decode: true,
             live_translate: true,
             live_refresh: true,
+            web_translate: true,
             refresh_key: 0x79,
             overlay: true,
             overlay_key: 0x2D,
@@ -107,6 +110,10 @@ const KEYS: &[(&str, &str)] = &[
     (
         "live_translate",
         "Translate on your PC whatever is missing from the dictionary",
+    ),
+    (
+        "web_translate",
+        "Translate the web pages (Trading Post, Gem Store, Wizard's Vault) on your PC",
     ),
     (
         "live_refresh",
@@ -188,6 +195,7 @@ impl Config {
             "seed_decode" => self.seed_decode = parse_bool(v).unwrap_or(self.seed_decode),
             "live_translate" => self.live_translate = parse_bool(v).unwrap_or(self.live_translate),
             "live_refresh" => self.live_refresh = parse_bool(v).unwrap_or(self.live_refresh),
+            "web_translate" => self.web_translate = parse_bool(v).unwrap_or(self.web_translate),
             "refresh_key" => self.refresh_key = parse_u32(v).unwrap_or(self.refresh_key),
             "overlay" => self.overlay = parse_bool(v).unwrap_or(self.overlay),
             "overlay_key" => self.overlay_key = parse_u32(v).unwrap_or(self.overlay_key),
@@ -210,6 +218,7 @@ impl Config {
             "seed_decode" => self.seed_decode.to_string(),
             "live_translate" => self.live_translate.to_string(),
             "live_refresh" => self.live_refresh.to_string(),
+            "web_translate" => self.web_translate.to_string(),
             "refresh_key" => format!("0x{:X}", self.refresh_key),
             "overlay" => self.overlay.to_string(),
             "overlay_key" => format!("0x{:X}", self.overlay_key),

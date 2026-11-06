@@ -120,6 +120,11 @@ impl Dict {
         .map(String::as_str)
     }
 
+    /// Every English text and its translation.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.map.iter().map(|(en, tr)| (en.as_str(), tr.as_str()))
+    }
+
     pub fn into_map(self) -> HashMap<String, String> {
         self.map
     }

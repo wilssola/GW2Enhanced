@@ -13,6 +13,7 @@ use crate::log;
 
 static TRANSLATE: AtomicBool = AtomicBool::new(true);
 static LIVE_TRANSLATE: AtomicBool = AtomicBool::new(true);
+static WEB_TRANSLATE: AtomicBool = AtomicBool::new(true);
 static AUTOCOLLECT: AtomicBool = AtomicBool::new(true);
 static SEED_DECODE: AtomicBool = AtomicBool::new(true);
 static CONTRIBUTE: AtomicU8 = AtomicU8::new(0);
@@ -29,6 +30,7 @@ static CONFIG_PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
 pub enum Flag {
     Translate,
     LiveTranslate,
+    WebTranslate,
     Autocollect,
     SeedDecode,
 }
@@ -38,6 +40,7 @@ impl Flag {
         match self {
             Flag::Translate => &TRANSLATE,
             Flag::LiveTranslate => &LIVE_TRANSLATE,
+            Flag::WebTranslate => &WEB_TRANSLATE,
             Flag::Autocollect => &AUTOCOLLECT,
             Flag::SeedDecode => &SEED_DECODE,
         }
@@ -47,6 +50,7 @@ impl Flag {
         match self {
             Flag::Translate => "translate",
             Flag::LiveTranslate => "live_translate",
+            Flag::WebTranslate => "web_translate",
             Flag::Autocollect => "autocollect",
             Flag::SeedDecode => "seed_decode",
         }
@@ -64,6 +68,7 @@ fn contribute_code(c: Contribute) -> u8 {
 pub fn init(config: &Config, config_path: std::path::PathBuf) {
     TRANSLATE.store(config.translate, Ordering::Relaxed);
     LIVE_TRANSLATE.store(config.live_translate, Ordering::Relaxed);
+    WEB_TRANSLATE.store(config.web_translate, Ordering::Relaxed);
     AUTOCOLLECT.store(config.autocollect, Ordering::Relaxed);
     SEED_DECODE.store(config.seed_decode, Ordering::Relaxed);
     CONTRIBUTE.store(contribute_code(config.contribute), Ordering::Relaxed);
