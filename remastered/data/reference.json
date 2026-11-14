@@ -1,0 +1,15 @@
+{
+  "_comment": "Reference build the mod's author generated the pack from. tools/build_pack.py verify compares your run to it.",
+  "gw2_exe_sha256": "99342078ef57ca5653046392c2cf8aa197f1badbbe2c68297ca97e0d925d8621",
+  "job_counts": {
+    "jobs": 230536,
+    "composite_4x": 82864,
+    "character_4x": 2225
+  },
+  "pack_textures": {
+    "pack": 231387,
+    "composite_4x": 82864,
+    "character_4x": 2225
+  },
+  "jobs_sorted_sha256": "6093ebe689fb3d9b6e42c014c066798badc81be99257b63dccb7c05dac127e85"
+}

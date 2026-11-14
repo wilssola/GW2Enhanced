@@ -59,8 +59,8 @@ def main():
         via[r["file_id"]] = r["via"]
     in_pack = {json.loads(l)["file_id"] for l in open(pack / "index.jsonl")}
     device = {int(x) for x in (pack / "device_ids.txt").read_text().split()}
-    in_char4k = {json.loads(l)["file_id"] for l in open(pack / "character_4k" / "index.jsonl")}
-    served = (in_pack & device) | in_char4k
+    in_char4x = {json.loads(l)["file_id"] for l in open(pack / "character_4x" / "index.jsonl")}
+    served = (in_pack & device) | in_char4x
     skip = half_served_ids(survey, via, served)
     (pack / "pair_skip.txt").write_text("\n".join(map(str, sorted(skip))))
     print(f"{pack / 'pair_skip.txt'}: {len(skip)} of {len(served)} served textures stay original")

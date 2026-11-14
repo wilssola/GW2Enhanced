@@ -14,7 +14,16 @@ MAX_SIDE = {
     "terrain": 1024,         # terrain tiles (ATEP), only the ones the game has been seen loading
 }
 DEFAULT_MAX_SIDE = 1024
-PIECE_GROUPS = {"composite", "composite_4x"}
+# Fixed-factor groups, never capped: atlas pieces (scaled by the atlas scale) and the 4x variant packs.
+PIECE_GROUPS = {"composite", "composite_4x", "character_4x"}
+
+
+def shipped_ids_path(textures_dir, name):
+    """`name` from a copy next to the textures, else the one shipped in the repo (`data/`)."""
+    from pathlib import Path
+
+    mine = Path(textures_dir) / name
+    return mine if mine.exists() else Path(__file__).resolve().parents[2] / "data" / name
 
 
 def composite_ids_path(textures_dir):
@@ -23,10 +32,7 @@ def composite_ids_path(textures_dir):
     A copy next to the textures wins (it can be refreshed after a game patch); otherwise the one shipped
     in the repo (`data/composite_ids.txt`) is used.
     """
-    from pathlib import Path
-
-    mine = Path(textures_dir) / "composite_ids.txt"
-    return mine if mine.exists() else Path(__file__).resolve().parents[2] / "data" / "composite_ids.txt"
+    return shipped_ids_path(textures_dir, "composite_ids.txt")
 
 
 def max_side(group: str) -> int:

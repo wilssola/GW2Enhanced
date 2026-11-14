@@ -41,10 +41,10 @@ static TX: OnceLock<std::sync::Mutex<Sender<Event>>> = OnceLock::new();
 
 /// HD pack: file id -> (dds path, original file size). Loaded from `pack\index.jsonl`.
 static PACK: OnceLock<std::collections::HashMap<u32, (PackLoc, u64, u32)>> = OnceLock::new();
-/// 4K model textures (face, head, hair/mane, eyes) for the local player: `<pack>\character_4k`.
-static PACK_CHAR4K: OnceLock<std::collections::HashMap<u32, (PackLoc, u64, u32)>> = OnceLock::new();
-/// Model textures served at 4K so far (overlay counter).
-pub static N_CHAR4K: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// 4x model textures (face, head, hair/mane, eyes) for the local player: `<pack>\character_4x`.
+static PACK_CHAR4X: OnceLock<std::collections::HashMap<u32, (PackLoc, u64, u32)>> = OnceLock::new();
+/// Model textures served at 4x so far (overlay counter).
+pub static N_CHAR4X: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// Model texture of the local player's character? The game already gives the own
 /// character separate texture records (ModelFile flag 0x10 -> record flag 0x10,
@@ -99,10 +99,98 @@ unsafe extern "system" {
     fn GlobalMemoryStatusEx(m: *mut MemoryStatusEx) -> i32;
 }
 
+fn mem_status() -> Option<MemoryStatusEx> {
+    let mut m = MemoryStatusEx { len: std::mem::size_of::<MemoryStatusEx>() as u32, load: 0, total_phys: 0, avail_phys: 0, total_page: 0, avail_page: 0, total_virt: 0, avail_virt: 0, avail_ext: 0 };
+    (unsafe { GlobalMemoryStatusEx(&mut m) } != 0).then_some(m)
+}
+
+/// Free system commit (RAM + pagefile not yet promised to anyone). When it runs out, allocations fail in the game
+/// ("OOM: Heap"), whatever the free RAM is.
+pub fn free_commit() -> u64 {
+    mem_status().map_or(u64::MAX, |m| m.avail_page)
+}
+
+/// 0 = fine, 1 = low (the mod shrinks its caches), 2 = critical (the mod stops adding to memory: HD files are not
+/// loaded, the game keeps its original textures). Set by [`guard_start`].
+pub static COMMIT_LEVEL: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub static FREE_COMMIT_MB: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+const COMMIT_LOW: u64 = 3 << 30;
+const COMMIT_LOW_EXIT: u64 = 4 << 30;
+const COMMIT_CRITICAL: u64 = 3 << 29; // 1.5 GB
+const COMMIT_CRITICAL_EXIT: u64 = 5 << 29; // 2.5 GB
+
+/// New level from the free commit, with hysteresis so it does not flap around a threshold.
+fn next_level(cur: u8, free: u64) -> u8 {
+    match cur {
+        2 if free < COMMIT_CRITICAL_EXIT => 2,
+        2 | 1 if free < COMMIT_CRITICAL => 2,
+        1 if free < COMMIT_LOW_EXIT => 1,
+        _ if free < COMMIT_CRITICAL => 2,
+        _ if free < COMMIT_LOW => 1,
+        _ => 0,
+    }
+}
+
+/// Evicts the least recently used cache entries until the cache holds at most `target` bytes.
+fn trim_cache(target: usize) -> usize {
+    let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(c) = g.as_mut() else { return 0 };
+    let before = c.bytes;
+    if before <= target {
+        return 0;
+    }
+    let mut v: Vec<((u8, u32), u64)> = c.map.iter().map(|(k, e)| (*k, e.1)).collect();
+    v.sort_unstable_by_key(|e| e.1);
+    for (k, _) in v {
+        if c.bytes <= target {
+            break;
+        }
+        if let Some(e) = c.map.remove(&k) {
+            c.bytes -= e.0.len();
+        }
+    }
+    before - c.bytes
+}
+
+/// Watches the free commit every 2 s and reacts: low = cache down to what the budget allows, critical = cache emptied
+/// and no new HD file loaded until it recovers.
+pub fn guard_start() {
+    let _ = std::thread::Builder::new().name("gw2remastered-memguard".into()).spawn(|| {
+        use std::sync::atomic::Ordering::Relaxed;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let free = free_commit();
+            FREE_COMMIT_MB.store(free >> 20, Relaxed);
+            let cur = COMMIT_LEVEL.load(Relaxed);
+            let next = next_level(cur, free);
+            if next != cur {
+                COMMIT_LEVEL.store(next, Relaxed);
+                log!("memory guard: free commit {} MB -> level {} (0 ok, 1 low, 2 critical)", free >> 20, next);
+            }
+            match next {
+                2 => {
+                    let n = trim_cache(0);
+                    if n > 0 {
+                        log!("memory guard: cache emptied ({} MB released)", n >> 20);
+                    }
+                }
+                1 => {
+                    let held = memory_stats().0;
+                    let n = trim_cache(held.min(cache_budget(held)));
+                    if n > 0 {
+                        log!("memory guard: cache trimmed ({} MB released)", n >> 20);
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
 /// Cache budget from the machine's RAM, re-read every few seconds:
 /// at most 1/16 of total RAM (hard cap 4 GB, even on big machines), and never more than what keeps a reserve of
 /// free RAM (max(2 GB, 15% of total)) for the game and the system, counting what the
-/// cache already holds as reclaimable. Floor 256 MB.
+/// cache already holds as reclaimable, and of free commit (4 GB). Floor 256 MB.
 fn cache_budget(held: usize) -> usize {
     static LAST: std::sync::Mutex<Option<(Instant, usize)>> = std::sync::Mutex::new(None);
     let mut g = LAST.lock().unwrap_or_else(|e| e.into_inner());
@@ -117,7 +205,10 @@ fn cache_budget(held: usize) -> usize {
         let reserve = (2usize << 30).max(total / 100 * 15);
         let by_total = (total / 16).min(4 << 30);
         let by_free = (m.avail_phys as usize + held).saturating_sub(reserve);
-        by_total.min(by_free).max(256 << 20)
+        // The commit limit (RAM + pagefile) is what makes allocations fail ("OOM: Heap" in the game), and it can run out
+        // with plenty of free RAM when the pagefile is small: keep a reserve of free commit too.
+        let by_commit = (m.avail_page as usize + held).saturating_sub(4 << 30);
+        by_total.min(by_free).min(by_commit).max(256 << 20)
     } else {
         1 << 30
     };
@@ -125,7 +216,7 @@ fn cache_budget(held: usize) -> usize {
     *g = Some((Instant::now(), b));
     drop(g);
     if changed {
-        log!("texture RAM cache budget: {} MB (free RAM {} MB, total {} MB)", b >> 20, m.avail_phys >> 20, m.total_phys >> 20);
+        log!("texture RAM cache budget: {} MB (free RAM {} MB, total {} MB, free commit {} MB)", b >> 20, m.avail_phys >> 20, m.total_phys >> 20, m.avail_page >> 20);
     }
     b
 }
@@ -370,7 +461,7 @@ fn prefetch(list: Vec<(u8, u32, [u8; 8])>) {
                 0 => (PACK.get(), false),
                 1 => (PACK.get(), true),
                 3 => (PACK4.get(), true),
-                4 => (PACK_CHAR4K.get(), false),
+                4 => (PACK_CHAR4X.get(), false),
                 _ => return,
             };
             let Some(e) = map.and_then(|m| m.get(&id)) else { return };
@@ -420,7 +511,7 @@ fn servable_id(id: u32) -> bool {
     if denied(id) {
         return false;
     }
-    PACK_CHAR4K.get().is_some_and(|p| p.contains_key(&id))
+    PACK_CHAR4X.get().is_some_and(|p| p.contains_key(&id))
         || (PACK.get().is_some_and(|p| p.contains_key(&id)) && DEVICE.get().is_some_and(|d| d.contains(&id)))
 }
 
@@ -462,9 +553,9 @@ static REASONS: OnceLock<Vec<u8>> = OnceLock::new();
 /// tools/batch/check_groups.py): the engine could not pair their sizes, so they stay original.
 static PAIR_SKIP: OnceLock<HashSet<u32>> = OnceLock::new();
 /// Terrain tiles (ATEP) with an upscaled version in the pack (`pack/terrain_ids.txt`). They are CPU textures
-/// of the terrain, not paired model textures, so they are served only when `terrain_hd` is on (experimental).
+/// of the terrain, not paired model textures, so they are served only when `terrain_hd` is on (default).
 static TERRAIN: OnceLock<HashSet<u32>> = OnceLock::new();
-pub static TERRAIN_HD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub static TERRAIN_HD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 static N_TERRAIN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 /// Textures currently shown in a reason colour: reloaded when Debug colors or HD goes off.
 static MARKED: std::sync::Mutex<Option<HashSet<u32>>> = std::sync::Mutex::new(None);
@@ -556,7 +647,7 @@ thread_local! {
 }
 /// A model texture the HD pack serves (or would, with the remaster on).
 pub fn is_device_pack(id: u32) -> bool {
-    DEVICE.get().is_some_and(|d| d.contains(&id)) && (PACK.get().is_some_and(|p| p.contains_key(&id)) || PACK_CHAR4K.get().is_some_and(|p| p.contains_key(&id)))
+    DEVICE.get().is_some_and(|d| d.contains(&id)) && (PACK.get().is_some_and(|p| p.contains_key(&id)) || PACK_CHAR4X.get().is_some_and(|p| p.contains_key(&id)))
 }
 
 fn denied(id: u32) -> bool {
@@ -721,19 +812,19 @@ unsafe extern "system" fn block_cb(data: *const u8, size: u64, offset: u32, file
                 && TERRAIN_HD.load(std::sync::atomic::Ordering::Relaxed)
                 && TERRAIN.get().is_some_and(|t| t.contains(&file_id));
             let mut served = false;
-            // Model textures: 4K for the local player (or everyone with composite_4x_all)
-            // when the 4K pack has the file; both members of a low/high pair share the
-            // record, so both get 4K and the engine's exact-2x rule still holds.
-            let char4k = !is_comp
-                && PACK_CHAR4K.get().is_some_and(|p| p.contains_key(&file_id))
+            // Model textures: 4x for the local player (or everyone with composite_4x_all)
+            // when the 4x pack has the file; both members of a low/high pair share the
+            // record, so both get 4x and the engine's exact-2x rule still holds.
+            let char4x = !is_comp
+                && PACK_CHAR4X.get().is_some_and(|p| p.contains_key(&file_id))
                 && LOADER_FUNCS.lock().unwrap_or_else(|e| e.into_inner()).contains(&ctx.cast::<u8>().add(0x28).cast::<usize>().read())
                 && (crate::composite::ALL_4X.load(std::sync::atomic::Ordering::Relaxed) || own_model_texture(ctx));
-            if char4k {
-                send(Event::Skipped { file_id, reason: "model texture at 4K (local player)" });
+            if char4x {
+                send(Event::Skipped { file_id, reason: "model texture at 4x (local player)" });
             }
-            let src: u8 = if is_comp && factor == 4 { 1 } else if char4k { 2 } else { 0 };
+            let src: u8 = if is_comp && factor == 4 { 1 } else if char4x { 2 } else { 0 };
             let ckey = (src * 2 + is_comp as u8, file_id);
-            if let Some((path, src_bytes, hd_w)) = (if src == 1 { &PACK4 } else if src == 2 { &PACK_CHAR4K } else { &PACK })
+            if let Some((path, src_bytes, hd_w)) = (if src == 1 { &PACK4 } else if src == 2 { &PACK_CHAR4X } else { &PACK })
                 .get()
                 .filter(|_| if is_comp { crate::overlay::pieces_on() } else { crate::overlay::enabled() })
                 .and_then(|p| p.get(&file_id))
@@ -760,7 +851,7 @@ unsafe extern "system" fn block_cb(data: *const u8, size: u64, offset: u32, file
                             debug_tint(&mut b, match (is_comp, src) {
                                 (true, 1) => TINT_COMP4X,
                                 (true, _) => TINT_COMP2X,
-                                (false, 2) => TINT_CHAR4K,
+                                (false, 2) => TINT_CHAR4X,
                                 _ => TINT_DEVICE,
                             });
                             if is_comp { b } else { native_format(b, &head) }
@@ -770,8 +861,8 @@ unsafe extern "system" fn block_cb(data: *const u8, size: u64, offset: u32, file
                     hit = from_cache;
                     hot_note(ckey.0, file_id, &head);
                     crate::overlay::N_PACK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if char4k {
-                        N_CHAR4K.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if char4x {
+                        N_CHAR4X.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
                     send(Event::Replaced { file_id, original: file_size as u32 as u64, bytes: buf.len() });
                     replacement = Some(keep_arc(buf));
@@ -1075,7 +1166,7 @@ pub static N_ATEX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::
 /// colour by origin, so anything keeping its normal look was NOT replaced.
 pub static DEBUG_TINT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub const TINT_DEVICE: u16 = 0x07E0; // green: model texture from the pack
-pub const TINT_CHAR4K: u16 = 0x001F; // blue: 4K model texture (local player)
+pub const TINT_CHAR4X: u16 = 0x001F; // blue: 4x model texture (local player)
 pub const TINT_COMP2X: u16 = 0xF81F; // magenta: composite piece, 2x pack
 pub const TINT_COMP4X: u16 = 0x07FF; // cyan: composite piece, 4x pack
 pub const TINT_DOUBLED: u16 = 0xFD20; // orange: 4x piece doubled from the 2x pack
@@ -1218,18 +1309,40 @@ pub enum PackLoc {
     Loose(PathBuf),
 }
 
+/// A zeroed buffer of `n` bytes, or `None` when the system cannot give it (never aborts the game) or the
+/// commit is critical.
+fn try_buffer(n: usize) -> Option<Vec<u8>> {
+    if COMMIT_LEVEL.load(std::sync::atomic::Ordering::Relaxed) >= 2 {
+        return None;
+    }
+    let mut v = Vec::new();
+    v.try_reserve_exact(n).ok()?;
+    v.resize(n, 0);
+    Some(v)
+}
+
 fn unzstd(z: &[u8]) -> Option<Vec<u8>> {
     // One exact-size allocation (the frame header carries the size).
     match zstd::zstd_safe::get_frame_content_size(z) {
-        Ok(Some(n)) if n <= 1 << 30 => zstd::bulk::decompress(z, n as usize).ok(),
-        _ => zstd::stream::decode_all(z).ok(),
+        Ok(Some(n)) if n <= 1 << 30 => {
+            let mut out = try_buffer(n as usize)?;
+            let done = zstd::bulk::decompress_to_buffer(z, &mut out[..]).ok()?;
+            out.truncate(done);
+            Some(out)
+        }
+        _ => {
+            if COMMIT_LEVEL.load(std::sync::atomic::Ordering::Relaxed) >= 2 {
+                return None;
+            }
+            zstd::stream::decode_all(z).ok()
+        }
     }
 }
 
 /// Positional read: threads share the handle without a shared cursor.
 fn read_at(file: &std::fs::File, offset: u64, len: u32) -> Option<Vec<u8>> {
     use std::os::windows::fs::FileExt;
-    let mut buf = vec![0u8; len as usize];
+    let mut buf = try_buffer(len as usize)?;
     let mut done = 0usize;
     while done < buf.len() {
         match file.seek_read(&mut buf[done..], offset + done as u64) {
@@ -1402,6 +1515,11 @@ mod index_tests {
 pub fn start(img: &Image, data_dir: &std::path::Path) {
     let pack_dir = crate::overlay::pack_dir(data_dir);
     log!("pack dir: {}", pack_dir.display());
+    let have_pack = crate::overlay::has_pack(&pack_dir);
+    crate::overlay::NO_PACK.store(!have_pack, std::sync::atomic::Ordering::Relaxed);
+    if !have_pack {
+        log!("no HD pack in that folder: the game keeps its original textures (choose the folder in the overlay)");
+    }
     let t0 = Instant::now();
     let pack = load_pack(&pack_dir);
     log!("HD pack: {} textures ({} ms)", pack.len(), t0.elapsed().as_millis());
@@ -1410,9 +1528,9 @@ pub fn start(img: &Image, data_dir: &std::path::Path) {
     let pack4 = load_pack(&pack_dir.join("composite_4x"));
     log!("HD pack 4x (composite): {} textures", pack4.len());
     let _ = PACK4.set(pack4);
-    let char4k = load_pack(&pack_dir.join("character_4k"));
-    log!("HD pack 4K (model textures, local player): {} textures", char4k.len());
-    let _ = PACK_CHAR4K.set(char4k);
+    let char4x = load_pack(&pack_dir.join("character_4x"));
+    log!("HD pack 4x (model textures, local player): {} textures", char4x.len());
+    let _ = PACK_CHAR4X.set(char4x);
     // composite_ids.txt: one file id per line (written by the pack builder).
     let comp: std::collections::HashSet<u32> = std::fs::read_to_string(pack_dir.join("composite_ids.txt"))
         .unwrap_or_default()
@@ -1420,8 +1538,8 @@ pub fn start(img: &Image, data_dir: &std::path::Path) {
         .filter_map(|l| l.trim().parse().ok())
         .collect();
     log!("composite sources known: {}", comp.len());
-    // composite 2x needs the pack folder present (opt-in), the id list is informative only
-    let composite_ok = pack_dir.is_dir() && crate::composite::install(img);
+    // composite 2x needs a pack (opt-in), the id list is informative only; without one the atlas stays untouched
+    let composite_ok = have_pack && crate::composite::install(img);
     if !composite_ok {
         log!("composite 2x disabled: composite pieces are NOT replaced (pack textures for them are skipped)");
     }
@@ -1447,12 +1565,12 @@ pub fn start(img: &Image, data_dir: &std::path::Path) {
     }
     if let Ok(t) = std::fs::read_to_string(pack_dir.join("terrain_ids.txt")) {
         let set: HashSet<u32> = t.lines().filter_map(|l| l.trim().parse().ok()).collect();
-        log!("terrain: {} upscaled tiles in the pack (served only with terrain_hd=true)", set.len());
+        log!("terrain: {} upscaled tiles in the pack (served unless terrain_hd=false)", set.len());
         let _ = TERRAIN.set(set);
     }
     // Warm start from the previous session's list (HD on, no debug colors in the cache).
     let hot_path = data_dir.join("hot_textures.bin");
-    if crate::overlay::enabled() && !DEBUG_TINT.load(std::sync::atomic::Ordering::Relaxed) {
+    if have_pack && crate::overlay::enabled() && !DEBUG_TINT.load(std::sync::atomic::Ordering::Relaxed) {
         if let Ok(b) = std::fs::read(&hot_path) {
             let list = hot_decode(&b);
             log!("prefetch: {} files from the previous session", list.len());
@@ -1488,5 +1606,32 @@ mod pair_skip_tests {
         let _ = super::PAIR_SKIP.set([5u32, 9].into_iter().collect());
         assert!(super::denied(5) && super::denied(9));
         assert!(!super::denied(6));
+    }
+}
+
+#[cfg(test)]
+mod commit_guard_tests {
+    use super::*;
+
+    const GB: u64 = 1 << 30;
+
+    #[test]
+    fn levels_follow_the_free_commit_with_hysteresis() {
+        assert_eq!(next_level(0, 10 * GB), 0);
+        assert_eq!(next_level(0, 2 * GB), 1);
+        assert_eq!(next_level(0, GB), 2);
+        // low stays low until there is clearly more room
+        assert_eq!(next_level(1, 3 * GB + GB / 2), 1);
+        assert_eq!(next_level(1, 5 * GB), 0);
+        // critical leaves only above 2.5 GB, then it is low (below 3 GB) or fine
+        assert_eq!(next_level(2, 2 * GB), 2);
+        assert_eq!(next_level(2, 2 * GB + GB * 6 / 10), 1);
+        assert_eq!(next_level(2, 6 * GB), 0);
+    }
+
+    #[test]
+    fn a_huge_buffer_is_refused_not_aborted() {
+        assert!(try_buffer(usize::MAX / 2).is_none());
+        assert_eq!(try_buffer(16).map(|v| v.len()), Some(16));
     }
 }

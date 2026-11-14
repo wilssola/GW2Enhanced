@@ -20,6 +20,7 @@ def test_only_the_group_target_is_left_alone():
     # pieces: fixed slots, always scaled
     assert not policy.already_high(job("composite", 1024))
     assert not policy.already_high(job("composite_4x", 2048))
+    assert not policy.already_high(job("character_4x", 1024))  # fixed 4x pack for hair/mane/eyes
 
 
 if __name__ == "__main__":

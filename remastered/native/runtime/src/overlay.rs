@@ -39,6 +39,10 @@ pub fn enabled() -> bool {
 }
 
 /// The panel is open (memory figures are only gathered then).
+pub fn set_visible(on: bool) {
+    VISIBLE.store(on, Ordering::Relaxed);
+}
+
 pub fn is_visible() -> bool {
     VISIBLE.load(Ordering::Relaxed)
 }
@@ -66,10 +70,76 @@ static PACK_DIR: std::sync::Mutex<String> = std::sync::Mutex::new(String::new())
 /// The overlay is waiting for the new hotkey.
 static CAPTURING: AtomicBool = AtomicBool::new(false);
 
+/// No HD pack was found at start: the game keeps its original textures (set by `diag::start`).
+pub static NO_PACK: AtomicBool = AtomicBool::new(false);
+/// The user finished (or skipped) the first-run folder selection (`setup_done` in config.ini).
+static SETUP_DONE: AtomicBool = AtomicBool::new(false);
+/// A new folder was saved; the pack is read at game start, so it applies after a restart.
+static RESTART_NEEDED: AtomicBool = AtomicBool::new(false);
+/// A folder dialog is open (it runs on its own thread, so the game keeps rendering).
+static PICKING: AtomicBool = AtomicBool::new(false);
+/// Folder chosen in the dialog, waiting to be shown in the text box.
+static PICKED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 /// Pack folder: `pack_dir` from config.ini, else `<data>\pack`.
 pub fn pack_dir(data: &std::path::Path) -> PathBuf {
     let d = PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if d.is_empty() { data.join("pack") } else { PathBuf::from(d) }
+}
+
+/// A folder holds an HD pack when it has the archive index or the loose-file index.
+pub fn has_pack(dir: &std::path::Path) -> bool {
+    dir.join("pack.idx").is_file() || dir.join("index.jsonl").is_file()
+}
+
+/// The folder the user picked, or its `pack` subfolder when that is where the pack is.
+fn resolve_pack(dir: &str) -> Option<PathBuf> {
+    let d = PathBuf::from(dir.trim().trim_matches('"'));
+    [d.clone(), d.join("pack")].into_iter().find(|p| has_pack(p))
+}
+
+/// Folder dialog (Windows shell). Blocks, so it must run off the render thread.
+fn pick_folder() -> Option<String> {
+    use windows_sys::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows_sys::Win32::UI::Shell::{
+        BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS, BROWSEINFOW, SHBrowseForFolderW, SHGetPathFromIDListW,
+    };
+    unsafe {
+        let hr = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
+        let title: Vec<u16> = "Select the folder with the GW2 Remastered HD textures\0".encode_utf16().collect();
+        let mut bi: BROWSEINFOW = std::mem::zeroed();
+        bi.hwndOwner = GetForegroundWindow();
+        bi.lpszTitle = title.as_ptr();
+        bi.ulFlags = BIF_NEWDIALOGSTYLE | BIF_RETURNONLYFSDIRS;
+        let pidl = SHBrowseForFolderW(&bi);
+        let mut out = None;
+        if !pidl.is_null() {
+            let mut buf = [0u16; 520];
+            if SHGetPathFromIDListW(pidl, buf.as_mut_ptr()) != 0 {
+                let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+                out = Some(String::from_utf16_lossy(&buf[..n]));
+            }
+            CoTaskMemFree(pidl as _);
+        }
+        if hr >= 0 {
+            CoUninitialize();
+        }
+        out
+    }
+}
+
+fn start_picker() {
+    if PICKING.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let spawned = std::thread::Builder::new().name("gw2remastered-picker".into()).spawn(|| {
+        let r = std::panic::catch_unwind(pick_folder).ok().flatten();
+        *PICKED.lock().unwrap_or_else(|e| e.into_inner()) = r;
+        PICKING.store(false, Ordering::Relaxed);
+    });
+    if spawned.is_err() {
+        PICKING.store(false, Ordering::Relaxed);
+    }
 }
 
 /// `key=value` lines of an ini file (comments `#`/`;`, blanks ignored).
@@ -196,10 +266,13 @@ pub fn load_settings(path: PathBuf) {
             crate::composite::ALLOW_4X.store(v.eq_ignore_ascii_case("true"), Ordering::Relaxed);
         }
         if let Some(v) = ini_get(&t, "terrain_hd") {
-            crate::diag::TERRAIN_HD.store(v.eq_ignore_ascii_case("true"), Ordering::Relaxed);
+            crate::diag::TERRAIN_HD.store(!v.eq_ignore_ascii_case("false"), Ordering::Relaxed);
         }
         if let Some(d) = ini_get(&t, "pack_dir") {
             *PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()) = d;
+        }
+        if let Some(v) = ini_get(&t, "setup_done") {
+            SETUP_DONE.store(v.eq_ignore_ascii_case("true"), Ordering::Relaxed);
         }
         match ini_get(&t, "overlay_key").as_deref() {
             // old default (plain Home, written as 0x24): move to the new default Shift+Home
@@ -219,7 +292,9 @@ pub fn load_settings(path: PathBuf) {
         .get()
         .is_some_and(|p| {
             std::fs::read_to_string(p).map_or(true, |t| {
-                ini_get(&t, "overlay_key").as_deref() != Some(hotkey_text().as_str()) || ini_get(&t, "composite_scale").is_some() || ini_get(&t, "composite_4x_all").is_none()             })
+                ini_get(&t, "overlay_key").as_deref() != Some(hotkey_text().as_str()) || ini_get(&t, "composite_scale").is_some() || ini_get(&t, "composite_4x_all").is_none()
+                    || ini_get(&t, "setup_done").is_none()
+            })
         });
     if stale {
         save_settings();
@@ -249,8 +324,12 @@ fn save_settings() {
                 "# or virtual code (0x24). Can also be changed in the overlay. GW2 Translated uses Insert.\n",
                 "overlay_key={}\n",
                 "\n",
-                "# Folder with the HD pack (empty = GW2Remastered\\pack next to the game)\n",
+                "# Folder with the HD pack (empty = GW2Remastered\\pack next to the game). Without a pack\n",
+                "# there the game shows its original textures. Choose it in the overlay (read at game start).\n",
                 "pack_dir={}\n",
+                "\n",
+                "# First-run folder selection finished or skipped (the overlay stops asking)\n",
+                "setup_done={}\n",
                 "\n",
                 "# Live reload when toggling HD textures: NPCs and model textures (scenery, weapons).\n",
                 "# Set to false if toggling crashes the game.\n",
@@ -260,13 +339,14 @@ fn save_settings() {
                 "# 4x characters at all (false = 2x for everyone)\n",
                 "composite_4x={}\n",
                 "\n",
-                "# Experimental: serve upscaled terrain tiles (read at start; off by default)\n",
+                "# Serve the upscaled terrain tiles (read at start)\n",
                 "terrain_hd={}\n",
             ),
             enabled(),
             crate::composite::ALL_4X.load(Ordering::Relaxed),
             hotkey_text(),
             PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()),
+            SETUP_DONE.load(Ordering::Relaxed),
             crate::reload::LIVE_NPC.load(Ordering::Relaxed),
             crate::reload::LIVE_MODELS.load(Ordering::Relaxed),
             crate::composite::ALLOW_4X.load(Ordering::Relaxed),
@@ -285,11 +365,27 @@ fn game_has_focus() -> bool {
     pid == unsafe { GetCurrentProcessId() }
 }
 
-struct Overlay {
+pub struct Overlay {
     key_down: bool,
+    /// Text box with the pack folder (filled from the config on first use).
+    path: String,
+    path_ready: bool,
+    /// The first-run prompt already opened the panel once.
+    welcomed: bool,
+    /// Last message about the folder, shown under the box.
+    note: Option<(bool, String)>,
 }
 
 impl Overlay {
+    /// Once per frame: the hotkey, and the first-run prompt (opens the panel once when there is no pack).
+    pub fn tick(&mut self) {
+        self.poll_key();
+        if !self.welcomed && NO_PACK.load(Ordering::Relaxed) && !SETUP_DONE.load(Ordering::Relaxed) {
+            self.welcomed = true;
+            VISIBLE.store(true, Ordering::Relaxed);
+        }
+    }
+
     fn poll_key(&mut self) {
         let held = |vk: i32| unsafe { GetAsyncKeyState(vk) } as u16 & 0x8000 != 0;
         if CAPTURING.load(Ordering::Relaxed) {
@@ -324,101 +420,170 @@ impl Overlay {
         self.key_down = down;
     }
 
+    /// Pack folder section: text box, Browse, Apply. Also the first-run prompt.
+    fn folder_section(&mut self, ui: &Ui) {
+        if !self.path_ready {
+            self.path = PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            self.path_ready = true;
+        }
+        if let Some(p) = PICKED.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            self.path = p;
+            self.note = None;
+        }
+        let first_run = NO_PACK.load(Ordering::Relaxed) && !SETUP_DONE.load(Ordering::Relaxed);
+        if first_run {
+            ui.text_colored([1.0, 0.85, 0.3, 1.0], "Welcome! Choose where the HD textures are.");
+            ui.text_wrapped("Select the folder with the pack (the one that has pack.idx). Until then, or if you skip, the game shows its original textures.");
+        } else if NO_PACK.load(Ordering::Relaxed) {
+            ui.text_colored([1.0, 0.6, 0.3, 1.0], "No HD textures found: the game shows its original textures.");
+        }
+        ui.text("HD texture folder:");
+        ui.set_next_item_width(-1.0);
+        ui.input_text("##packdir", &mut self.path).build();
+        if PICKING.load(Ordering::Relaxed) {
+            ui.text_disabled("Choose the folder in the dialog window...");
+        } else if ui.button("Browse...") {
+            start_picker();
+        }
+        ui.same_line();
+        if ui.button("Apply") {
+            let typed = self.path.trim().trim_matches('"').to_string();
+            if typed.is_empty() {
+                *PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()) = String::new();
+                SETUP_DONE.store(true, Ordering::Relaxed);
+                RESTART_NEEDED.store(true, Ordering::Relaxed);
+                self.note = Some((true, "Back to the default folder. Restart the game to apply.".into()));
+                save_settings();
+            } else if let Some(dir) = resolve_pack(&typed) {
+                let shown = dir.display().to_string();
+                self.path = shown.clone();
+                *PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()) = shown.clone();
+                SETUP_DONE.store(true, Ordering::Relaxed);
+                RESTART_NEEDED.store(true, Ordering::Relaxed);
+                self.note = Some((true, "Folder saved. Restart the game to load the HD textures.".into()));
+                save_settings();
+                log!("overlay: pack folder set to {shown}");
+            } else {
+                self.note = Some((false, "No HD pack in this folder (pack.idx not found). Nothing changed.".into()));
+            }
+        }
+        if first_run {
+            ui.same_line();
+            if ui.button("Skip") {
+                SETUP_DONE.store(true, Ordering::Relaxed);
+                save_settings();
+                log!("overlay: first-run folder selection skipped");
+            }
+        }
+        if let Some((ok, msg)) = &self.note {
+            let c = if *ok { [0.4, 1.0, 0.4, 1.0] } else { [1.0, 0.4, 0.4, 1.0] };
+            ui.text_colored(c, msg);
+        }
+        if RESTART_NEEDED.load(Ordering::Relaxed) && self.note.is_none() {
+            ui.text_colored([0.4, 1.0, 0.4, 1.0], "Restart the game to apply the new folder.");
+        }
+        ui.separator();
+    }
+
+    /// The panel's content, without a window around it (the unified overlay puts it in a tab).
+    pub fn body(&mut self, ui: &Ui) {
+        self.folder_section(ui);
+        let mut on = enabled();
+        if ui.checkbox("HD textures", &mut on) {
+            ENABLED.store(on, Ordering::Relaxed);
+            *TOGGLED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+            save_settings();
+            crate::reload::request_after(PIECE_SWITCH);
+            if !on {
+                crate::diag::drop_hd_cache();
+            }
+            log!("overlay: remaster {}", if on { "ON" } else { "OFF" });
+        }
+        let mut all = crate::composite::ALL_4X.load(Ordering::Relaxed);
+        if ui.checkbox("4x for all players", &mut all) {
+            crate::composite::ALL_4X.store(all, Ordering::Relaxed);
+            save_settings();
+            log!("overlay: 4x for every player {}", if all { "ON" } else { "OFF" });
+        }
+        ui.text_disabled("HD off shows the original textures.");
+        ui.text_disabled("4x for all players uses more memory and also applies after a map change.");
+        ui.separator();
+        if crate::reload::available() {
+            if ui.button("Reload textures") {
+                crate::reload::request();
+            }
+            if crate::reload::BUSY.load(Ordering::Relaxed) {
+                ui.same_line();
+                ui.text("Reloading...");
+            }
+            ui.text(format!(
+                "Last reload: {} characters, {} textures",
+                crate::reload::LAST_SCHEDULED.load(Ordering::Relaxed),
+                crate::reload::LAST_TEXTURES.load(Ordering::Relaxed)
+            ));
+            let mut tint = crate::diag::DEBUG_TINT.load(Ordering::Relaxed);
+            if ui.checkbox("Debug colors", &mut tint) {
+                crate::diag::set_debug_tint(tint);
+                crate::reload::request_after(std::time::Duration::ZERO);
+                log!("overlay: debug colors {}", if tint { "ON" } else { "OFF" });
+            }
+            if tint {
+                if !enabled() {
+                    ui.text_colored([1.0, 0.4, 0.4, 1.0], "HD textures are off: nothing is colored.");
+                }
+                ui.text_colored([1.0, 0.0, 1.0, 1.0], "Magenta: 2x piece (AI)");
+                ui.text_colored([0.0, 1.0, 1.0, 1.0], "Cyan: 4x piece (AI)");
+                ui.text_colored([1.0, 0.65, 0.0, 1.0], "Orange: 4x piece, doubled from 2x");
+                ui.text_colored([1.0, 1.0, 0.0, 1.0], "Yellow: plain upscale (no AI)");
+                ui.text_colored([0.0, 1.0, 0.0, 1.0], "Green: model texture");
+                ui.text_colored([0.3, 0.3, 1.0, 1.0], "Blue: 4x model texture (you)");
+                ui.text("Normal color: not replaced");
+                ui.text("Left alone, by reason:");
+                ui.text_colored([1.0, 0.25, 0.25, 1.0], "Red: effect");
+                ui.text_colored([0.65, 0.25, 0.85, 1.0], "Purple: pair, big member already high resolution (1024 px+)");
+                ui.text_colored([1.0, 1.0, 1.0, 1.0], "White: already at target size");
+                ui.text_colored([0.65, 0.4, 0.1, 1.0], "Brown: under 128 px");
+                ui.text_colored([1.0, 0.7, 0.8, 1.0], "Pink: no job, other");
+                ui.text_colored([0.6, 0.6, 0.6, 1.0], "Gray: character piece source");
+            }
+        } else {
+            ui.text_disabled("Live reload unavailable. Change maps to apply.");
+        }
+        ui.separator();
+        ui.text(format!("HD pack: {} textures", PACK_SIZE.load(Ordering::Relaxed)));
+        ui.text(format!("Character HD: {}", if COMPOSITE_2X.load(Ordering::Relaxed) { "on" } else { "off" }));
+        ui.text(format!("Characters at 4x: {}", crate::composite::N_4X.load(Ordering::Relaxed)));
+        ui.text(format!("Served from pack: {}", N_PACK.load(Ordering::Relaxed)));
+        ui.text(format!("4x textures (you): {}", crate::diag::N_CHAR4X.load(Ordering::Relaxed)));
+        ui.text(format!("Plain upscales: {}", N_PLAIN2X.load(Ordering::Relaxed)));
+        ui.text(format!("Refused resizes: {}", N_REFUSED.load(Ordering::Relaxed)));
+        ui.separator();
+        crate::mem::refresh_os();
+        let o = crate::mem::os();
+        let (cache, files, _) = crate::diag::memory_stats();
+        ui.text(format!("VRAM game: {} of {}", crate::mem::fmt(o.vram_used), crate::mem::fmt(o.vram_budget)));
+        ui.text(format!("VRAM mod: ~{} (estimate)", crate::mem::fmt(crate::mem::mod_vram())));
+        ui.text(format!("RAM game: {} (private {})", crate::mem::fmt(o.ram_working), crate::mem::fmt(o.ram_private)));
+        ui.text(format!("RAM mod: {} (cache {}, {} files)", crate::mem::fmt(crate::mem::mod_heap()), crate::mem::fmt(cache as u64), files));
+        ui.separator();
+        if CAPTURING.load(Ordering::Relaxed) {
+            ui.text("Press the new hotkey (Esc cancels)");
+        } else {
+            ui.text(format!("Hotkey: {}", hotkey_text()));
+            ui.same_line();
+            if ui.button("Change") {
+                CAPTURING.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
     fn window(&mut self, ui: &mut Ui) {
         let mut open = true;
         ui.window("GW2 Remastered")
             .size([360.0, 0.0], Condition::FirstUseEver)
             .position([60.0, 60.0], Condition::FirstUseEver)
             .opened(&mut open)
-            .build(|| {
-                let mut on = enabled();
-                if ui.checkbox("HD textures", &mut on) {
-                    ENABLED.store(on, Ordering::Relaxed);
-                    *TOGGLED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
-                    save_settings();
-                    crate::reload::request_after(PIECE_SWITCH);
-                    if !on {
-                        crate::diag::drop_hd_cache();
-                    }
-                    log!("overlay: remaster {}", if on { "ON" } else { "OFF" });
-                }
-                let mut all = crate::composite::ALL_4X.load(Ordering::Relaxed);
-                if ui.checkbox("4x for all players", &mut all) {
-                    crate::composite::ALL_4X.store(all, Ordering::Relaxed);
-                    save_settings();
-                    log!("overlay: 4x for every player {}", if all { "ON" } else { "OFF" });
-                }
-                ui.text_disabled("HD off shows the original textures.");
-                ui.text_disabled("4x for all players uses more memory and also applies after a map change.");
-                ui.separator();
-                if crate::reload::available() {
-                    if ui.button("Reload textures") {
-                        crate::reload::request();
-                    }
-                    if crate::reload::BUSY.load(Ordering::Relaxed) {
-                        ui.same_line();
-                        ui.text("Reloading...");
-                    }
-                    ui.text(format!(
-                        "Last reload: {} characters, {} textures",
-                        crate::reload::LAST_SCHEDULED.load(Ordering::Relaxed),
-                        crate::reload::LAST_TEXTURES.load(Ordering::Relaxed)
-                    ));
-                    let mut tint = crate::diag::DEBUG_TINT.load(Ordering::Relaxed);
-                    if ui.checkbox("Debug colors", &mut tint) {
-                        crate::diag::set_debug_tint(tint);
-                        crate::reload::request_after(std::time::Duration::ZERO);
-                        log!("overlay: debug colors {}", if tint { "ON" } else { "OFF" });
-                    }
-                    if tint {
-                        if !enabled() {
-                            ui.text_colored([1.0, 0.4, 0.4, 1.0], "HD textures are off: nothing is colored.");
-                        }
-                        ui.text_colored([1.0, 0.0, 1.0, 1.0], "Magenta: 2x piece (AI)");
-                        ui.text_colored([0.0, 1.0, 1.0, 1.0], "Cyan: 4x piece (AI)");
-                        ui.text_colored([1.0, 0.65, 0.0, 1.0], "Orange: 4x piece, doubled from 2x");
-                        ui.text_colored([1.0, 1.0, 0.0, 1.0], "Yellow: plain upscale (no AI)");
-                        ui.text_colored([0.0, 1.0, 0.0, 1.0], "Green: model texture");
-                        ui.text_colored([0.3, 0.3, 1.0, 1.0], "Blue: 4K model texture (you)");
-                        ui.text("Normal color: not replaced");
-                        ui.text("Left alone, by reason:");
-                        ui.text_colored([1.0, 0.25, 0.25, 1.0], "Red: effect");
-                        ui.text_colored([0.65, 0.25, 0.85, 1.0], "Purple: pair, big member already high resolution (1024 px+)");
-                        ui.text_colored([1.0, 1.0, 1.0, 1.0], "White: already at target size");
-                        ui.text_colored([0.65, 0.4, 0.1, 1.0], "Brown: under 128 px");
-                        ui.text_colored([1.0, 0.7, 0.8, 1.0], "Pink: no job, other");
-                        ui.text_colored([0.6, 0.6, 0.6, 1.0], "Gray: character piece source");
-                    }
-                } else {
-                    ui.text_disabled("Live reload unavailable. Change maps to apply.");
-                }
-                ui.separator();
-                ui.text(format!("HD pack: {} textures", PACK_SIZE.load(Ordering::Relaxed)));
-                ui.text(format!("Character HD: {}", if COMPOSITE_2X.load(Ordering::Relaxed) { "on" } else { "off" }));
-                ui.text(format!("Characters at 4x: {}", crate::composite::N_4X.load(Ordering::Relaxed)));
-                ui.text(format!("Served from pack: {}", N_PACK.load(Ordering::Relaxed)));
-                ui.text(format!("4K textures (you): {}", crate::diag::N_CHAR4K.load(Ordering::Relaxed)));
-                ui.text(format!("Plain upscales: {}", N_PLAIN2X.load(Ordering::Relaxed)));
-                ui.text(format!("Refused resizes: {}", N_REFUSED.load(Ordering::Relaxed)));
-                ui.separator();
-                crate::mem::refresh_os();
-                let o = crate::mem::os();
-                let (cache, files, _) = crate::diag::memory_stats();
-                ui.text(format!("VRAM game: {} of {}", crate::mem::fmt(o.vram_used), crate::mem::fmt(o.vram_budget)));
-                ui.text(format!("VRAM mod: ~{} (estimate)", crate::mem::fmt(crate::mem::mod_vram())));
-                ui.text(format!("RAM game: {} (private {})", crate::mem::fmt(o.ram_working), crate::mem::fmt(o.ram_private)));
-                ui.text(format!("RAM mod: {} (cache {}, {} files)", crate::mem::fmt(crate::mem::mod_heap()), crate::mem::fmt(cache as u64), files));
-                ui.separator();
-                if CAPTURING.load(Ordering::Relaxed) {
-                    ui.text("Press the new hotkey (Esc cancels)");
-                } else {
-                    ui.text(format!("Hotkey: {}", hotkey_text()));
-                    ui.same_line();
-                    if ui.button("Change") {
-                        CAPTURING.store(true, Ordering::Relaxed);
-                    }
-                }
-            });
+            .build(|| self.body(ui));
         if !open {
             VISIBLE.store(false, Ordering::Relaxed);
         }
@@ -437,7 +602,7 @@ impl ImguiRenderLoop for Overlay {
     }
 
     fn render(&mut self, ui: &mut Ui) {
-        self.poll_key();
+        self.tick();
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if VISIBLE.load(Ordering::Relaxed) {
                 self.window(ui);
@@ -453,14 +618,45 @@ impl ImguiRenderLoop for Overlay {
     }
 }
 
+/// The panel, ready to be drawn by a render loop (the unified mod draws it next to the other features').
+pub fn panel() -> Overlay {
+    Overlay { key_down: false, path: String::new(), path_ready: false, welcomed: false, note: None }
+}
+
+/// Panel waiting for the unified overlay to pick it up (when the DLL is not standalone).
+pub static PANEL: std::sync::Mutex<Option<Overlay>> = std::sync::Mutex::new(None);
+
 pub fn install(module: usize) {
+    if !cfg!(feature = "standalone") {
+        *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(panel());
+        log!("overlay: panel ready for the unified overlay");
+        return;
+    }
     let hooks = Hudhook::builder()
-        .with::<ImguiDx11Hooks>(Overlay { key_down: false })
+        .with::<ImguiDx11Hooks>(panel())
         .with_hmodule(HINSTANCE(module as *mut _))
         .build();
     match hooks.apply() {
         Ok(()) => log!("overlay: installed (key {})", hotkey_text()),
         Err(e) => log!("overlay: could not install: {e:?}"),
+    }
+}
+
+#[cfg(test)]
+mod pack_folder_tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_pack_in_the_folder_or_its_pack_subfolder() {
+        let root = std::env::temp_dir().join(format!("gw2rem_pack_test_{}", std::process::id()));
+        let sub = root.join("pack");
+        std::fs::create_dir_all(&sub).unwrap();
+        assert!(!has_pack(&root) && resolve_pack(root.to_str().unwrap()).is_none());
+        std::fs::write(sub.join("pack.idx"), b"x").unwrap();
+        assert_eq!(resolve_pack(root.to_str().unwrap()), Some(sub.clone()));
+        assert_eq!(resolve_pack(&format!("\"{}\"", sub.display())), Some(sub.clone()));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(resolve_pack("").is_none());
     }
 }
 

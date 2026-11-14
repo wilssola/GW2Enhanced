@@ -11,6 +11,10 @@ must all use the same factor (2). Device textures that come in low/high pairs
 (GrTex2d m_file / m_fileHighRes, ids +1..+3 apart, 2x size) must share one factor
 so the engine's UpRes/DownRes "exactly 2x" rule still holds.
 
+Also writes two variant job lists next to the output, for the optional 4x packs:
+  jobs_composite_4x.jsonl  every atlas piece at 4x (4x skin/face/armor for the local player or everyone)
+  jobs_character_4x.jsonl  hair/mane/eyes at 4x for the local player (ids in data/character_4x_ids.txt)
+
 Usage: python build_jobs.py <textures_dir> <out jobs.jsonl>
 """
 import json
@@ -21,7 +25,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from policy import composite_ids_path, max_side  # noqa: E402
+from policy import composite_ids_path, max_side, shipped_ids_path  # noqa: E402
 
 COLOR = {"DXT1", "DXT5", "DXT4", "BC7X"}
 MASK = {"DXTA", "DXTL"}
@@ -36,6 +40,24 @@ def role(fmt: str) -> str | None:
     if fmt in NORMAL:
         return "normal"
     return None  # DXT3/DXTN: not packed yet
+
+
+def write_variants(jobs, out: Path):
+    """The 4x packs: same textures as their 2x jobs (atlas pieces) or the listed hair/mane/eye ids, factor 4."""
+    d = out.parent
+    ids4 = {int(x) for x in shipped_ids_path(d, "character_4x_ids.txt").read_text().split()}
+    for name, pick in (
+        ("composite_4x", lambda j: j["group"] == "composite"),
+        ("character_4x", lambda j: j["group"] == "character_parts" and j["file_id"] in ids4),
+    ):
+        n = 0
+        with open(d / f"{out.stem}_{name}.jsonl", "w") as f:
+            for j in jobs:
+                if pick(j):
+                    v = dict(j, factor=4, group=name)
+                    f.write(json.dumps(v, separators=(",", ":")) + "\n")
+                    n += 1
+        print(name, n)
 
 
 def main():
@@ -119,29 +141,32 @@ def main():
         for m in members:
             dev_jobs[m] = {"file_id": m, "role": role(survey[m]["format"]), "factor": factor, "group": grp}
 
-    # --- terrain tiles (ATEP): the game loads them as CPU textures that go into a terrain atlas, so they are
-    # not "device" textures and the mod does not serve them like those. Only tiles listed in
-    # terrain_seen_ids.txt (collected from the mod's logs) are enlarged.
+    # --- terrain tiles (ATEP): the game loads them as CPU textures, so they are not "device" textures and the
+    # mod serves them from their own list (terrain_ids.txt). Every tile gets a job; the ones listed in
+    # terrain_seen_ids.txt (collected from the mod's logs) come first, so the maps in use are done first.
     terrain_jobs = {}
     seen = d / "terrain_seen_ids.txt"
-    if seen.exists():
-        for i in map(int, seen.read_text().split()):
-            f = survey.get(i)
-            if not f or f["kind"] != "ATEP" or not role(f["format"]):
-                continue
-            side = max(f["width"], f["height"])
-            if side < 128 or side >= max_side("terrain"):
-                continue
-            terrain_jobs[i] = {"file_id": i, "role": role(f["format"]), "factor": min(2 ** int(math.log2(max_side("terrain") / side)), 4), "group": "terrain"}
+    first = [int(x) for x in seen.read_text().split()] if seen.exists() else []
+    atep = sorted(i for i, f in survey.items() if f["kind"] == "ATEP")
+    for i in dict.fromkeys(first + atep):
+        f = survey.get(i)
+        if not f or f["kind"] != "ATEP" or not role(f["format"]):
+            continue
+        side = max(f["width"], f["height"])
+        if side < 128 or side >= max_side("terrain"):
+            continue
+        terrain_jobs[i] = {"file_id": i, "role": role(f["format"]), "factor": min(2 ** int(math.log2(max_side("terrain") / side)), 4), "group": "terrain"}
+    terrain_rank = {i: n for n, i in enumerate(terrain_jobs)}  # seen tiles first, then by id
 
     jobs = list(comp_jobs.values()) + list(dev_jobs.values()) + list(terrain_jobs.values())
-    order = {"composite": 0, "character_parts": 1, "weapon_armor": 2, "world": 3, "effect": 4, "terrain": -1}
-    jobs.sort(key=lambda j: (order[j["group"]], j["file_id"]))
+    order = {"composite": 0, "character_parts": 1, "weapon_armor": 2, "world": 3, "effect": 4, "terrain": 5}
+    jobs.sort(key=lambda j: (order[j["group"]], terrain_rank.get(j["file_id"], j["file_id"])))
     with open(out, "w") as f:
         for j in jobs:
             s = survey[j["file_id"]]
             j["format"], j["width"], j["height"] = s["format"], s["width"], s["height"]
             f.write(json.dumps(j, separators=(",", ":")) + "\n")
+    write_variants(jobs, out)
     c = Counter((j["group"], j["role"]) for j in jobs)
     for k, v in sorted(c.items()):
         print(k, v)

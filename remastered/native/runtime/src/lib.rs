@@ -4,25 +4,31 @@
 //! different proxy name; texture hooks only on the game's own file layer. The
 //! overlay (Shift+Home) uses hudhook on Present like GW2 Translated does. `DllMain` only spawns the init thread (nothing under the loader lock).
 
-mod mem;
+pub mod mem;
 mod atex;
 mod composite;
 mod diag;
 mod fallback;
 mod game;
-mod overlay;
+pub mod overlay;
 mod player_diag;
 pub mod log;
+#[cfg(feature = "standalone")]
 mod proxy;
 mod reload;
 mod resize;
 mod sig;
 
+#[cfg(feature = "standalone")]
 use std::ffi::c_void;
 use std::path::PathBuf;
 
+#[cfg(feature = "standalone")]
 use windows_sys::Win32::Foundation::{HMODULE, TRUE};
-use windows_sys::Win32::System::LibraryLoader::{DisableThreadLibraryCalls, GetModuleFileNameW};
+#[cfg(feature = "standalone")]
+use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
+use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
+#[cfg(feature = "standalone")]
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -37,12 +43,14 @@ fn exe_path() -> Option<PathBuf> {
     (n > 0 && n < buf.len()).then(|| PathBuf::from(String::from_utf16_lossy(&buf[..n])))
 }
 
-static MODULE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static MODULE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
+#[cfg(feature = "standalone")]
 #[global_allocator]
 static ALLOC: mem::CountingAlloc = mem::CountingAlloc;
 
-fn init() {
+/// Starts the texture runtime. Call from a thread that is not under the loader lock.
+pub fn init() {
     let Some(exe) = exe_path() else { return };
     if !exe.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.eq_ignore_ascii_case("Gw2-64.exe")) {
         return;
@@ -59,6 +67,7 @@ fn init() {
             log!("game image at {:#x}", img.base);
             overlay::load_settings(data.join("config.ini"));
             diag::start(&img, &data);
+            diag::guard_start();
             reload::install(&img);
             player_diag::install(&img);
             // Same moment the overlay always hooked at (the pack load used to delay it);
@@ -72,6 +81,7 @@ fn init() {
     }
 }
 
+#[cfg(feature = "standalone")]
 #[unsafe(no_mangle)]
 pub extern "system" fn DllMain(module: HMODULE, reason: u32, _: *mut c_void) -> i32 {
     if reason == DLL_PROCESS_ATTACH {
@@ -82,4 +92,12 @@ pub extern "system" fn DllMain(module: HMODULE, reason: u32, _: *mut c_void) -> 
         });
     }
     TRUE
+}
+
+/// (level, free commit in MB) for the host's Health section: 0 fine, 1 low, 2 critical.
+pub fn commit_status() -> (u8, u64) {
+    (
+        diag::COMMIT_LEVEL.load(std::sync::atomic::Ordering::Relaxed),
+        diag::FREE_COMMIT_MB.load(std::sync::atomic::Ordering::Relaxed),
+    )
 }
