@@ -1,0 +1,47 @@
+[package]
+name = "gw2graphics"
+version = "0.1.0"
+edition = "2024"
+description = "GW2 Enhanced Graphics runtime (wtsapi32.dll proxy)"
+license = "MIT"
+
+[features]
+# Builds the DLL on its own (DllMain and the 78 wtsapi32 proxy exports). The unified mod turns it off.
+default = ["standalone"]
+standalone = []
+
+[lib]
+name = "gw2graphics"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+retour = "0.3"
+hudhook = { version = "=0.9.3", default-features = false, features = ["dx11"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+# Test-only: D3D11 WARP harness for the shader equivalence tests (same version hudhook already pulls).
+[dev-dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+] }

@@ -1,0 +1,6 @@
+# gw2g-draws v1
+# unix=1700000100 frame=90 ctx=0x1f00 pass=3 screen=3440x1440
+# pass_draws=900 captured=9 dropped=0 groups=3 how=classifier
+G draws=3 vs=00003333 ps=00004444 kinds=DrawIndexed:2,DrawIndexedInstanced:1 indices=696 max_idx=300 vertices=0 max_vtx=0 instances=42 vcb=128..128 vcbs=128,0,0,0 pcbs=64,0,0,0 layouts=1 strides=32 texptrs=1 tex=0:BC1_UNORM:256x256m9
+G draws=1 vs=00005555 ps=00006666 kinds=Draw:1 indices=0 max_idx=0 vertices=6 max_vtx=6 instances=1 vcb=0..0 vcbs=0,0,0,0 pcbs=64,0,0,0 layouts=1 strides=0 texptrs=0 tex=-
+G draws=5 vs=00007777 ps=00008888 kinds=DrawIndexed:5 indices=9000 max_idx=3000 vertices=0 max_vtx=0 instances=5 vcb=2048..2048 vcbs=2048,0,0,0 pcbs=64,0,0,0 layouts=1 strides=40 texptrs=15 tex=0:BC3_UNORM:512x512m10,1:BC1_UNORM:512x512m10,2:BC3_UNORM:512x512m10

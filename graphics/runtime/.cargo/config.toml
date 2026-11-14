@@ -1,0 +1,4 @@
+[env]
+# Dear ImGui (imgui-sys) is built by cc without NDEBUG: its IM_ASSERTs pop up an MSVC dialog inside the game (IsMouseDown with button -1 while dragging a slider).
+CXXFLAGS = "/DNDEBUG"
+CFLAGS = "/DNDEBUG"

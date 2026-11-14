@@ -1,0 +1,110 @@
+# Sun shafts (M3): volumetric light as screen-space god rays
+
+Status: implemented, WARP tested (19 tests). Not yet seen in the real game.
+
+## What it does
+
+When bright sky is on the screen (the sun, or a bright cloud, seen through gaps in trees, structures or other
+geometry), light rays radiate from it across the scene and are added to the picture. Everything is estimated
+from the picture: the engine's shadow cascades and sun direction are not known (the world shaders are not in the
+exe). It is a visual effect only; nothing is hidden or revealed.
+
+## Passes (`src/shafts.rs`, `shaders/shafts.hlsl`), all in the mod's own targets
+
+Run once per frame at the light-adjust draw (`datapath::bind_current` calls `shafts::on_light_adjust`). Scene
+colour = pixel shader SRV in slot 0, depth = `ao::depth_resource()`. State is saved and restored with `StateGuard`;
+the module's own SRVs (t10..t18) and sampler (s15) are unbound afterwards.
+
+0. Depth statistics. `ps_dtile` (16x16 RGBA32F): per tile the maximum VALID depth, the count of invalid samples and the
+   sample count (a 2-pixel stride is enough). `ps_dreduce` (1x1): the frame's max valid depth and the invalid fraction
+   (bound as t17 in the following passes).
+1. `ps_mask` (1/4 size, RGBA16F): 4x4 taps per quarter pixel. A tap is sky when its linear depth is invalid
+   (<= 0, NaN, huge), OR, when fewer than 2 % of the depth samples of the frame are invalid, when `depth >= 0.98 *
+   max depth` (the sky is a finite far plane, not invalid depth). The far-plane rule is off for a frame with many
+   invalid samples: a flat scene with an invalid-depth sky would otherwise turn its farthest ground into sky.
+   Constants `FAR_RATIO`, `MAX_INVALID_FOR_FAR` (`shafts.rs`, cb c3). Emitter = sky colour (linear = encoded^2, capped at 8) times `smoothstep(0.25, 0.7, luminance)`:
+   only bright sky emits, geometry is the occluder (black). Alpha = sky fraction.
+2. `ps_reduce_a` (16x16, three RGBA32F targets): per tile sums of the weight `w = lum^3` (the sun core dominates the
+   centroid): `w*uv`, `w`, `w*|uv|^2`, `w*rgb`, luminance, sky fraction.
+3. `ps_reduce_b` (1x1, two RGBA32F targets): the sun state. Position = weighted centroid; tint = weighted colour
+   at unit luminance; confidence = bright-sky amount x concentration (a uniform glow has none) x believable sky
+   share (all "sky" means the depth is unusable) x a small edge penalty. The state texture also keeps the sky fraction
+   (s0.w) and the frame's max depth (s1.w). The state is blended with the previous
+   one (ping-pong pair of 1x1 textures): confidence rises 20 % per frame, falls 10 % per frame, position and tint
+   follow at 25 % per frame, and they snap to the measurement only when there was no sun before. All on the GPU,
+   no CPU read-back in the frame path.
+4. `ps_shafts` (1/4 size, RGBA16F): radial blur from each pixel towards the sun (56 samples, decay 0.965 per
+   sample, per-pixel interleaved-gradient jitter, linear clamp sampler), length = `shafts_length` x distance to the
+   sun. Output rgb = luminance x sun tint x confidence x 1.5, in linear units. Alpha = the sky share of the pixel (used by debug level 4 only).
+
+`light_adjust_hdr.hlsl` (one block, after `lin = c.rgb*c.rgb`, i.e. after the AO factor and before the exposure remap):
+`lin += shafts(t9) * hp.x(b8) * (1 - smoothstep(0.35, 1.0, max channel of lin))`. Pixels that are already bright
+get less and nothing at linear 1.0, so lit surfaces do not wash out. Guarded by `hp.x > 0`: unbound t9/b8 read zero
+= off, identical to the original (pinned by a test, also with NaN in t9).
+
+The overlay status line reads the 1x1 state from a ring of three staging textures with `Map(DO_NOT_WAIT)`; it never
+waits (the value is 2 to 3 frames old) and is only for display.
+
+## Parameters (config.ini, overlay sliders, applied live)
+
+| key | range | default | meaning |
+|---|---|---|---|
+| `shafts_strength` | 0..2 | 0.6 | `b8.x`. 0 turns the feature off completely: no passes, the depth consumer (`ao::DEPTH_FOR_SHAFTS`) is released, t9/b8 are unbound |
+| `shafts_length` | 0.3..1.0 | 0.7 | fraction of the way to the sun that each ray samples |
+
+Debug view (overlay, level 1) draws a magenta cross at the estimated sun position in the shaft texture.
+Overlay line: `Sun shafts: sun found at (u, v), confidence c, sky p %, max depth D` / `sun not found (no bright sky) ...` /
+`skipped: ...`.
+
+### Debug sun (level 4) and depth diagnostics
+
+* Overlay checkbox "Debug sun" (`resolve::set_debug_sun`; `resolve::debug_level()` returns 4; 5 = SSR reflectivity wins,
+  4 beats 3/2/1). The light-adjust shader tints the sky cyan (alpha of t9), the shaft light yellow, and the shafts pass
+  draws the magenta cross (levels 1 and 4). The shafts must be on (strength > 0): the tint reads t9. While on, the log
+  gets `shafts: sun (u, v) confidence c, sky fraction f, max depth D` at most once per second. Not saved in the config.
+* Overlay button "Log depth stats" (`src/depthstats.rs`): at the next light-adjust draw the linear depth and the scene
+  colour are read back once (a one-off stall) and a `depthstats:` block is written to the log: counts of depth <= 0,
+  NaN/inf and > 1e30, min/max, percentiles 1/5/25/50/75/95/99, a 64-bin log2 histogram, the share of pixels at
+  >= 0.99 / 0.9 of the max, the average scene colour and alpha of the far and of the invalid pixels, and a 9x5 grid
+  of (depth, rgb, alpha) samples. Use it outdoors with visible sky, indoors, and looking at the sun to see how the
+  engine encodes the sky.
+
+## Tuning (constants in `shafts.rs` / `shafts.hlsl`)
+
+* Emitter threshold: `smoothstep(0.25, 0.7, lum)` in `ps_mask`. Lower it for sunsets, raise it if grey cloud glows.
+* Rays too strong: lower `GAIN` (1.5) in the shader or the default strength. Too short/long: `shafts_length`, `DECAY`.
+* Sun jumps or lags: `CONF_RISE`, `CONF_FALL`, `FOLLOW`.
+* Confidence thresholds are in `ps_reduce_b` (`smoothstep(0.0005, 0.01, meanlum)`, spread 0.3..0.6, sky share 0.85..0.97).
+
+Logs: `shafts: configured`, `shafts: shaders compiled`, `shafts: first frame applied`, and one line for each reason it
+skips (still compiling, depth not available, scene colour not usable, targets could not be set up).
+
+## Limits
+
+* The sun is the centroid of the bright sky that is ON screen. A sun just outside the picture is not seen (its sky
+  glow may be); a sun behind the camera gives nothing. There is no estimate of an off-screen position.
+* Several suns / very large bright clouds merge into one centroid.
+* Rays are added to everything, including the sky itself (sky is bright, so the bright-pixel falloff removes most of it).
+* The quarter-size result is sampled with the game's `s0` sampler in the light-adjust shader.
+
+## Tested on WARP (`src/shafts_tests.rs`, `src/shafts.rs`, `src/config.rs`)
+
+Compile of all entries; rays between columns (the cone through the gap is about 2.5x the shadowed pixels, falls off
+with distance from the sun and to both sides); ray length parameter; no sky = nothing; dim sky = nothing; all-sky = no
+confidence; the 1x1 estimate lands on the blob (within 0.04) and glides when it moves (no step above 30 % of the
+jump); confidence fades without pops and reaches exactly 0; debug cross; state/refcounts/ignore flag restored and
+t10..t16/s15 left unbound, t9 untouched; resize recreates the targets (odd sizes round up); lazy read-back works; depth statistics (max, invalid fraction, garbage depth); finite far-plane sky gives shafts;
+flat bright ground with an invalid-depth sky is not sky; sky fraction and max depth in the state; alpha = sky share;
+debug level 4 tints (cyan sky, yellow light, nothing when unbound); `resolve::debug_level` precedence; the depth
+diagnostic maths and its read-back on WARP (`src/depthstats.rs`);
+light-adjust identity with strength 0, with NaN in t9, and with t9 unbound; bright pixels spared; config
+parse/clamp/save/roundtrip; depth consumer bit set/released.
+
+## Only verifiable in the real game
+
+* That the depth target still holds the frame's depth at the light-adjust draw (it is captured at the depth pass and
+  read later; the AO reads it earlier, at the effects pass). If it does not, the log says
+  `shafts: skipped, the linear depth ...` or the sky detection is wrong (the all-sky guard then keeps confidence low).
+* Look, strength and thresholds on real skies (sunset, overcast, fog), and the cost at 3440x1440 (the passes are
+  at quarter size, the reductions are small; expected well under 0.5 ms).
+* That `s0` of the light-adjust draw filters the quarter-size texture acceptably.
