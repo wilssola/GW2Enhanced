@@ -13,7 +13,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
-use version::records::{self, Decrypted, Discovered, Translation};
+use gw2translated::records::{self, Decrypted, Discovered, Translation};
 
 /// The records of a game file; a missing one only warns.
 fn game_file<T: serde::de::DeserializeOwned>(path: &Path) -> Vec<T> {

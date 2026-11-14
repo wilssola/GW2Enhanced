@@ -16,9 +16,10 @@ pub mod layout;
 pub mod live;
 pub mod log;
 mod net;
-mod overlay;
+pub mod overlay;
 pub mod paths;
 pub mod procstats;
+#[cfg(feature = "standalone")]
 mod proxy;
 pub mod rc4;
 pub mod records;
@@ -29,13 +30,18 @@ mod ui_text;
 mod upload;
 mod web;
 
+#[cfg(feature = "standalone")]
 use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(feature = "standalone")]
 use windows_sys::Win32::Foundation::{HMODULE, TRUE};
-use windows_sys::Win32::System::LibraryLoader::{DisableThreadLibraryCalls, GetModuleFileNameW};
+#[cfg(feature = "standalone")]
+use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
+use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
+#[cfg(feature = "standalone")]
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
 use config::Config;
@@ -49,7 +55,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 static DLL_MARKER: [u8; 24] = *b"GW2TRANSLATED-DLL-MARKER";
 
 /// This DLL's module handle (the overlay needs it).
-static MODULE: AtomicUsize = AtomicUsize::new(0);
+pub static MODULE: AtomicUsize = AtomicUsize::new(0);
 
 /// Global state, filled in exactly once by the initialization thread.
 pub struct State {
@@ -68,7 +74,7 @@ fn exe_path() -> Option<PathBuf> {
     (n > 0 && n < buf.len()).then(|| PathBuf::from(String::from_utf16_lossy(&buf[..n])))
 }
 
-fn init() {
+pub fn init() {
     let Some(exe) = exe_path() else { return };
     // Other processes in the folder (tools, crash reporter) only get the forwarding.
     let is_game = exe
@@ -190,6 +196,7 @@ fn init() {
 /// # Safety
 ///
 /// Called only by the Windows loader, with a valid module handle.
+#[cfg(feature = "standalone")]
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn DllMain(module: HMODULE, reason: u32, _reserved: *mut c_void) -> i32 {
     if reason == DLL_PROCESS_ATTACH {

@@ -7,7 +7,7 @@
 fn main() {
     let path = std::env::args().nth(1).expect("path to Gw2-64.exe");
     let exe = std::fs::read(&path).expect("could not read the exe");
-    let checks = version::layout::check_exe(&exe);
+    let checks = gw2translated::layout::check_exe(&exe);
     let mut bad = 0;
     for c in &checks {
         match &c.result {

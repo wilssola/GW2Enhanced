@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use version::records::{self, Decrypted};
+use gw2translated::records::{self, Decrypted};
 
 fn main() {
     let mut args = std::env::args().skip(1);

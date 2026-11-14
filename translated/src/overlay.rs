@@ -38,7 +38,15 @@ const GPU_REFRESH: Duration = Duration::from_secs(5);
 static VISIBLE: AtomicBool = AtomicBool::new(false);
 static INVITING: AtomicBool = AtomicBool::new(false);
 
-struct Overlay {
+/// The window or the invitation is on screen (the host then draws the cursor and passes input through).
+pub fn is_visible() -> bool {
+    VISIBLE.load(Ordering::Relaxed) || INVITING.load(Ordering::Relaxed)
+}
+
+/// Set when the panel asks to be closed (the unified overlay owns the window).
+pub static HIDE_HOST: AtomicBool = AtomicBool::new(false);
+
+pub struct Overlay {
     key: i32,
     key_down: bool,
     started: Instant,
@@ -60,7 +68,7 @@ impl Overlay {
         text(&self.language, t)
     }
 
-    fn poll_key(&mut self) {
+    pub fn poll_key(&mut self) {
         let down = unsafe { GetAsyncKeyState(self.key) } as u16 & 0x8000 != 0;
         if down && !self.key_down && game_has_focus() {
             VISIBLE.fetch_xor(true, Ordering::Relaxed);
@@ -83,7 +91,7 @@ impl Overlay {
     }
 
     /// First-time setup, centered, until completed or skipped.
-    fn wizard(&mut self, ui: &Ui) {
+    pub fn wizard(&mut self, ui: &Ui) {
         let show = (self.wizard_again || !runtime::onboarded()) && self.started.elapsed() >= INVITE_DELAY;
         INVITING.store(show, Ordering::Relaxed);
         if !show {
@@ -240,60 +248,64 @@ impl Overlay {
         ui.text_disabled(self.t(T::BubbleWaitHint));
     }
 
+    /// The panel's content, without a window around it (the unified overlay puts it in a tab).
+    pub fn body(&mut self, ui: &Ui) {
+        self.language_picker(ui);
+
+        ui.separator();
+        ui.text(self.t(T::Options));
+        self.flag(ui, Flag::Translate, T::Translate);
+        self.flag(ui, Flag::LiveTranslate, T::LiveTranslate);
+        self.flag(ui, Flag::WebTranslate, T::WebTranslate);
+        let mut collect = runtime::get(Flag::Autocollect) && runtime::get(Flag::SeedDecode);
+        if ui.checkbox(self.t(T::Collect), &mut collect) {
+            runtime::set(Flag::Autocollect, collect);
+            runtime::set(Flag::SeedDecode, collect);
+        }
+        let mut contribute = runtime::contribute() == Contribute::Yes;
+        if ui.checkbox(self.t(T::Contribute), &mut contribute) {
+            runtime::set_contribute(contribute);
+        }
+        ui.text_disabled(self.t(T::ContributeHint));
+
+        ui.separator();
+        if ui.collapsing_header(self.t(T::Performance), hudhook::imgui::TreeNodeFlags::empty()) {
+            self.device_picker(ui);
+            ui.spacing();
+            self.bubble_wait(ui);
+        }
+
+        ui.separator();
+        if ui.button(self.t(T::OnboardAgain)) {
+            self.wizard_again = true;
+            self.step = 0;
+            VISIBLE.store(false, Ordering::Relaxed);
+        HIDE_HOST.store(true, Ordering::Relaxed);
+        }
+        if ui.button(self.t(T::RefreshNow)) {
+            refresh::request_now();
+        }
+
+        ui.separator();
+        ui.text(self.t(T::Status));
+        let (seen, translated) = crate::hooks::stats();
+        ui.text(format!("{seen} / {translated}  {}", self.t(T::StatusTexts)));
+        match live::stats() {
+            Some((screen, ahead, queued)) => {
+                ui.text(format!("{screen} / {ahead} / {queued}  {}", self.t(T::StatusLive)))
+            }
+            None => ui.text_disabled(self.t(T::StatusLiveOff)),
+        }
+        ui.text_disabled(self.t(T::CloseHint));
+    }
+
     fn main_window(&mut self, ui: &Ui) {
         let mut open = true;
         ui.window(format!("{}  v{}###gw2translated", self.t(T::Title), crate::VERSION))
             .size([460.0, 0.0], Condition::FirstUseEver)
             .opened(&mut open)
             .flags(WindowFlags::NO_COLLAPSE | WindowFlags::ALWAYS_AUTO_RESIZE)
-            .build(|| {
-                self.language_picker(ui);
-
-                ui.separator();
-                ui.text(self.t(T::Options));
-                self.flag(ui, Flag::Translate, T::Translate);
-                self.flag(ui, Flag::LiveTranslate, T::LiveTranslate);
-                self.flag(ui, Flag::WebTranslate, T::WebTranslate);
-                let mut collect = runtime::get(Flag::Autocollect) && runtime::get(Flag::SeedDecode);
-                if ui.checkbox(self.t(T::Collect), &mut collect) {
-                    runtime::set(Flag::Autocollect, collect);
-                    runtime::set(Flag::SeedDecode, collect);
-                }
-                let mut contribute = runtime::contribute() == Contribute::Yes;
-                if ui.checkbox(self.t(T::Contribute), &mut contribute) {
-                    runtime::set_contribute(contribute);
-                }
-                ui.text_disabled(self.t(T::ContributeHint));
-
-                ui.separator();
-                if ui.collapsing_header(self.t(T::Performance), hudhook::imgui::TreeNodeFlags::empty()) {
-                    self.device_picker(ui);
-                    ui.spacing();
-                    self.bubble_wait(ui);
-                }
-
-                ui.separator();
-                if ui.button(self.t(T::OnboardAgain)) {
-                    self.wizard_again = true;
-                    self.step = 0;
-                    VISIBLE.store(false, Ordering::Relaxed);
-                }
-                if ui.button(self.t(T::RefreshNow)) {
-                    refresh::request_now();
-                }
-
-                ui.separator();
-                ui.text(self.t(T::Status));
-                let (seen, translated) = crate::hooks::stats();
-                ui.text(format!("{seen} / {translated}  {}", self.t(T::StatusTexts)));
-                match live::stats() {
-                    Some((screen, ahead, queued)) => {
-                        ui.text(format!("{screen} / {ahead} / {queued}  {}", self.t(T::StatusLive)))
-                    }
-                    None => ui.text_disabled(self.t(T::StatusLiveOff)),
-                }
-                ui.text_disabled(self.t(T::CloseHint));
-            });
+            .build(|| self.body(ui));
         if !open {
             VISIBLE.store(false, Ordering::Relaxed);
         }
@@ -363,6 +375,9 @@ fn available_languages(languages_dir: &PathBuf) -> Vec<String> {
     out
 }
 
+/// Panel waiting for the unified overlay to pick it up (when the DLL is not standalone).
+pub static PANEL: std::sync::Mutex<Option<Overlay>> = std::sync::Mutex::new(None);
+
 pub fn install(module: usize, language: &str, languages_dir: PathBuf, key: u32) {
     let mut languages = available_languages(&languages_dir);
     if !languages.iter().any(|l| l == language) {
@@ -382,6 +397,11 @@ pub fn install(module: usize, language: &str, languages_dir: PathBuf, key: u32) 
         gpus: Vec::new(),
         gpus_read: None,
     };
+    if !cfg!(feature = "standalone") {
+        *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(overlay);
+        log!("overlay: panel ready for the unified overlay");
+        return;
+    }
     let hooks = Hudhook::builder()
         .with::<ImguiDx11Hooks>(overlay)
         .with_hmodule(HINSTANCE(module as *mut _))

@@ -1,9 +1,8 @@
 // Translates the text of the game's web pages (Trading Post, Gem Store, Wizard's Vault).
 //
-// Runs inside the page. Called with {"en": "translation"} once per chunk: the first holds the
-// pages' own texts, the second (with `complete` set) the game dictionary. Texts still without a
-// translation after that are reported to the DLL through the console, which translates them on
-// the player's PC and sends them back through `add`. Only text nodes and a few attributes are
+// Runs inside the page. Called with {"en": "translation"} holding the pages' own texts. Any
+// other text is reported to the DLL through the console; the DLL answers from the game dictionary
+// or translates it on the player's PC, and sends it back through `add`. Only text nodes and a few attributes are
 // rewritten: values typed by the player and anything the page reads from its own data stay as
 // they are. The pages redraw from their own state and only write a text node when it changed, so a
 // translated node stays translated; when they do write English again, the observer catches it.
@@ -27,6 +26,8 @@
   // Prefix of the console messages that carry missing texts (the DLL reads and hides them).
   const MARK = "\u0001gw2t-missing:";
   const MAX_REPORTED = 5000;
+  // Texts per console message (the DLL takes at most 200).
+  const PER_MESSAGE = 100;
   const MAX_LENGTH = 2000;
   const missing = new Set();
   const reported = new Set();
@@ -43,13 +44,15 @@
       }
     }
     missing.clear();
-    if (batch.length) console.debug(MARK + JSON.stringify(batch));
+    for (let i = 0; i < batch.length; i += PER_MESSAGE) {
+      console.debug(MARK + JSON.stringify(batch.slice(i, i + PER_MESSAGE)));
+    }
   }
 
   function report(key) {
     if (reported.has(key) || key.length > MAX_LENGTH) return;
     missing.add(key);
-    if (ready && !timer) timer = setTimeout(flush, 300);
+    if (ready && !timer) timer = setTimeout(flush, 50);
   }
 
   function compile(en, tr) {
@@ -150,7 +153,7 @@
       if (typeof document !== "undefined" && document.documentElement) walk(document.documentElement);
       if (last && !ready) {
         ready = true;
-        if (missing.size && !timer) timer = setTimeout(flush, 300);
+        if (missing.size && !timer) timer = setTimeout(flush, 50);
       }
     },
   };

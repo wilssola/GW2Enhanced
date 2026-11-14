@@ -5,13 +5,16 @@
 //! through the game's text system. The game's process is CEF's browser
 //! process: it creates each page with `cef_browser_host_create_browser`. The DLL
 //! hooks that call, wraps the client's load handler and, when a page finishes
-//! loading, runs `web_inject.js` in it.
+//! loading, runs `web_inject.js` in it with `web.jsonl` and `web_local.jsonl`
+//! (a few dozen KB).
 //!
-//! Whatever is still missing after `web.jsonl` and the dictionary, the script
-//! reports through the page console (the DLL wraps the client's display
-//! handler to read it): the local translator translates it, the result goes to
-//! `web_local.jsonl` (never uploaded) and back to the page. A page that
-//! changes needs no new release of the mod.
+//! Whatever else the page shows, the script reports through the page console
+//! (the DLL wraps the client's display handler to read it). The DLL answers at
+//! once from the game dictionary; what is not there goes to the local
+//! translator, whose result is written to `web_local.jsonl` (never uploaded)
+//! and sent back to the page. The dictionary itself never goes into a page:
+//! at ~20 MB of script it held the page up for seconds. A page that changes
+//! needs no new release of the mod.
 //!
 //! Struct offsets come from CEF's C headers for the version the game ships
 //! (branch 5060). A different CEF version turns this feature off.
@@ -32,15 +35,21 @@ use crate::{live, log, records, runtime};
 const SCRIPT: &str = include_str!("web_inject.js");
 /// The CEF major version these offsets belong to.
 const CEF_MAJOR: i32 = 103;
-/// Dictionary texts longer than this stay out of the pages (labels and item
-/// names are short; the whole dictionary would not be worth the size).
-const MAX_DICTIONARY_CHARS: usize = 64;
 const LOAD_POLL: Duration = Duration::from_millis(25);
 /// Prefix of the console messages with the texts a page is missing (`web_inject.js`).
 const MARK: &str = "\u{1}gw2t-missing:";
+// Limits on what a page may ask the translator for. Any page in the game's browser can
+// write to the console, so they are enforced here, not trusted to the script.
+/// Longest console message read (UTF-16 units); longer ones are dropped.
+const MAX_MESSAGE_UNITS: usize = 256 * 1024;
+/// Texts taken from one message.
+const MAX_TEXTS_PER_MESSAGE: usize = 200;
+/// Longest text sent to the translator.
+const MAX_TEXT_CHARS: usize = 2000;
+/// Most texts in `web_local.jsonl` plus those requested this session.
+const MAX_WEB_TEXTS: usize = 100_000;
 
 // `size` (first field of every CEF struct) and slot offsets, from the C headers.
-const REF_ADD: usize = 8;
 const REF_RELEASE: usize = 16;
 const CLIENT_SIZE: usize = 184;
 const CLIENT_GET_DISPLAY_HANDLER: usize = 72;
@@ -77,18 +86,10 @@ struct CefString {
     dtor: usize,
 }
 
-/// A CEF object pointer, sent to the thread that delivers the dictionary.
-struct Frame(*mut u8);
-unsafe impl Send for Frame {}
-
-/// Scripts ready to run in a page.
-struct Payload {
-    texts: Vec<u16>,
-    dictionary: Vec<u16>,
-}
-
 static CREATE: OnceLock<GenericDetour<CreateBrowserFn>> = OnceLock::new();
-static PAYLOAD: OnceLock<Payload> = OnceLock::new();
+/// The script call with the page texts, ready to run.
+static PAYLOAD: OnceLock<Vec<u16>> = OnceLock::new();
+static DICT: OnceLock<&'static Dict> = OnceLock::new();
 /// Original `get_load_handler` of each client, by client address.
 static CLIENTS: Mutex<Option<HashMap<usize, usize>>> = Mutex::new(None);
 /// Original `on_load_end` of each load handler, by handler address.
@@ -105,6 +106,8 @@ static OWN_DISPLAY_HANDLER: OnceLock<usize> = OnceLock::new();
 static BROWSERS: Mutex<Vec<(i32, usize)>> = Mutex::new(Vec::new());
 /// Web page texts translated in this session (for pages loaded again).
 static SESSION: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+/// Texts in `web_local.jsonl` plus texts requested this session (see `MAX_WEB_TEXTS`).
+static WEB_TEXTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 unsafe fn slot(object: *const u8, offset: usize) -> usize {
     unsafe { object.add(offset).cast::<usize>().read() }
@@ -148,28 +151,27 @@ fn add_call<K: serde::Serialize + Eq + std::hash::Hash, V: serde::Serialize>(ent
     format!("window.__gw2t && window.__gw2t.add({});", entries_literal(entries))
 }
 
-/// Whether a dictionary entry can be shown in a page: short and with no game markup.
-fn fits_a_page(en: &str, tr: &str) -> bool {
-    en.chars().count() <= MAX_DICTIONARY_CHARS
-        && en.chars().any(char::is_alphabetic)
-        && ![en, tr].iter().any(|t| t.contains(['<', '%', '[']))
+/// Whether a translation can be shown in a page: no game markup.
+fn fits_a_page(tr: &str) -> bool {
+    !tr.contains(['<', '%', '['])
+}
+
+/// A translation the game already has for `text`: the dictionary, then this PC's.
+fn known_translation(dict: &Dict, text: &str) -> Option<String> {
+    dict.get(text)
+        .map(str::to_owned)
+        .or_else(|| live::get(text))
+        .filter(|tr| fits_a_page(tr) && tr != text)
 }
 
 /// `web` (written for the pages) wins over `web_local` (translated on this PC).
-fn build_payload(web: &[records::Translation], web_local: &[records::Translation], dict: &Dict) -> Payload {
+fn build_payload(web: &[records::Translation], web_local: &[records::Translation]) -> Vec<u16> {
     let texts: HashMap<&str, &str> = web_local
         .iter()
         .chain(web)
         .map(|t| (t.en.as_str(), t.tr.as_str()))
         .collect();
-    let dictionary: HashMap<&str, &str> = dict
-        .iter()
-        .filter(|(en, tr)| fits_a_page(en, tr) && !texts.contains_key(*en))
-        .collect();
-    Payload {
-        texts: utf16(&script_call(&texts, false)),
-        dictionary: utf16(&script_call(&dictionary, true)),
-    }
+    utf16(&script_call(&texts, true))
 }
 
 unsafe fn execute(frame: *mut u8, code: &[u16]) {
@@ -187,8 +189,7 @@ unsafe fn execute(frame: *mut u8, code: &[u16]) {
     unsafe { run(frame, &code, &url, 0) };
 }
 
-/// Runs the scripts in a page that finished loading. The dictionary goes on
-/// another thread: this one is the game's own.
+/// Runs the script in a page that finished loading.
 unsafe fn inject(frame: *mut u8) {
     if frame.is_null() || !enabled() {
         return;
@@ -202,23 +203,11 @@ unsafe fn inject(frame: *mut u8) {
     if unsafe { is_main(frame) } == 0 {
         return;
     }
-    unsafe { execute(frame, &payload.texts) };
-    let add_ref: RefFn = unsafe { std::mem::transmute(slot(frame, REF_ADD)) };
-    unsafe { add_ref(frame) };
-    let frame = Frame(frame);
-    let _ = std::thread::Builder::new()
-        .name("gw2translated-web".into())
-        .spawn(move || {
-            let frame = frame;
-            let session = SESSION.lock().ok().and_then(|s| s.as_ref().map(add_call));
-            unsafe {
-                if let Some(session) = session {
-                    execute(frame.0, &utf16(&session));
-                }
-                execute(frame.0, &payload.dictionary);
-                release(frame.0);
-            }
-        });
+    unsafe { execute(frame, payload) };
+    let session = SESSION.lock().ok().and_then(|s| s.as_ref().map(add_call));
+    if let Some(session) = session {
+        unsafe { execute(frame, &utf16(&session)) };
+    }
 }
 
 unsafe fn release(object: *mut u8) {
@@ -232,21 +221,52 @@ fn enabled() -> bool {
     runtime::get(runtime::Flag::Translate) && runtime::get(runtime::Flag::WebTranslate)
 }
 
-unsafe fn read_string(s: *const CefString) -> String {
+/// The string, or `None` when it is longer than `MAX_MESSAGE_UNITS`.
+unsafe fn read_string(s: *const CefString) -> Option<String> {
     if s.is_null() {
-        return String::new();
+        return Some(String::new());
     }
     let s = unsafe { &*s };
     if s.text.is_null() || s.length == 0 {
-        return String::new();
+        return Some(String::new());
     }
-    String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(s.text, s.length) })
+    let units = unsafe { std::slice::from_raw_parts(s.text, s.length.min(MAX_MESSAGE_UNITS + 1)) };
+    if s.length > MAX_MESSAGE_UNITS {
+        // Still ours to hide when it carries the mark.
+        let mark: Vec<u16> = MARK.encode_utf16().collect();
+        return units.starts_with(&mark).then(|| MARK.to_owned());
+    }
+    Some(String::from_utf16_lossy(units))
 }
 
 /// The texts in a message from `web_inject.js`; `None` for any other message.
 fn missing_texts(message: &str) -> Option<Vec<String>> {
     let list = message.strip_prefix(MARK)?;
-    Some(serde_json::from_str(list).unwrap_or_default())
+    let texts: Vec<String> = serde_json::from_str(list).unwrap_or_default();
+    Some(
+        texts
+            .into_iter()
+            .filter(|t| t.chars().count() <= MAX_TEXT_CHARS && t.chars().any(char::is_alphabetic))
+            .take(MAX_TEXTS_PER_MESSAGE)
+            .collect(),
+    )
+}
+
+/// Takes room for `wanted` more texts under `MAX_WEB_TEXTS`; returns how many fit.
+fn take_room(wanted: usize) -> usize {
+    use std::sync::atomic::Ordering;
+    let mut granted = 0;
+    let _ = WEB_TEXTS.try_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
+        granted = wanted.min(MAX_WEB_TEXTS.saturating_sub(used));
+        Some(used + granted)
+    });
+    if granted < wanted {
+        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !LOGGED.swap(true, Ordering::Relaxed) {
+            log!("web: limit of {MAX_WEB_TEXTS} page texts reached; the rest stays untranslated");
+        }
+    }
+    granted
 }
 
 /// Keeps a reference to `browser` (owned by the caller of this) to send it translations.
@@ -269,6 +289,18 @@ unsafe fn remember(browser: *mut u8) {
         unsafe { release(browser) };
     } else {
         browsers.push((id, browser as usize));
+    }
+}
+
+/// Runs `code` in the main frame of `browser`.
+unsafe fn run_in(browser: *mut u8, code: &[u16]) {
+    let main_frame: GetFrameFn = unsafe { std::mem::transmute(slot(browser, BROWSER_GET_MAIN_FRAME)) };
+    let frame = unsafe { main_frame(browser) };
+    if !frame.is_null() {
+        unsafe {
+            execute(frame, code);
+            release(frame);
+        }
     }
 }
 
@@ -295,14 +327,7 @@ pub fn deliver(pairs: &[(String, String)]) {
             unsafe { release(browser) };
             return false;
         }
-        let main_frame: GetFrameFn = unsafe { std::mem::transmute(slot(browser, BROWSER_GET_MAIN_FRAME)) };
-        let frame = unsafe { main_frame(browser) };
-        if !frame.is_null() {
-            unsafe {
-                execute(frame, &code);
-                release(frame);
-            }
-        }
+        unsafe { run_in(browser, &code) };
         true
     });
 }
@@ -316,9 +341,23 @@ unsafe extern "system" fn on_console_message(
     line: i32,
 ) -> i32 {
     let ours = std::panic::catch_unwind(|| {
-        let texts = missing_texts(&unsafe { read_string(message) })?;
-        if enabled() {
-            for text in &texts {
+        let texts = unsafe { read_string(message) }.and_then(|m| missing_texts(&m))?;
+        if enabled() && !browser.is_null() && unsafe { slot(browser, 0) } == BROWSER_SIZE {
+            let mut found = HashMap::new();
+            let mut missing = Vec::new();
+            for text in texts {
+                match DICT.get().and_then(|d| known_translation(d, &text)) {
+                    Some(tr) => {
+                        found.insert(text, tr);
+                    }
+                    None => missing.push(text),
+                }
+            }
+            if !found.is_empty() {
+                unsafe { run_in(browser, &utf16(&add_call(&found))) };
+            }
+            let room = take_room(missing.len());
+            for text in missing.iter().take(room) {
                 live::request_web(text);
             }
             unsafe { remember(browser) };
@@ -568,13 +607,14 @@ pub fn install(web_file: PathBuf, web_local_file: PathBuf, dict: &'static Dict) 
             let web_local = records::read::<records::Translation>(&web_local_file)
                 .map(|r| r.records)
                 .unwrap_or_default();
-            let payload = build_payload(&web, &web_local, dict);
+            WEB_TEXTS.fetch_add(web_local.len(), std::sync::atomic::Ordering::Relaxed);
+            let _ = DICT.set(dict);
+            let payload = build_payload(&web, &web_local);
             log!(
-                "web: {} page texts, {} translated on this PC, scripts of {} and {} KB",
+                "web: {} page texts, {} translated on this PC, script of {} KB",
                 web.len(),
                 web_local.len(),
-                payload.texts.len() / 1024,
-                payload.dictionary.len() / 1024
+                payload.len() * 2 / 1024
             );
             let _ = PAYLOAD.set(payload);
             hook_cef();
@@ -608,12 +648,26 @@ mod tests {
     }
 
     #[test]
-    fn only_short_plain_texts_go_to_a_page() {
-        assert!(fits_a_page("Mystic Coin", "Moeda Mística"));
-        assert!(!fits_a_page("<c=@task>Mystic</c>", "Mística"));
-        assert!(!fits_a_page("%str1% Coin", "Moeda %str1%"));
-        assert!(!fits_a_page("12345", "12345"));
-        assert!(!fits_a_page(&"long ".repeat(20), "x"));
+    fn pages_get_dictionary_texts_without_markup() {
+        let mut dict = Dict::default();
+        dict.add(
+            [
+                ("Mystic Coin", "Moeda Mística"),
+                ("Coin", "<c=@task>Moeda</c>"),
+                ("Same", "Same"),
+            ]
+            .map(|(en, tr)| records::Translation {
+                en: en.into(),
+                tr: tr.into(),
+                src: None,
+                ids: Vec::new(),
+            }),
+            true,
+        );
+        assert_eq!(known_translation(&dict, "Mystic Coin").as_deref(), Some("Moeda Mística"));
+        assert_eq!(known_translation(&dict, "Coin"), None);
+        assert_eq!(known_translation(&dict, "Same"), None);
+        assert_eq!(known_translation(&dict, "Unknown"), None);
     }
 
     #[test]
@@ -673,6 +727,24 @@ mod tests {
             return;
         };
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    #[test]
+    fn page_messages_are_limited() {
+        assert_eq!(missing_texts("other"), None);
+        assert_eq!(missing_texts(&format!("{MARK}not json")), Some(vec![]));
+        let many: Vec<String> = (0..500).map(|i| format!("text {i}")).collect();
+        let msg = format!("{MARK}{}", serde_json::to_string(&many).unwrap());
+        assert_eq!(missing_texts(&msg).unwrap().len(), MAX_TEXTS_PER_MESSAGE);
+        let odd = vec!["123".to_owned(), "x".repeat(MAX_TEXT_CHARS + 1), "Ok".to_owned()];
+        let msg = format!("{MARK}{}", serde_json::to_string(&odd).unwrap());
+        assert_eq!(missing_texts(&msg), Some(vec!["Ok".to_owned()]));
+        let long: Vec<u16> = format!("{MARK}{}", "a".repeat(MAX_MESSAGE_UNITS)).encode_utf16().collect();
+        let s = CefString { text: long.as_ptr(), length: long.len(), dtor: 0 };
+        assert_eq!(unsafe { read_string(&s) }.as_deref(), Some(MARK));
+        WEB_TEXTS.store(MAX_WEB_TEXTS - 3, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(take_room(10), 3);
+        assert_eq!(take_room(1), 0);
     }
 
     /// CEF's string, as its C API lays it out.

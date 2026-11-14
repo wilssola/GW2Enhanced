@@ -9,8 +9,13 @@ edition = "2024"
 description = "Plug-and-play translation of Guild Wars 2 (version.dll proxy)"
 license = "MIT"
 
+[features]
+# Builds the DLL on its own (DllMain and version.dll proxy exports). The unified mod turns it off.
+default = ["standalone"]
+standalone = []
+
 [lib]
-name = "version"
+name = "gw2translated"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

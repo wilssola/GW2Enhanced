@@ -16,9 +16,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use version::dict::{NULL_MARKER, unusable};
-use version::rc4;
-use version::records::{self, Decrypted, Translation};
+use gw2translated::dict::{NULL_MARKER, unusable};
+use gw2translated::rc4;
+use gw2translated::records::{self, Decrypted, Translation};
 
 const PER_FILE: u32 = 1024;
 

@@ -13,8 +13,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use version::dict::{markup_signature, unusable};
-use version::records::{self, Translation};
+use gw2translated::dict::{markup_signature, unusable};
+use gw2translated::records::{self, Translation};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
