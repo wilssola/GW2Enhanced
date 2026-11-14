@@ -1,0 +1,8 @@
+# GW2 Enhanced: one mod, three features.
+#
+# The feature crates still keep their own workspaces/locks while the merge is in progress (they build standalone);
+# only the shared pieces live here. Excluded folders are separate workspaces.
+[workspace]
+members = ["core", "enhanced"]
+exclude = ["backend", "translated", "remastered/native/runtime", "graphics/runtime"]
+resolver = "3"

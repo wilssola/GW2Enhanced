@@ -1,0 +1,11 @@
+[package]
+name = "gw2enhanced-core"
+version = "0.1.0"
+edition = "2024"
+description = "Shared plumbing of GW2 Enhanced: locating game code across patches, feature health registry"
+license = "MIT"
+
+[dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }

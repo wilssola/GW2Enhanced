@@ -1,0 +1,29 @@
+[package]
+name = "gw2enhanced"
+version = "0.1.0"
+edition = "2024"
+description = "GW2 Enhanced: one mod (translation, HD textures, graphics) behind the msimg32.dll proxy"
+license = "MIT"
+
+[lib]
+name = "msimg32"
+crate-type = ["cdylib"]
+
+[dependencies]
+gw2enhanced-core = { path = "../core" }
+gw2remastered = { path = "../remastered/native/runtime", default-features = false }
+gw2graphics = { path = "../graphics/runtime", default-features = false }
+gw2translated = { path = "../translated", default-features = false }
+hudhook = { version = "=0.9.3", default-features = false, features = ["dx11"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
