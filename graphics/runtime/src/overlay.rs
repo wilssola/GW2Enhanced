@@ -379,6 +379,12 @@ impl Overlay {
         // Windows SDR brightness; On: back to the configured paper white and peak.
         output::apply_user_levels(on, self.cfg.paper_white_nits, self.cfg.peak_nits);
         log!("overlay: graphics {}", if on { "on" } else { "off" });
+        // The switch is kept right away (like the other features' switches); the rest of the file only changes with Save.
+        let mut saved = Config::load(&self.path);
+        saved.enabled = on;
+        if let Err(e) = saved.save(&self.path) {
+            log!("overlay: could not save enabled={on} to {}: {e}", self.path.display());
+        }
     }
 
     fn sec_general(&mut self, ui: &Ui) {
