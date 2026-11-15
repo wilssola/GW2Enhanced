@@ -1,0 +1,14 @@
+{
+  "name": "gw2enhanced-backend",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply gw2enhanced --remote",
+    "migrate:local": "wrangler d1 migrations apply gw2enhanced --local",
+    "tail": "wrangler tail",
+    "wrangler": "wrangler"
+  },
+  "devDependencies": {
+    "wrangler": "4.162.0"
+  }
+}
