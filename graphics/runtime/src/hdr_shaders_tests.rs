@@ -1233,6 +1233,8 @@ fn bloom_threshold_whitens_strong_bloom_and_leaves_the_games_range_alone() {
     };
     // Reference of the whole function for a uniform input.
     let want = |c: [f32; 3]| {
+        // Every tap is clipped at 1.0 first (the bloom only sees the game's own range).
+        let c = [c[0].clamp(0.0, 1.0), c[1].clamp(0.0, 1.0), c[2].clamp(0.0, 1.0)];
         let y = 0.2125 * c[0] + 0.7154 * c[1] + 0.0721 * c[2];
         let b = [(c[0] * y - 0.10).max(0.0), (c[1] * y - 0.05).max(0.0), (c[2] * y - 0.08).max(0.0)];
         let l = 0.2125 * b[0] + 0.7154 * b[1] + 0.0721 * b[2];
@@ -1252,11 +1254,16 @@ fn bloom_threshold_whitens_strong_bloom_and_leaves_the_games_range_alone() {
             assert!((got[i] - w[i]).abs() <= 2e-3 + w[i].abs() * 2e-3, "{c:?} ch {i}: {} vs {}", got[i], w[i]);
         }
     }
-    // A strong cyan light: the bloom is much less saturated than without the whitening.
-    let strong = [0.4f32, 2.5, 3.0];
+    // A lit white surface above paper white (white coat in the sun, 2x) blooms exactly like SDR white: no aura.
+    let (lit, white) = (run([2.0, 1.9, 1.8]), run([1.0, 1.0, 1.0]));
+    for i in 0..3 {
+        assert!((lit[i] - white[i]).abs() <= 1e-3, "a surface above 1.0 must bloom like white: {lit:?} vs {white:?}");
+    }
+    // A strong cyan light is whitened (the bloom is less saturated than its clipped input's raw threshold).
+    let strong = [0.4f32, 1.0, 1.0];
     let y = 0.2125 * strong[0] + 0.7154 * strong[1] + 0.0721 * strong[2];
     let raw = [(strong[0] * y - 0.10).max(0.0), (strong[1] * y - 0.05).max(0.0), (strong[2] * y - 0.08).max(0.0), 1.0];
-    assert!(sat(run(strong)) < sat(raw) * 0.6, "strong bloom must be whitened: {} vs {}", sat(run(strong)), sat(raw));
+    assert!(sat(run([0.4, 2.5, 3.0])) < sat(raw), "strong bloom must be whitened: {} vs {}", sat(run([0.4, 2.5, 3.0])), sat(raw));
     // Within the game's own range (energy <= 1) nothing changes: exactly the original's threshold.
     let mild = [0.2f32, 0.5, 0.7];
     let ym = 0.2125 * mild[0] + 0.7154 * mild[1] + 0.0721 * mild[2];

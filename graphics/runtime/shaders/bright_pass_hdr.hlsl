@@ -39,16 +39,14 @@ struct BPIn
     float2 p3 : TEXCOORD3; // v1.zw
 };
 
-// VANILLA (prepended as a #define while the user has the mod switched off): the scene targets stay float after the
-// switch-off, so effects stacked above 1.0 would feed MORE energy into the bloom than the 8-bit engine ever saw.
-// Clipping every tap at 1.0 gives back exactly what the UNORM target delivered.
+// Every tap is clipped at 1.0, mod on or off: the scene targets are float, and the bloom threshold weighs a pixel by
+// colour x luminance, so a lit white coat or armour at 2x paper white fed 4x the energy the 8-bit engine ever saw and
+// the bloom wrapped the whole character in a white aura (seen in the game). Clipped, the bloom is the game's own (times
+// the strength); the cores of real lights above 1.0 are the halo's job, which tells a light from a lit surface.
 float4 tap(float2 p)
 {
     float4 v = max(t0.Sample(s0, p), 0.0); // negative / NaN texels of the float scene count as 0 (the 8-bit target clamped)
-#ifdef VANILLA
-    v = saturate(v);
-#endif
-    return v;
+    return saturate(v);
 }
 
 float4 average4(BPIn i)
