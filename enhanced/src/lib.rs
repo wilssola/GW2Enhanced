@@ -8,6 +8,7 @@
 //! on `Present`; the game cannot have several).
 
 mod proxy;
+mod update;
 
 use std::ffi::c_void;
 use std::sync::atomic::Ordering;
@@ -98,6 +99,8 @@ fn init(module: usize) {
             registry::report("memory", "commit", state);
         }
     });
+    // Built in whatever mods are; it waits a few seconds on its own thread and never blocks the game.
+    update::start();
     for h in threads.into_iter().flatten() {
         let _ = h.join();
     }
@@ -202,7 +205,7 @@ impl ImguiRenderLoop for Overlay {
         }
         let _ = rc;
         // Each panel sets the cursor for itself; the host draws it when any is open (never under HDR10: it would be 10000 nits).
-        ctx.io_mut().mouse_draw_cursor = any_window() && !hdr10_active();
+        ctx.io_mut().mouse_draw_cursor = (any_window() || update::window_visible()) && !hdr10_active();
     }
 
     fn render(&mut self, ui: &mut Ui) {
@@ -232,6 +235,10 @@ impl ImguiRenderLoop for Overlay {
                 self.graphics = None;
                 registry::report("graphics", "overlay", State::Off("frame work panicked".into()));
             }
+        }
+        // The update prompt is a window of its own, shown with the main panel closed too.
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| update::draw(ui))).is_err() {
+            registry::report("update", "overlay", State::Off("update window panicked".into()));
         }
         if !shown {
             return;
@@ -276,7 +283,7 @@ impl ImguiRenderLoop for Overlay {
     }
 
     fn message_filter(&self, io: &Io) -> MessageFilter {
-        let mut f = if host_shown() {
+        let mut f = if host_shown() || update::window_visible() {
             MessageFilter::InputAll
         } else {
             MessageFilter::empty()
@@ -337,7 +344,7 @@ fn health(ui: &Ui) {
         }
     }
     ui.separator();
-    ui.text_disabled(format!("GW2 Enhanced v{}", env!("CARGO_PKG_VERSION")));
+    ui.text_disabled(update::summary());
 }
 
 /// Waits for the features to publish their panels (they do it at different moments), then hooks `Present` once.
