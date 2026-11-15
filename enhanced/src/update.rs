@@ -426,6 +426,12 @@ static NOTES: Mutex<(String, String)> = Mutex::new((String::new(), String::new()
 /// marks / HTML removed, fenced blocks dropped, and every section whose heading mentions SHA-256 or checksums dropped
 /// (the download table and the verification steps only matter on the GitHub page; see generate_changelog.py).
 fn plain_release_notes(body: &str) -> String {
+    // Notes are a few KB; a huge body is cut (on a char boundary) instead of being laid out every frame.
+    let mut end = body.len().min(64 * 1024);
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    let body = &body[..end];
     let mut lines: Vec<String> = Vec::new();
     let mut fence = false;
     let mut skip_level: Option<usize> = None;
@@ -481,7 +487,8 @@ fn plain_inline(s: &str) -> String {
                     }
                     label.push(d);
                 }
-                out.push_str(&plain_inline(&label));
+                // No recursion: the label only loses the marks (a body full of `[` cannot nest calls).
+                out.extend(label.chars().filter(|c| !matches!(c, '*' | '`' | '~' | '[' | '<' | '>') && !c.is_control()));
                 if closed && chars.peek() == Some(&'(') {
                     for d in chars.by_ref() {
                         if d == ')' {
