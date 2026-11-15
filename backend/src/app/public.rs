@@ -50,7 +50,13 @@ pub fn site(ctx: &Ctx) -> HResult {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .collect();
-    let html = SITE.replace("__TURNSTILE_SITE_KEY__", &escape_html(&key));
+    // The script and style URLs carry a hash of their content, so a browser never mixes a new page with a cached old
+    // stylesheet or script after an update.
+    let v = |s: &str| crate::hash::sha256_hex(s.as_bytes())[..12].to_string();
+    let html = SITE
+        .replace("__TURNSTILE_SITE_KEY__", &escape_html(&key))
+        .replace("\"/app.css\"", &format!("\"/app.css?v={}\"", v(APP_CSS)))
+        .replace("\"/app.js\"", &format!("\"/app.js?v={}\"", v(APP_JS)));
     let mut r = Response::from_html(html)?;
     r.headers_mut().set("cache-control", "public, max-age=300")?;
     apply_headers(&mut r, Kind::Html)?;
