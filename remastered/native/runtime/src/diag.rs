@@ -1,6 +1,6 @@
 //! Diagnostic hooks (read-only): record which files the game streams and which
 //! of them reach the image decoder, to confirm where textures can be swapped.
-//! Writes `GW2Remastered\diag_files.jsonl`. Nothing in the game is changed:
+//! Writes `GW2Remastered\diag_files.jsonl` while the textures log is on. Nothing in the game is changed:
 //! every hook calls the original with the original arguments.
 
 use std::collections::HashSet;
@@ -1056,9 +1056,31 @@ unsafe extern "system" fn img_decode(decoder: *mut u8) -> u64 {
     unsafe { DECODE.get().unwrap().call(decoder) }
 }
 
+/// The diagnostic file: written only while the textures log is on (`log_textures`), started fresh in each session
+/// the first time something is written. With the log off the lines are dropped.
+struct DiagFile {
+    path: PathBuf,
+    out: Option<std::io::BufWriter<std::fs::File>>,
+}
+
+impl Write for DiagFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if !gw2enhanced_core::logs::TEXTURES.enabled() {
+            return Ok(buf.len());
+        }
+        if self.out.is_none() {
+            self.out = Some(std::io::BufWriter::new(std::fs::File::create(&self.path)?));
+        }
+        self.out.as_mut().map_or(Ok(buf.len()), |o| o.write(buf))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.out.as_mut().map_or(Ok(()), |o| o.flush())
+    }
+}
+
 fn writer(path: PathBuf, rx: std::sync::mpsc::Receiver<Event>) {
-    let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) else { return };
-    let mut w = std::io::BufWriter::new(f);
+    let mut w = DiagFile { path, out: None };
     let t0 = Instant::now();
     let mut seen: HashSet<u32> = HashSet::new();
     let mut last_flush = Instant::now();
