@@ -59,7 +59,7 @@ body:
     id: shots
     attributes:
       label: Screenshots (on / off) and files
-      description: Drag the two screenshots here, plus GW2Graphics\config.ini and GW2Graphics\gw2graphics_log.txt from that session.
+      description: Drag the two screenshots here, plus GW2Graphics\config.ini and GW2Graphics\gw2graphics_log.txt from that session (logs are off by default: turn on Logs > Graphics in the overlay's Health tab first).
     validations:
       required: true
   - type: textarea

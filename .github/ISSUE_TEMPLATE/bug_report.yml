@@ -38,7 +38,7 @@ body:
     id: logs
     attributes:
       label: Logs and screenshots
-      description: Attach the log of the feature (GW2Translated, GW2Remastered or GW2Graphics folder in the game folder) and the overlay's Health tab status. Never attach game files.
+      description: Logs are off by default, so first turn on Logs for the feature in the overlay's Health tab and reproduce the problem. Then attach that log (GW2Translated, GW2Remastered, GW2Graphics or GW2Enhanced folder in the game folder) and the overlay's Health tab status. Never attach game files.
   - type: checkboxes
     id: checks
     attributes:
