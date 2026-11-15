@@ -246,5 +246,6 @@ fn trilinear_samplers_are_left_alone_by_default() {
     assert_eq!(filter_class(&tri_clamped), FILTER_TRILINEAR_CLAMPED);
     assert_eq!(filter_class(&mip_point), FILTER_MIP_POINT);
     assert_eq!(DEFAULT_FILTERS & (FILTER_TRILINEAR | FILTER_TRILINEAR_CLAMPED), 0);
-    assert_ne!(DEFAULT_FILTERS & FILTER_MIP_POINT, 0);
+    assert_eq!(DEFAULT_FILTERS & FILTER_MIP_POINT, 0, "point-mip samplers drew dashed lines too");
+    assert_ne!(DEFAULT_FILTERS & FILTER_ANISO, 0);
 }

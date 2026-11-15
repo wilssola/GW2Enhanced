@@ -403,7 +403,13 @@ impl Config {
                 "aerial_distance" => c.aerial_distance = num(v, 50.0, 5000.0, d.aerial_distance),
                 "depth_unit" => c.depth_unit = crate::aerial::clamp_unit(v.parse::<f32>().unwrap_or(f32::NAN)),
                 "aniso_level" => c.aniso_level = num(v, 0.0, 16.0, d.aniso_level as f32).round() as u32,
-                "aniso_filters" => c.aniso_filters = num(v, 0.0, 15.0, d.aniso_filters as f32).round() as u32,
+                "aniso_filters" => {
+                    c.aniso_filters = num(v, 0.0, 15.0, d.aniso_filters as f32).round() as u32;
+                    // The old default drew dashed lines along mesh edges; files written with it get the new one.
+                    if c.aniso_filters == crate::aniso::OLD_DEFAULT_FILTERS {
+                        c.aniso_filters = crate::aniso::DEFAULT_FILTERS;
+                    }
+                }
                 "mip_bias" => c.mip_bias = num(v, -1.0, 0.5, d.mip_bias),
                 "smaa" => c.smaa = flag(v, d.smaa),
                 "smaa_threshold" => c.smaa_threshold = num(v, 0.02, 0.5, d.smaa_threshold),
@@ -658,7 +664,7 @@ impl Config {
 ",
                 "
 ",
-                "# Texture filtering (docs/aa-aniso.md): aniso_level 0..16 forces anisotropic filtering on the game's world samplers (16 = default, 0 or 1 = off, the game's own); aniso_filters picks which ones by their engine filter (bits: 1 trilinear tiling, 2 bilinear with point mips, 4 already anisotropic, 8 trilinear clamped; 6 = default: trilinear ones drew dashed lines along mesh edges); mip_bias -1..0.5 is added to their mip level (0 = none, -0.3 = a little sharper). UI and post-process samplers are never touched.\n",
+                "# Texture filtering (docs/aa-aniso.md): aniso_level 0..16 forces anisotropic filtering on the game's world samplers (16 = default, 0 or 1 = off, the game's own); aniso_filters picks which ones by their engine filter (bits: 1 trilinear tiling, 2 bilinear with point mips, 4 already anisotropic, 8 trilinear clamped; 4 = default: forcing it on the trilinear and point-mip ones drew dashed lines along mesh edges); mip_bias -1..0.5 is added to their mip level (0 = none, -0.3 = a little sharper). UI and post-process samplers are never touched.\n",
                 "aniso_level={}\n",
                 "aniso_filters={}\n",
                 "mip_bias={}\n",
@@ -777,6 +783,13 @@ mod tests {
         assert!(t.contains("docs/photo.md") && t.contains("docs/hdr10.md"));
         assert_eq!(Config::parse(&t).calibration_pattern, 0);
         assert_eq!(Config::parse(&Config::default().to_ini()), Config::default());
+    }
+
+    #[test]
+    fn old_default_aniso_filters_read_as_the_new_default() {
+        assert_eq!(Config::parse("aniso_filters=6").aniso_filters, crate::aniso::DEFAULT_FILTERS);
+        assert_eq!(Config::parse("aniso_filters=7").aniso_filters, 7);
+        assert_eq!(Config::parse("").aniso_filters, crate::aniso::FILTER_ANISO);
     }
 
     #[test]

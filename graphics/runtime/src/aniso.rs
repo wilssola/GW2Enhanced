@@ -41,9 +41,12 @@ pub const FILTER_MIP_POINT: u32 = 2;
 pub const FILTER_ANISO: u32 = 4;
 /// Trilinear samplers that clamp on both U and V (only W tiles: for a 2D texture that is a clamped atlas).
 pub const FILTER_TRILINEAR_CLAMPED: u32 = 8;
-/// Trilinear samplers are left alone by default: forcing anisotropy on them drew dashed dark lines along the mesh edges of
-/// floors, walls and characters (A/B in the game: they appear with `aniso_filters=1` and not with `2`).
-pub const DEFAULT_FILTERS: u32 = FILTER_MIP_POINT | FILTER_ANISO;
+/// Only samplers the engine already made anisotropic are changed by default (their level is raised). Forcing anisotropy on
+/// the trilinear samplers and then on the bilinear point-mip ones drew dashed dark lines along
+/// the mesh edges of floors, walls and characters: A/B in the game, live, the lines come and go with those bits.
+pub const DEFAULT_FILTERS: u32 = FILTER_ANISO;
+/// The previous default (point-mip + anisotropic), written into existing config files: read as the current default.
+pub const OLD_DEFAULT_FILTERS: u32 = FILTER_MIP_POINT | FILTER_ANISO;
 
 const FILTER_MIN_MAG_MIP_LINEAR: u32 = 0x15;
 const FILTER_MIN_MAG_LINEAR_MIP_POINT: u32 = 0x14;
