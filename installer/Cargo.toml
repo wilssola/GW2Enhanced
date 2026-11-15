@@ -1,21 +1,48 @@
 [package]
-name = "gw2translated-installer"
+name = "gw2enhanced-installer"
 version = "0.1.0"
 edition = "2024"
-description = "GW2 Enhanced installer"
+description = "GW2 Enhanced installer and launcher"
 license = "MIT"
+
+[lib]
+name = "gw2enhanced_installer"
+path = "src/lib.rs"
 
 [[bin]]
 name = "GW2Enhanced-Installer"
 path = "src/main.rs"
 
+# The page is built into the exe (ui/, no dev server): `custom-protocol` is what the Tauri CLI turns on for a
+# release build, so plain `cargo build` gives the final program.
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
 [dependencies]
+gw2enhanced-core = { path = "../core" }
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Same stack as the in-game updater (enhanced/src/update.rs): blocking HTTP, SHA-256, zip.
+ureq = "3"
+sha2 = "0.10"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+semver = "1"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Controls_Dialogs",
     "Win32_UI_Shell",
-    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [dev-dependencies]

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GW2 Enhanced</title>
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<!-- Shared SVG filters (brush edges and paper fibres, same artwork as the website). -->
+<svg class="defs" aria-hidden="true" focusable="false" width="0" height="0">
+  <defs>
+    <filter id="ragged" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.035 0.06" numOctaves="3" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="brush" x="-5%" y="-20%" width="110%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.09" numOctaves="4" seed="3" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="drybrush" x="-5%" y="-20%" width="110%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.09" numOctaves="4" seed="3" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="34" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.0025 0.22" numOctaves="3" seed="11" result="grain"/>
+      <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -10 7.7" result="holes"/>
+      <feComposite in="d" in2="holes" operator="in"/>
+    </filter>
+    <linearGradient id="red" x1="0" y1="0" x2="1" y2="0.35">
+      <stop offset="0" stop-color="#e1261c"/>
+      <stop offset="0.55" stop-color="#c41a14"/>
+      <stop offset="1" stop-color="#9e0f0b"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="titlebar" data-tauri-drag-region>
+  <span class="titlebar-brand" data-tauri-drag-region><i class="seal" aria-hidden="true">E</i>GW2 Enhanced</span>
+  <span class="titlebar-info" id="tb-info" data-tauri-drag-region></span>
+  <div class="titlebar-buttons">
+    <button class="tb-btn" id="tb-min" type="button" aria-label="Minimizar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5.5h8" stroke="currentColor" stroke-width="1.2"/></svg></button>
+    <button class="tb-btn close" id="tb-close" type="button" aria-label="Fechar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.2"/></svg></button>
+  </div>
+</div>
+
+<header class="masthead" data-tauri-drag-region>
+  <svg class="stroke" viewBox="0 0 1200 300" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+    <path filter="url(#brush)" fill="url(#red)" d="M-40 40 C 180 10, 420 30, 640 22 S 1000 8, 1110 30 L 1100 205 C 900 236, 640 222, 420 246 S 90 262, -40 236 Z"/>
+    <path filter="url(#drybrush)" fill="#7d0b08" opacity=".55" d="M-20 196 C 220 214, 520 196, 760 206 S 1010 196, 1080 186 L 1078 214 C 860 236, 520 228, 260 246 S 40 252, -20 240 Z"/>
+    <path filter="url(#drybrush)" fill="#ff5a3c" opacity=".22" d="M40 58 C 300 44, 560 60, 820 48 L 820 70 C 560 84, 300 70, 40 86 Z"/>
+    <path filter="url(#brush)" fill="#111" d="M880 10 C 980 0, 1120 6, 1240 0 L 1240 248 C 1140 258, 1040 236, 960 250 C 1010 190, 1000 120, 1040 70 C 990 60, 920 40, 880 10 Z"/>
+  </svg>
+  <div class="masthead-inner" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <p class="kicker" data-tauri-drag-region>Tradução · Texturas HD · Gráficos</p>
+      <h1 data-tauri-drag-region>GW2 Enhanced</h1>
+    </div>
+    <nav class="mainnav" aria-label="Seções">
+      <a href="#inicio" data-view="inicio">Início</a>
+      <a href="#instalar" data-view="instalar">Instalar</a>
+      <a href="#atualizacoes" data-view="atualizacoes">Atualizações<b class="dot" id="nav-dot" hidden></b></a>
+      <a href="#configuracoes" data-view="configuracoes">Configurações</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <!-- ============ Início ============ -->
+  <section class="view" id="view-inicio" aria-labelledby="t-inicio">
+    <div class="grid-home">
+      <div class="paper card hero">
+        <p class="kicker">Situação do mod</p>
+        <h2 id="t-inicio" class="hero-title">Carregando…</h2>
+        <p class="hero-sub" id="hero-sub"></p>
+        <div class="chips" id="hero-chips"></div>
+        <div class="banner" id="update-banner" hidden>
+          <div>
+            <b id="update-title">Nova versão disponível</b>
+            <span id="update-text"></span>
+          </div>
+          <button class="gbtn primary" id="update-now" type="button">Atualizar</button>
+        </div>
+        <div class="row-actions">
+          <button class="gbtn" type="button" data-go="instalar">Pacotes e instalação</button>
+          <button class="gbtn" type="button" data-go="atualizacoes">Notas de atualização</button>
+        </div>
+      </div>
+
+      <div class="paper card news" id="news">
+        <p class="kicker">Última versão</p>
+        <h3 id="news-title">Procurando…</h3>
+        <p class="news-date" id="news-date"></p>
+        <div class="notes clamp" id="news-notes"></div>
+        <button class="linkbtn" id="news-more" type="button" data-go="atualizacoes">Ler as notas completas</button>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div>
+        <p class="kicker light">Onde o jogo está</p>
+        <h2 class="section-title">Instalações do Guild Wars 2</h2>
+      </div>
+      <div class="row-actions">
+        <button class="gbtn" id="rescan" type="button">Procurar de novo</button>
+        <button class="gbtn" id="browse" type="button">Escolher pasta…</button>
+      </div>
+    </div>
+    <div class="divider" aria-hidden="true"></div>
+    <div id="installs" class="installs" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ Instalar ============ -->
+  <section class="view" id="view-instalar" aria-labelledby="t-instalar" hidden>
+    <p class="kicker light">Escolha o que instalar</p>
+    <h2 class="section-title" id="t-instalar">Pacotes</h2>
+    <div class="divider" aria-hidden="true"></div>
+    <p class="lead">Cada pacote é o mesmo <code>msimg32.dll</code> com partes diferentes dentro. Escolha um; para trocar depois, basta instalar outro por cima. Suas configurações e traduções nunca são apagadas.</p>
+    <div class="packages" id="packages" role="radiogroup" aria-label="Pacote"></div>
+
+    <div class="paper card install-panel">
+      <div class="install-target">
+        <p class="kicker">Instalar em</p>
+        <p class="path" id="install-path">—</p>
+        <p class="small-note" id="install-state"></p>
+      </div>
+      <div class="install-buttons">
+        <button class="gbtn primary big" id="install-gh" type="button" disabled>Baixar e instalar</button>
+        <button class="gbtn" id="install-local" type="button" hidden>Instalar do pacote local</button>
+        <button class="gbtn danger" id="uninstall" type="button">Desinstalar</button>
+      </div>
+      <div class="progress-wrap" id="progress-wrap" hidden>
+        <div class="progress-text"><span id="progress-stage">Preparando…</span><span id="progress-num"></span></div>
+        <div class="progress"><i id="progress-bar"></i></div>
+      </div>
+      <ul class="log" id="log" hidden></ul>
+      <p class="small-note">Os downloads vêm só das versões oficiais no GitHub e só são instalados se a soma de verificação estiver assinada pelo GW2 Enhanced e o arquivo conferir com ela.</p>
+    </div>
+  </section>
+
+  <!-- ============ Atualizações ============ -->
+  <section class="view" id="view-atualizacoes" aria-labelledby="t-atualizacoes" hidden>
+    <div class="section-head">
+      <div>
+        <p class="kicker light">Notas de atualização</p>
+        <h2 class="section-title" id="t-atualizacoes">Versões</h2>
+      </div>
+      <button class="gbtn" id="refresh-releases" type="button">Verificar agora</button>
+    </div>
+    <div class="divider" aria-hidden="true"></div>
+    <div id="releases" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ Configurações ============ -->
+  <section class="view" id="view-configuracoes" aria-labelledby="t-config" hidden>
+    <p class="kicker light">Preferências</p>
+    <h2 class="section-title" id="t-config">Configurações</h2>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="settings">
+      <div class="paper card">
+        <h3>Pasta do jogo</h3>
+        <label class="field">
+          <span>Instalação usada para instalar o mod e jogar</span>
+          <select id="set-game"></select>
+        </label>
+        <div class="row-actions">
+          <button class="gbtn" id="set-browse" type="button">Escolher outra pasta…</button>
+          <button class="gbtn" id="set-open" type="button">Abrir a pasta</button>
+          <button class="gbtn" id="set-patch" type="button">Só atualizar o jogo</button>
+        </div>
+        <p class="small-note">“Só atualizar o jogo” abre o Gw2-64.exe com <code>-image</code>: ele baixa a atualização do jogo e fecha. Na Steam e na Epic, quem atualiza o jogo é o launcher da loja.</p>
+      </div>
+
+      <div class="paper card">
+        <h3>Atualizações</h3>
+        <label class="toggle"><input type="checkbox" id="set-check"><span>Procurar atualizações do mod ao abrir</span></label>
+        <label class="toggle"><input type="checkbox" id="set-pre"><span>Mostrar versões de teste (pré-lançamentos)</span></label>
+        <label class="toggle"><input type="checkbox" id="set-close"><span>Fechar este programa depois de abrir o jogo</span></label>
+      </div>
+
+      <div class="paper card wide">
+        <h3>Opções de inicialização</h3>
+        <p class="small-note">Valem para o Gw2-64.exe e para a Steam. Na Epic Games, use as “Opções de inicialização” do próprio launcher da Epic.</p>
+        <div class="opts">
+          <label class="toggle"><input type="checkbox" id="opt-autologin"><span><code>-autologin</code> Entra direto, se o jogo lembra seu e-mail e senha</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-share"><span><code>-shareArchive</code> Abre o Gw2.dat em modo compartilhado (vários clientes, ferramentas)</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-maplo"><span><code>-mapLoadinfo</code> Mostra progresso e tempo nas telas de carregamento</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-windowed"><span><code>-windowed</code> Abre em janela</span></label>
+        </div>
+        <label class="field">
+          <span>Outros argumentos</span>
+          <input id="opt-extra" type="text" spellcheck="false" autocomplete="off" placeholder="ex.: -clientport 443">
+        </label>
+      </div>
+
+      <div class="paper card wide about">
+        <h3>Sobre</h3>
+        <p>GW2 Enhanced <span id="about-version"></span>. Projeto de fã, sem afiliação com a ArenaNet ou NCSOFT. Guild Wars 2 é marca registrada da ArenaNet/NCSOFT.</p>
+        <p class="small-note">Fontes Cinzel, EB Garamond e Barlow Condensed sob a licença SIL Open Font License.</p>
+        <button class="linkbtn" type="button" id="about-repo">Código-fonte no GitHub</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="playbar">
+  <div class="playbar-info">
+    <span class="channel-badge" id="pb-channel">—</span>
+    <div>
+      <b id="pb-path">Nenhuma instalação escolhida</b>
+      <span id="pb-state"></span>
+    </div>
+  </div>
+  <button class="play" id="play" type="button" disabled><span>Jogar</span></button>
+</footer>
+
+<dialog id="dlg" class="paper-dialog" aria-labelledby="dlg-title">
+  <h2 id="dlg-title"></h2>
+  <div id="dlg-body"></div>
+  <div class="row">
+    <button id="dlg-cancel" class="gbtn" type="button">Cancelar</button>
+    <button id="dlg-ok" class="gbtn primary" type="button">Confirmar</button>
+  </div>
+</dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

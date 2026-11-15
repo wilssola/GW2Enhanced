@@ -11,3 +11,5 @@ __pycache__/
 *.removed
 # Release zips (scripts/package.ps1).
 /dist/
+# Tauri's generated schemas.
+/installer/gen/
