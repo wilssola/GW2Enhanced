@@ -127,6 +127,14 @@ function go(view) {
 
 // ---------------------------------------------------------------- rendering
 
+/** "pela Steam (Proton)", "pelo Wine"... */
+function opensWith(i) {
+  const linux = state.overview.platform === "linux";
+  if (i.channel === "Steam") return linux ? "pela Steam (Proton)" : "pela Steam";
+  if (i.channel === "Epic") return linux ? "pelo Heroic (Epic Games)" : "pela Epic Games";
+  return linux ? "pelo Wine" : "pelo Gw2-64.exe";
+}
+
 function statusText(st) {
   if (st.installed) {
     const v = st.version ? "v" + st.version : "versão desconhecida";
@@ -146,7 +154,9 @@ function renderHome() {
   chips.replaceChildren();
   if (!sel) {
     title.textContent = "Guild Wars 2 não encontrado";
-    sub.textContent = "Não achei o jogo na Steam, na Epic Games nem nas pastas padrão. Escolha a pasta onde fica o Gw2-64.exe.";
+    sub.textContent = o.platform === "linux"
+      ? "Não achei o jogo na Steam (nativa, Flatpak ou Snap) nem em prefixos do Wine ou do Lutris. Escolha a pasta onde fica o Gw2-64.exe."
+      : "Não achei o jogo na Steam, na Epic Games nem nas pastas padrão. Escolha a pasta onde fica o Gw2-64.exe.";
   } else {
     const st = sel.status;
     if (st.installed) {
@@ -166,6 +176,7 @@ function renderHome() {
     if (st.backup) chips.append(chip("Backup de outro mod guardado"));
   }
   if (o.game_running) chips.append(chip("Jogo aberto", "dark"));
+  renderWine(sel);
 
   // Update banner.
   const r = state.releases;
@@ -219,14 +230,73 @@ function renderHome() {
       el("div", { class: "channel-icon " + i.channel, text: CHANNEL_SHORT[i.channel], title: CHANNEL[i.channel] }),
       el("div", { class: "meta" },
         el("div", { class: "path", text: i.path }),
-        el("div", { class: "sub", text: "Encontrada por: " + i.source + (i.channel === "Steam" ? " · abre pela Steam" : i.channel === "Epic" ? " · abre pela Epic Games" : " · abre pelo Gw2-64.exe") }),
-        el("div", { class: "chips" }, chip(s.title, s.kind), i.running ? chip("Jogo aberto", "dark") : null, isSel ? chip("Em uso", "dark") : null)),
+        el("div", { class: "sub", text: "Encontrada por: " + i.source + " · abre " + opensWith(i) }),
+        el("div", { class: "chips" }, chip(s.title, s.kind), i.running ? chip("Jogo aberto", "dark") : null, isSel ? chip("Em uso", "dark") : null,
+          i.proton ? chip(i.proton.override_set ? "Proton configurado" : "Proton: falta o ajuste", i.proton.override_set ? "ok" : "warn") : null)),
       el("div", { class: "actions" },
         isSel ? null : el("button", { class: "gbtn small", type: "button", text: "Usar esta", onclick: () => selectGame(i.path) }),
         el("button", { class: "gbtn small", type: "button", text: "Pasta", onclick: () => invoke("open_folder", { path: i.path }).catch((e) => toast(errText(e), true)) }),
         el("button", { class: "gbtn small primary", type: "button", text: "Jogar", onclick: () => play(i.path, false) })));
     list.append(card);
   });
+}
+
+/** Linux: what Wine / Proton needs to load the mod (the msimg32 override), for the chosen install. */
+function renderWine(sel) {
+  const o = state.overview;
+  const box = $("wine");
+  const linux = o.platform === "linux";
+  if (!linux || !sel || sel.channel === "Epic") { box.hidden = true; return; }
+  box.hidden = false;
+  const p = sel.proton;
+  const why = "No Linux o jogo roda pelo Wine, que usa a própria cópia do msimg32.dll e ignora a do mod. " +
+    "O ajuste msimg32=n,b manda usar primeiro a do mod (n = nativa) e depois a do Wine (b = embutida).";
+  let ok = false, line = o.proton_line, canApply = false;
+  if (sel.channel === "Steam" && p) {
+    ok = p.override_set;
+    line = p.line;
+    canApply = !ok && p.accounts > 0;
+    $("wine-title").textContent = ok ? "Proton configurado" : "Falta um ajuste na Steam (Proton)";
+    $("wine-text").textContent = ok
+      ? "As opções de inicialização da Steam já têm o ajuste msimg32=n,b: o mod vai carregar pelo Proton."
+      : why + " Na Steam: botão direito no Guild Wars 2 › Propriedades › Geral › Opções de inicialização, e cole a linha abaixo." +
+        (p.steam_running ? " Para eu configurar sozinho, feche a Steam antes." : "");
+  } else {
+    $("wine-title").textContent = "Wine ou Lutris: ajuste do msimg32";
+    $("wine-text").textContent = why + (sel.wine_prefix ? " O botão Jogar já abre com o ajuste (prefixo " + sel.wine_prefix + ")." :
+      " O botão Jogar já abre com o ajuste.") + " No Lutris, coloque WINEDLLOVERRIDES = msimg32=n,b nas variáveis de ambiente do jogo, ou msimg32 = n,b em Opções do Wine › Substituições de DLL.";
+    line = "WINEDLLOVERRIDES=\"msimg32=n,b\" wine Gw2-64.exe";
+  }
+  box.classList.toggle("ok", ok);
+  $("wine-line").textContent = line;
+  $("wine-line-row").hidden = ok;
+  $("wine-actions").hidden = !canApply;
+  $("wine-apply").disabled = state.busy || (p && p.steam_running);
+  $("wine-apply").title = p && p.steam_running ? "Feche a Steam primeiro" : "";
+}
+
+async function applyProton() {
+  const sel = selectedInstall();
+  if (!sel) return;
+  const yes = await confirmDialog("Configurar a Steam",
+    "Vou adicionar WINEDLLOVERRIDES=\"msimg32=n,b\" às opções de inicialização do Guild Wars 2 em cada conta da Steam deste computador. " +
+    "Uma cópia do arquivo original fica ao lado (localconfig.vdf.antes-do-gw2enhanced). A Steam precisa estar fechada.", "Configurar");
+  if (!yes) return;
+  try {
+    const log = await invoke("set_proton_override", { path: sel.path });
+    toast("Steam configurada (" + log.join("; ") + "). Abra a Steam e jogue.");
+  } catch (e) { toast(errText(e), true); }
+  refresh(false);
+}
+
+async function copyLine() {
+  const text = $("wine-line").textContent;
+  try { await navigator.clipboard.writeText(text); toast("Linha copiada"); }
+  catch {
+    const r = document.createRange(); r.selectNodeContents($("wine-line"));
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    toast("Selecionei a linha: copie com Ctrl+C");
+  }
 }
 
 function renderPackages() {
@@ -354,7 +424,7 @@ function renderPlaybar() {
   badge.textContent = CHANNEL[sel.channel];
   $("pb-path").textContent = sel.path;
   const s = sel.status;
-  const how = sel.channel === "Steam" ? "Abre pela Steam" : sel.channel === "Epic" ? "Abre pela Epic Games" : "Abre pelo Gw2-64.exe";
+  const how = "Abre " + opensWith(sel);
   $("pb-state").textContent = (o.game_running ? "Jogo aberto · " : "") + how + " · " + (s.installed ? "mod " + (s.version ? "v" + s.version : "instalado") : "sem o mod");
   $("play").disabled = false;
   $("tb-info").textContent = s.installed ? (s.version ? "v" + s.version : "") + (s.package ? " · " + pkgName(s.package) : "") : "";
@@ -600,8 +670,10 @@ function wire() {
   $("refresh-releases").addEventListener("click", loadReleases);
   $("update-now").addEventListener("click", () => { const r = targetRelease(); if (r) installRelease(r); });
   $("about-repo").addEventListener("click", () => openUrl("https://github.com/wilssola/GW2Enhanced"));
+  $("wine-apply").addEventListener("click", applyProton);
+  $("wine-copy").addEventListener("click", copyLine);
   // No browser context menu or reload in the app window.
-  document.addEventListener("contextmenu", (e) => { if (!e.target.closest(".notes, input, .log")) e.preventDefault(); });
+  document.addEventListener("contextmenu", (e) => { if (!e.target.closest(".notes, input, .log, .wine-line")) e.preventDefault(); });
   document.addEventListener("keydown", (e) => { if (e.key === "F5" || (e.ctrlKey && e.key.toLowerCase() === "r")) e.preventDefault(); });
 
   T.event.listen("progress", (ev) => progress(ev.payload.stage, ev.payload.done, ev.payload.total));

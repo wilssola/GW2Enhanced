@@ -1,4 +1,4 @@
-//! The installer's own settings, in `%APPDATA%\GW2Enhanced\installer.json`.
+//! The installer's own settings (`%APPDATA%\GW2Enhanced\installer.json`, `~/.config/GW2Enhanced/installer.json`).
 
 use std::path::PathBuf;
 
@@ -37,9 +37,16 @@ impl Default for Settings {
     }
 }
 
+/// `%APPDATA%\GW2Enhanced\installer.json`; on Linux `$XDG_CONFIG_HOME/GW2Enhanced/installer.json` (`~/.config`).
 fn path() -> Option<PathBuf> {
-    let base = std::env::var_os("APPDATA")?;
-    Some(PathBuf::from(base).join("GW2Enhanced").join("installer.json"))
+    let base = if cfg!(windows) {
+        PathBuf::from(std::env::var_os("APPDATA")?)
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?
+    };
+    Some(base.join("GW2Enhanced").join("installer.json"))
 }
 
 impl Settings {
@@ -51,7 +58,7 @@ impl Settings {
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let p = path().ok_or("APPDATA não definido")?;
+        let p = path().ok_or("pasta de configurações do usuário não encontrada")?;
         if let Some(dir) = p.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("não consegui salvar as configurações: {e}"))?;
         }

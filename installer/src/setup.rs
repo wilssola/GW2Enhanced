@@ -164,7 +164,7 @@ pub fn install(pkg: &Path, game: &Path) -> Result<Vec<String>, String> {
         }
         let to = game.join(dir);
         let n = copy_dir(&from, &to).map_err(|e| format!("{dir}: {e}"))?;
-        log.push(format!("{dir}\\ atualizado ({n} arquivos)"));
+        log.push(format!("{dir}{} atualizado ({n} arquivos)", std::path::MAIN_SEPARATOR));
         if let Ok(langs) = std::fs::read_dir(to.join("languages")) {
             for lang in langs.flatten() {
                 for f in OBSOLETE {
@@ -190,7 +190,7 @@ pub fn uninstall(game: &Path) -> Result<Vec<String>, String> {
         std::fs::rename(&backup, &dll).map_err(|e| format!("não consegui restaurar o {DLL} anterior: {e}"))?;
         log.push(format!("{DLL} anterior restaurado"));
     }
-    let dirs: Vec<String> = DATA_DIRS.iter().map(|d| format!("{d}\\")).collect();
+    let dirs: Vec<String> = DATA_DIRS.iter().map(|d| format!("{d}{}", std::path::MAIN_SEPARATOR)).collect();
     log.push(format!(
         "as pastas {} (configuração, coleta, logs) foram mantidas; apague à mão se quiser",
         dirs.join(", ")
@@ -213,34 +213,34 @@ mod tests {
     fn install_keeps_player_files_and_backs_up_foreign_dll() {
         let (pkg, game) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         std::fs::write(pkg.path().join(DLL), b"xx GW2ENHANCED-DLL-MARKER!! xx").unwrap();
-        let lang = pkg.path().join(r"GW2Translated\languages\pt-BR");
+        let lang = pkg.path().join("GW2Translated/languages/pt-BR");
         std::fs::create_dir_all(&lang).unwrap();
-        std::fs::create_dir_all(pkg.path().join(r"GW2Translated\translator\models\pt-BR")).unwrap();
-        std::fs::create_dir_all(pkg.path().join(r"GW2Graphics\luts")).unwrap();
+        std::fs::create_dir_all(pkg.path().join("GW2Translated/translator/models/pt-BR")).unwrap();
+        std::fs::create_dir_all(pkg.path().join("GW2Graphics/luts")).unwrap();
         std::fs::write(lang.join("dictionary.jsonl"), "{}\n").unwrap();
         std::fs::write(lang.join("web.jsonl"), "").unwrap();
-        std::fs::write(pkg.path().join(r"GW2Translated\translator\t.exe"), b"t").unwrap();
-        std::fs::write(pkg.path().join(r"GW2Translated\translator\models\pt-BR\m.bin"), b"m").unwrap();
-        std::fs::write(pkg.path().join(r"GW2Graphics\luts\warm.cube"), b"lut").unwrap();
+        std::fs::write(pkg.path().join("GW2Translated/translator/t.exe"), b"t").unwrap();
+        std::fs::write(pkg.path().join("GW2Translated/translator/models/pt-BR/m.bin"), b"m").unwrap();
+        std::fs::write(pkg.path().join("GW2Graphics/luts/warm.cube"), b"lut").unwrap();
         std::fs::write(game.path().join("Gw2-64.exe"), b"").unwrap();
         std::fs::write(game.path().join(DLL), b"outro mod").unwrap();
         let data = game.path().join("GW2Translated");
-        std::fs::create_dir_all(data.join(r"languages\pt-BR")).unwrap();
+        std::fs::create_dir_all(data.join("languages/pt-BR")).unwrap();
         std::fs::write(data.join("config.ini"), "translate=false").unwrap();
-        std::fs::write(data.join(r"languages\pt-BR\local.jsonl"), "{\"en\":\"Hi\",\"tr\":\"Oi\"}\n").unwrap();
-        std::fs::write(data.join(r"languages\pt-BR\ids.jsonl"), "").unwrap();
+        std::fs::write(data.join("languages/pt-BR/local.jsonl"), "{\"en\":\"Hi\",\"tr\":\"Oi\"}\n").unwrap();
+        std::fs::write(data.join("languages/pt-BR/ids.jsonl"), "").unwrap();
 
         assert!(status(game.path()).foreign_dll);
         install(pkg.path(), game.path()).unwrap();
         assert!(is_ours(&game.path().join(DLL)));
         assert_eq!(std::fs::read(game.path().join(BACKUP)).unwrap(), b"outro mod");
         assert_eq!(std::fs::read_to_string(data.join("config.ini")).unwrap(), "translate=false");
-        assert!(data.join(r"languages\pt-BR\local.jsonl").is_file());
-        assert!(data.join(r"languages\pt-BR\dictionary.jsonl").is_file());
-        assert!(!data.join(r"languages\pt-BR\ids.jsonl").exists());
-        assert!(data.join(r"translator\t.exe").is_file());
-        assert!(data.join(r"translator\models\pt-BR\m.bin").is_file());
-        assert!(game.path().join(r"GW2Graphics\luts\warm.cube").is_file());
+        assert!(data.join("languages/pt-BR/local.jsonl").is_file());
+        assert!(data.join("languages/pt-BR/dictionary.jsonl").is_file());
+        assert!(!data.join("languages/pt-BR/ids.jsonl").exists());
+        assert!(data.join("translator/t.exe").is_file());
+        assert!(data.join("translator/models/pt-BR/m.bin").is_file());
+        assert!(game.path().join("GW2Graphics/luts/warm.cube").is_file());
         assert!(!game.path().join("GW2Remastered").exists());
         let s = status(game.path());
         assert!(s.installed && s.backup && !s.foreign_dll);
@@ -294,11 +294,11 @@ mod tests {
         let game = tempfile::tempdir().unwrap();
         std::fs::write(game.path().join("Gw2-64.exe"), b"").unwrap();
         std::fs::write(game.path().join(DLL), b"xx GW2ENHANCED-DLL-MARKER!! xx").unwrap();
-        std::fs::create_dir_all(game.path().join(r"GW2Graphics\luts")).unwrap();
-        std::fs::write(game.path().join(r"GW2Graphics\luts\warm.cube"), b"lut").unwrap();
+        std::fs::create_dir_all(game.path().join("GW2Graphics/luts")).unwrap();
+        std::fs::write(game.path().join("GW2Graphics/luts/warm.cube"), b"lut").unwrap();
         install(game.path(), game.path()).unwrap();
         assert!(is_ours(&game.path().join(DLL)));
-        assert!(game.path().join(r"GW2Graphics\luts\warm.cube").is_file());
+        assert!(game.path().join("GW2Graphics/luts/warm.cube").is_file());
         assert!(!game.path().join(BACKUP).exists());
     }
 

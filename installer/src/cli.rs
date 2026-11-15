@@ -72,6 +72,10 @@ fn default_game() -> Result<PathBuf, String> {
 }
 
 /// The window build has no console of its own: print into the one it was started from, if any.
+#[cfg(not(windows))]
+fn attach_console() {}
+
+#[cfg(windows)]
 fn attach_console() {
     use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
     unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };

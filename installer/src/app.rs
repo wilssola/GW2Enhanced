@@ -9,12 +9,14 @@ use tauri::{Emitter, Manager, State};
 
 use crate::games::{self, Channel, GameInstall};
 use crate::github::{self, Release};
+use crate::games::same_path as same;
 use crate::launch;
+use crate::proton::{self, ProtonStatus};
 use crate::settings::Settings;
 use crate::setup::{self, Status};
 
 /// Download staging, inside the game folder (same volume, next to what the in-game updater uses).
-const STAGE: &str = r"GW2Enhanced\installer-download";
+const STAGE: [&str; 2] = ["GW2Enhanced", "installer-download"];
 
 #[derive(Default)]
 struct AppState {
@@ -33,6 +35,10 @@ struct InstallView {
     status: Status,
     /// Its Gw2-64.exe is running.
     running: bool,
+    /// Linux, Steam: the Proton override.
+    proton: Option<ProtonStatus>,
+    /// Linux, ArenaNet client: the Wine prefix.
+    wine_prefix: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -45,6 +51,10 @@ struct LocalPackage {
 #[derive(Serialize)]
 struct Overview {
     app_version: &'static str,
+    /// "windows" or "linux".
+    platform: &'static str,
+    /// What the override line is (for the explanations on Linux).
+    proton_line: &'static str,
     installs: Vec<InstallView>,
     selected: Option<String>,
     settings: Settings,
@@ -98,6 +108,8 @@ fn view(g: &GameInstall, running: &[Option<PathBuf>]) -> InstallView {
         source: g.source.clone(),
         status: setup::status(&g.path),
         running: launch::running_in(running, &g.path),
+        proton: (cfg!(not(windows)) && g.channel == Channel::Steam).then(|| proton::status(g)),
+        wine_prefix: g.wine_prefix.as_ref().map(|p| p.display().to_string()),
     }
 }
 
@@ -110,10 +122,6 @@ fn all_installs(settings: &Settings) -> Vec<GameInstall> {
         }
     }
     list
-}
-
-fn same(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy().trim_end_matches('\\').eq_ignore_ascii_case(b.to_string_lossy().trim_end_matches('\\'))
 }
 
 /// The chosen install: the saved one if it is still there, else the first found.
@@ -143,6 +151,8 @@ fn overview_of(state: &AppState) -> Overview {
     let selected = selected(state);
     Overview {
         app_version: env!("CARGO_PKG_VERSION"),
+        platform: if cfg!(windows) { "windows" } else { "linux" },
+        proton_line: proton::LAUNCH_LINE,
         installs,
         game_running: selected.as_ref().is_some_and(|g| launch::running_in(&running, &g.path)),
         selected: selected.map(|g| g.path.display().to_string()),
@@ -185,9 +195,15 @@ fn select_game(state: State<'_, AppState>, path: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn browse_game(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    #[cfg(windows)]
     let owner = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    #[cfg(not(windows))]
+    let owner = {
+        let _ = &window;
+        0
+    };
     blocking(move || {
-        let Some(dir) = crate::dialog::pick_game_exe(owner) else { return Ok(None) };
+        let Some(dir) = crate::dialog::pick_game_exe(owner)? else { return Ok(None) };
         if !setup::is_game_dir(&dir) {
             return Err(format!("{} não tem o Gw2-64.exe", dir.display()));
         }
@@ -259,7 +275,7 @@ async fn install_release(app: tauri::AppHandle, tag: String, package: String) ->
             .find(|r| r.tag == tag)
             .cloned()
             .ok_or("atualize a lista de versões e tente de novo")?;
-        let stage = game.path.join(STAGE);
+        let stage = STAGE.iter().fold(game.path.clone(), |p, part| p.join(part));
         let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
         let mut progress = |stage: &str, done: u64, total: u64| {
             // At most ~20 events a second.
@@ -315,10 +331,12 @@ async fn play(app: tauri::AppHandle, path: String, patch_only: bool) -> Result<S
         let state = app.state::<AppState>();
         let game = find_install(&state, &path)?;
         let opts = lock(&state.settings).launch.clone();
-        let plan = launch::plan(&game, &opts, patch_only, games::steam_exe())?;
+        let plan = launch::plan(&game, &opts, patch_only, &launch::Tools::find(&game))?;
         launch::run(&plan)?;
         let how = match game.channel {
+            Channel::Steam if cfg!(not(windows)) => "pela Steam (Proton)",
             Channel::Steam => "pela Steam",
+            Channel::Standalone if cfg!(not(windows)) && !patch_only => "pelo Wine",
             Channel::Epic => "pela Epic Games",
             Channel::Standalone if patch_only => "para atualizar",
             Channel::Standalone => "pelo Gw2-64.exe",
@@ -331,6 +349,20 @@ async fn play(app: tauri::AppHandle, path: String, patch_only: bool) -> Result<S
             });
         }
         Ok(format!("Guild Wars 2 iniciado {how}"))
+    })
+    .await
+}
+
+/// Adds the Proton override to the game's Steam launch options (Linux, Steam closed).
+#[tauri::command]
+async fn set_proton_override(app: tauri::AppHandle, path: String) -> Result<Vec<String>, String> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let game = find_install(&state, &path)?;
+        if game.channel != Channel::Steam {
+            return Err("isto só vale para o jogo da Steam".into());
+        }
+        proton::apply(&game)
     })
     .await
 }
@@ -366,6 +398,7 @@ pub fn run() {
             install_local,
             uninstall,
             play,
+            set_proton_override,
             open_url,
             open_folder
         ])

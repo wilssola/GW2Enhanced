@@ -187,6 +187,19 @@ main { flex: 1; overflow-y: auto; padding: 4px 32px 28px; scrollbar-color: #5751
 .banner b { display: block; font: 700 1.05rem/1.2 var(--serif-display); color: #f6dea0; }
 .banner span { color: #f1d8cf; font-size: .98rem; }
 .banner .gbtn.primary { background: linear-gradient(#d6b265, #9c7428); color: #2a1a05; border-color: #5d4210; }
+.wine {
+  margin-top: 16px; padding: 12px 14px; border: 1px solid rgba(42, 36, 32, .25); border-left: 4px solid #b0841f;
+  background: rgba(214, 178, 101, .14); animation: rise 420ms var(--ease-out) both;
+}
+.wine.ok { border-left-color: #3f7a3a; background: rgba(90, 150, 80, .1); }
+.wine b { display: block; font: 700 1.05rem/1.2 var(--serif-display); }
+.wine p { margin: 4px 0 8px; font-size: .98rem; }
+.wine-line { display: flex; align-items: center; gap: 8px; }
+.wine-line code {
+  flex: 1; min-width: 0; padding: 6px 8px; overflow-x: auto; white-space: nowrap; user-select: all; -webkit-user-select: all;
+  background: rgba(42, 36, 32, .1); font: .9rem/1.3 ui-monospace, Consolas, monospace;
+}
+.wine .row-actions { margin-top: 8px; }
 .news h3 { margin: 4px 0 0; font: 700 1.3rem/1.2 var(--serif-display); }
 .news-date { margin: 2px 0 8px; color: var(--ink-muted); font: 600 .85rem/1.2 var(--label); letter-spacing: .08em; text-transform: uppercase; }
 .notes { font-size: 1rem; user-select: text; -webkit-user-select: text; }

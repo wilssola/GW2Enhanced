@@ -1,16 +1,16 @@
-//! The Windows "open file" dialog, to point at `Gw2-64.exe` by hand.
+//! The "open file" dialog, to point at `Gw2-64.exe` by hand: Windows' own, or zenity / kdialog on Linux.
 
 use std::path::PathBuf;
 
-use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
-use windows_sys::Win32::UI::Controls::Dialogs::{
-    GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST, OPENFILENAMEW,
-};
-
 /// Asks for `Gw2-64.exe`; returns its folder, or `None` when cancelled. `owner` is the parent window (or 0).
 /// Runs on its own thread (the dialog needs a single-threaded COM apartment).
-pub fn pick_game_exe(owner: isize) -> Option<PathBuf> {
-    std::thread::spawn(move || unsafe {
+#[cfg(windows)]
+pub fn pick_game_exe(owner: isize) -> Result<Option<PathBuf>, String> {
+    use windows_sys::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
+    let picked = std::thread::spawn(move || unsafe {
         CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
         let w = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
         // Filter pairs separated by NULs, ended by two.
@@ -44,5 +44,38 @@ pub fn pick_game_exe(owner: isize) -> Option<PathBuf> {
     })
     .join()
     .ok()
-    .flatten()
+    .flatten();
+    Ok(picked)
+}
+
+/// Asks for `Gw2-64.exe` with zenity (GNOME and most desktops) or kdialog (KDE); returns its folder. `Err` when
+/// neither is installed.
+#[cfg(not(windows))]
+pub fn pick_game_exe(_owner: isize) -> Result<Option<PathBuf>, String> {
+    use std::process::Command;
+    const TITLE: &str = "Selecione o Gw2-64.exe na pasta do Guild Wars 2";
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    let tries: [(&str, Vec<String>); 2] = [
+        (
+            "zenity",
+            vec![
+                "--file-selection".into(),
+                format!("--title={TITLE}"),
+                "--file-filter=Gw2-64.exe | Gw2-64.exe".into(),
+                "--file-filter=*.exe | *.exe".into(),
+            ],
+        ),
+        ("kdialog", vec!["--title".into(), TITLE.into(), "--getopenfilename".into(), home, "Gw2-64.exe *.exe".into()]),
+    ];
+    for (prog, args) in tries {
+        let Some(exe) = crate::launch::which(prog) else { continue };
+        let out = Command::new(exe).args(&args).output().map_err(|e| format!("{prog}: {e}"))?;
+        // Cancelled: non-zero exit and no output.
+        let chosen = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !out.status.success() || chosen.is_empty() {
+            return Ok(None);
+        }
+        return Ok(PathBuf::from(chosen).parent().map(|p| p.to_path_buf()));
+    }
+    Err("não há um seletor de arquivos (instale o zenity ou o kdialog)".into())
 }
