@@ -292,6 +292,75 @@ struct KvValue {
     value: String,
 }
 
+/// A SQL literal of a statement parameter (strings with quotes doubled, numbers as they are).
+fn sql_literal(v: &Value) -> String {
+    match v {
+        Value::String(s) => format!("'{}'", s.replace('\'', "''")),
+        Value::Number(n) => n.to_string(),
+        Value::Null => "NULL".into(),
+        other => format!("'{}'", other.to_string().replace('\'', "''")),
+    }
+}
+
+/// One statement with its `?` parameters inlined (no `?` ever appears inside the SQL text of the seed statements).
+fn inline_sql(stmt: &Value) -> String {
+    let sql = stmt["sql"].as_str().unwrap_or_default();
+    let params = stmt["params"].as_array().cloned().unwrap_or_default();
+    let mut out = String::with_capacity(sql.len() + 64);
+    let mut it = params.iter();
+    for c in sql.chars() {
+        if c == '?' {
+            out.push_str(&it.next().map(sql_literal).unwrap_or_else(|| "NULL".into()));
+        } else {
+            out.push(c);
+        }
+    }
+    out.push_str(";\n");
+    out
+}
+
+/// `jobs seed-sql <dictionary.jsonl> <lang> <out prefix> [from line]`: the same seed as `jobs seed`, written as SQL files
+/// of at most 50k statements (`<prefix>-NNN.sql`) for `wrangler d1 execute --remote --file`, for a machine where the jobs
+/// binary cannot reach the API. The last file marks the seed done and refreshes the catalog size and stats.
+fn seed_sql(path: &str, lang: &str, prefix: &str, from: usize) -> Res<String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let now = time::rfc3339(now_ms());
+    let (mut files, mut buf, mut n, mut loaded, mut catalog) = (0usize, String::new(), 0usize, 0usize, 0usize);
+    let flush = |buf: &mut String, files: &mut usize| -> Res<()> {
+        if !buf.is_empty() {
+            std::fs::write(format!("{prefix}-{:03}.sql", *files), buf.as_bytes()).map_err(|e| e.to_string())?;
+            *files += 1;
+            buf.clear();
+        }
+        Ok(())
+    };
+    for (i, l) in lines.iter().enumerate() {
+        let r: SeedLine = serde_json::from_str(l).map_err(|e| format!("{path}:{}: {e}", i + 1))?;
+        if validate::unusable(&r.en, &r.tr) {
+            continue;
+        }
+        catalog += 1;
+        if i < from {
+            continue;
+        }
+        for s in seed_statements(lang, &r, &now) {
+            buf.push_str(&inline_sql(&s));
+            n += 1;
+        }
+        loaded += 1;
+        if n >= 50_000 {
+            flush(&mut buf, &mut files)?;
+            n = 0;
+        }
+    }
+    for s in [q::kv_put(&format!("catalog:{lang}"), &catalog.to_string(), &now), q::kv_put(&format!("seed:{lang}"), "done", &now), q::kv_delete(&format!("stats:{lang}"))] {
+        buf.push_str(&inline_sql(&statement(s)));
+    }
+    flush(&mut buf, &mut files)?;
+    Ok(format!("{lang}: {loaded} records from line {from} in {files} files ({prefix}-NNN.sql)"))
+}
+
 fn seed_pending(cf: &Cf, lang: &str) -> Res<bool> {
     Ok(cf.first::<KvValue>(q::kv_get(&format!("seed:{lang}")))?.is_some_and(|v| v.value != "done"))
 }
@@ -385,6 +454,13 @@ fn backup(cf: &Cf) -> Res<String> {
 fn run() -> Res<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let force = args.iter().any(|a| a == "--force");
+    if args.first().map(String::as_str) == Some("seed-sql") {
+        let usage = "usage: jobs seed-sql <dictionary.jsonl> <lang> <out prefix> [from line]";
+        let (path, lang, prefix) = (args.get(1).ok_or(usage)?, args.get(2).ok_or(usage)?, args.get(3).ok_or(usage)?);
+        let from = args.get(4).map(|v| v.parse::<usize>().map_err(|e| format!("from line: {e}"))).transpose()?.unwrap_or(0);
+        println!("{}", seed_sql(path, lang, prefix, from)?);
+        return Ok(());
+    }
     let cf = Cf::from_env()?;
     match args.first().map(String::as_str) {
         Some("release") => {
