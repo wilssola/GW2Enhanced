@@ -1733,6 +1733,7 @@ dependencies = [
 name = "gw2graphics"
 version = "0.1.0"
 dependencies = [
+ "gw2enhanced-core",
  "hudhook",
  "retour",
  "windows",
@@ -1744,6 +1745,7 @@ name = "gw2remastered"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gw2enhanced-core",
  "hudhook",
  "intel_tex_2",
  "rayon",

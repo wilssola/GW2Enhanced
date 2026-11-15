@@ -10,6 +10,8 @@ name = "gw2remastered"
 crate-type = ["rlib"]
 
 [dependencies]
+# The overlay language shared by every panel (core::i18n).
+gw2enhanced-core = { path = "../../../core" }
 retour = "0.3"
 rayon = "1"
 zstd = "0.13"
