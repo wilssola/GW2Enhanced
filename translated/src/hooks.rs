@@ -98,14 +98,15 @@ unsafe fn on_text(ctx: *mut u8, id: u32, entry: *const u8, ret: *mut u16) -> *mu
     // By the original text; otherwise what was translated live; otherwise by ID
     // (the latter works with the game in any language).
     let translate = runtime::get(Flag::Translate);
-    let live = if translate && state.dict.get(&original).is_none() {
+    let dict = state.dict.load();
+    let live = if translate && dict.get(&original).is_none() {
         crate::live::get(&original)
     } else {
         None
     };
     let pt = if translate {
-        state.dict.get(&original).or(live.as_deref()).or_else(|| {
-            let pt = state.dict.get_id(id);
+        dict.get(&original).or(live.as_deref()).or_else(|| {
+            let pt = dict.get_id(id);
             if pt.is_some() {
                 BY_ID.fetch_add(1, Ordering::Relaxed);
             }
@@ -178,7 +179,7 @@ fn missing(st: &crate::State, text: &str) -> bool {
     runtime::get(Flag::Translate)
         && runtime::get(Flag::LiveTranslate)
         && english_client()
-        && st.dict.get(text).is_none()
+        && st.dict.load().get(text).is_none()
         && crate::live::get(text).is_none()
 }
 
@@ -235,7 +236,8 @@ pub(crate) fn english_of(id: u32) -> Option<String> {
 /// the game already shows it translated when it decodes it.
 pub(crate) fn in_dictionary(id: u32) -> bool {
     let Some(st) = crate::STATE.get() else { return false };
-    st.dict.get_id(id).is_some() || english_of(id).is_some_and(|en| st.dict.get(&en).is_some())
+    let dict = st.dict.load();
+    dict.get_id(id).is_some() || english_of(id).is_some_and(|en| dict.get(&en).is_some())
 }
 
 /// Translation of the string `id`: by ID in the dictionary, or through the
@@ -245,7 +247,7 @@ pub(crate) fn lookup_id(id: u32) -> Option<String> {
     if !runtime::get(Flag::Translate) {
         return None;
     }
-    if let Some(tr) = st.dict.get_id(id) {
+    if let Some(tr) = st.dict.load().get_id(id) {
         return Some(tr.to_owned());
     }
     lookup(&english_of(id)?)
@@ -260,6 +262,7 @@ pub(crate) fn lookup(text: &str) -> Option<String> {
     }
     let tr = st
         .dict
+        .load()
         .get(text)
         .map(str::to_owned)
         .or_else(|| crate::live::get(text))?;

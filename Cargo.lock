@@ -1768,10 +1768,13 @@ dependencies = [
 name = "gw2translated"
 version = "0.1.0"
 dependencies = [
+ "flate2",
+ "gw2enhanced-core",
  "hudhook",
  "retour",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "windows-sys 0.61.2",
 ]

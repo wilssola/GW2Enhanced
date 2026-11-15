@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 use crate::records::{self, Translation};
 
@@ -153,7 +154,11 @@ impl Dict {
             }
             if overwrite || !self.map.contains_key(&en) {
                 if let Some(n) = normalize(&en) {
-                    self.loose.entry(n).or_insert_with(|| tr.clone());
+                    if overwrite {
+                        self.loose.insert(n, tr.clone());
+                    } else {
+                        self.loose.entry(n).or_insert_with(|| tr.clone());
+                    }
                 }
                 self.map.insert(en, tr);
                 added += 1;
@@ -167,6 +172,62 @@ impl Dict {
     pub fn load_file(&mut self, path: &Path, overwrite: bool) -> io::Result<usize> {
         Ok(self.add(records::read::<Translation>(path)?.records, overwrite))
     }
+
+    /// The dictionary the game uses, in priority order: a downloaded release (reviewed on the server, newer) over
+    /// the shipped `dictionary.jsonl`, and both over `local.jsonl` (made by the translator on this PC), which only
+    /// fills what neither has. Every step is logged; an unreadable file counts as empty.
+    pub fn merged(shipped: &Path, release: Vec<Translation>, local: &Path) -> Self {
+        let mut d = Dict::default();
+        match d.load_file(shipped, true) {
+            Ok(n) => crate::log!("dictionary: {n} texts"),
+            Err(e) => crate::log!("dictionary: error {e}"),
+        }
+        if !release.is_empty() {
+            let n = release.len();
+            let before = d.len();
+            d.add(release, true);
+            crate::log!("dictionary release: {n} texts, {} not in the shipped dictionary", d.len() - before);
+        }
+        match d.load_file(local, false) {
+            Ok(n) => crate::log!("local translations: {n} new texts"),
+            Err(e) => crate::log!("local translations: error {e}"),
+        }
+        d
+    }
+}
+
+/// The dictionary in use, replaceable while the game runs (a downloaded release is swapped in).
+///
+/// A reader takes a reference-counted handle ([`Shared::load`]) and holds no lock while it uses it, so a swap never
+/// waits for a lookup, nor a lookup for the swap (only for the pointer copy).
+#[derive(Debug, Default)]
+pub struct Shared(RwLock<Arc<Dict>>);
+
+impl Shared {
+    pub fn new(d: Dict) -> Self {
+        Self(RwLock::new(Arc::new(d)))
+    }
+
+    pub fn load(&self) -> Arc<Dict> {
+        self.0.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Puts `d` in use and returns the one it replaces. Readers that still hold the old one keep it until they are
+    /// done; the caller should drop it off the game's threads (see [`release_when_unused`]).
+    pub fn swap(&self, d: Dict) -> Arc<Dict> {
+        let new = Arc::new(d);
+        std::mem::replace(&mut *self.0.write().unwrap_or_else(|e| e.into_inner()), new)
+    }
+}
+
+/// Waits (up to `max`) until nobody else holds `old`, then frees it here: freeing 200k strings takes a while, and
+/// it must not land on a game thread that happened to hold the last handle.
+pub fn release_when_unused(old: Arc<Dict>, max: std::time::Duration) {
+    let start = std::time::Instant::now();
+    while Arc::strong_count(&old) > 1 && start.elapsed() < max {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    drop(old);
 }
 
 #[cfg(test)]
@@ -309,6 +370,72 @@ mod tests {
         );
         assert_eq!(d.get_id(7), Some("Espada"));
         assert_eq!(d.get_id(8), Some("Espada ruim"));
+    }
+
+    #[test]
+    fn release_over_shipped_over_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let shipped = dir.path().join("dictionary.jsonl");
+        let local = dir.path().join("local.jsonl");
+        std::fs::write(
+            &shipped,
+            "{\"en\":\"Sword\",\"tr\":\"Espada velha\",\"ids\":[1]}\n{\"en\":\"Shield\",\"tr\":\"Escudo\",\"ids\":[2]}\n\
+             {\"en\":\"It's  done\",\"tr\":\"Feito velho\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &local,
+            "{\"en\":\"Sword\",\"tr\":\"Espada local\",\"src\":\"argos\",\"ids\":[1]}\n\
+             {\"en\":\"Bow\",\"tr\":\"Arco local\",\"src\":\"argos\",\"ids\":[3]}\n\
+             {\"en\":\"Axe\",\"tr\":\"Machado local\",\"src\":\"argos\"}\n",
+        )
+        .unwrap();
+        let release = vec![
+            Translation {
+                ids: vec![1],
+                ..tr("Sword", "Espada")
+            },
+            Translation {
+                ids: vec![3],
+                ..tr("Bow", "Arco")
+            },
+            tr("It's  done", "Feito"),
+            tr("Broken", "[null]"),
+        ];
+        let d = Dict::merged(&shipped, release, &local);
+        // The release replaces the shipped text, by text and by ID.
+        assert_eq!((d.get("Sword"), d.get_id(1)), (Some("Espada"), Some("Espada")));
+        assert_eq!(d.get("It's done"), Some("Feito"), "also through the normalized key");
+        // What the release does not have stays as shipped.
+        assert_eq!((d.get("Shield"), d.get_id(2)), (Some("Escudo"), Some("Escudo")));
+        // Local translations never replace either one; they only fill gaps.
+        assert_eq!((d.get("Bow"), d.get_id(3)), (Some("Arco"), Some("Arco")));
+        assert_eq!(d.get("Axe"), Some("Machado local"));
+        assert_eq!(d.get("Broken"), None, "unusable release records are skipped");
+        // No release: the same as before releases existed.
+        let d = Dict::merged(&shipped, Vec::new(), &local);
+        assert_eq!((d.get("Sword"), d.get("Bow")), (Some("Espada velha"), Some("Arco local")));
+    }
+
+    #[test]
+    fn swap_keeps_readers_on_the_old_dictionary_until_they_are_done() {
+        let mut a = Dict::default();
+        a.add([tr("Sword", "Espada velha")], true);
+        let shared = Shared::new(a);
+        let reader = shared.load();
+        let mut b = Dict::default();
+        b.add([tr("Sword", "Espada")], true);
+        let old = shared.swap(b);
+        assert_eq!(reader.get("Sword"), Some("Espada velha"));
+        assert_eq!(shared.load().get("Sword"), Some("Espada"));
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            drop(reader);
+        });
+        let weak = Arc::downgrade(&old);
+        release_when_unused(old, std::time::Duration::from_secs(5));
+        assert!(weak.upgrade().is_none());
+        t.join().unwrap();
     }
 
     /// Checks the repository's real dictionary, when present.

@@ -155,7 +155,7 @@ unsafe fn translate_tab(tab: *mut u8) {
         return;
     };
     let Some(name) = (unsafe { tab_name(tab) }) else { return };
-    let Some(new) = tab_translation(&name, |en| state.dict.get(en).map(str::to_owned)) else {
+    let Some(new) = tab_translation(&name, |en| state.dict.load().get(en).map(str::to_owned)) else {
         return;
     };
     unsafe {

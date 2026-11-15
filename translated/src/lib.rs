@@ -22,6 +22,7 @@ pub mod procstats;
 pub mod rc4;
 pub mod records;
 pub mod refresh;
+pub mod release;
 pub mod runtime;
 pub mod sig;
 mod ui_text;
@@ -51,7 +52,8 @@ pub static MODULE: AtomicUsize = AtomicUsize::new(0);
 pub struct State {
     pub paths: Paths,
     pub config: Config,
-    pub dict: Dict,
+    /// Shipped dictionary, downloaded release and local translations, merged (see [`Dict::merged`]).
+    pub dict: dict::Shared,
     /// Collection thread; whether it records anything follows [`runtime`].
     pub collector: Option<collect::Collector>,
 }
@@ -62,6 +64,23 @@ fn exe_path() -> Option<PathBuf> {
     let mut buf = vec![0u16; 1024];
     let n = unsafe { GetModuleFileNameW(std::ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32) } as usize;
     (n > 0 && n < buf.len()).then(|| PathBuf::from(String::from_utf16_lossy(&buf[..n])))
+}
+
+/// Puts a release just installed in use: the merged dictionary is built here (the release thread), swapped in, and
+/// the text on screen is decoded again. Lookups in progress finish with the old one, freed afterwards on this thread.
+fn apply_release(version: u64, records: Vec<records::Translation>) {
+    let Some(st) = STATE.get() else { return };
+    let t = std::time::Instant::now();
+    let dict = Dict::merged(&st.paths.dictionary(), records, &st.paths.local());
+    log!(
+        "dictionary release: version {version} in use after {:.2}s ({} pairs, {} ids)",
+        t.elapsed().as_secs_f64(),
+        dict.len(),
+        dict.id_len()
+    );
+    let old = st.dict.swap(dict);
+    refresh::request();
+    dict::release_when_unused(old, std::time::Duration::from_secs(10));
 }
 
 pub fn init() {
@@ -103,24 +122,26 @@ pub fn init() {
     }
 
     runtime::init(&config, paths.config());
-    let mut dict = Dict::default();
-    {
+    // A release downloaded earlier is only used while updates are on: off means the dictionary that came with the mod.
+    let releases = release::Store::new(paths.release_dir(), &paths.language, release::PUBLIC_KEY);
+    let loaded = if config.update_dictionary { releases.load() } else { None };
+    let in_use = loaded.as_ref().map(|l| l.version);
+    release::set_in_use(in_use);
+    let dict = {
         let t = std::time::Instant::now();
-        match dict.load_file(&paths.dictionary(), true) {
-            Ok(n) => log!("dictionary: {n} texts"),
-            Err(e) => log!("dictionary: error {e}"),
+        if let Some(v) = in_use {
+            log!("dictionary release: version {v}");
         }
-        match dict.load_file(&paths.local(), false) {
-            Ok(n) => log!("local translations: {n} new texts"),
-            Err(e) => log!("local translations: error {e}"),
-        }
+        let records = loaded.map(|l| l.records).unwrap_or_default();
+        let dict = Dict::merged(&paths.dictionary(), records, &paths.local());
         log!(
             "dictionary loaded in {:.2}s ({} pairs, {} ids)",
             t.elapsed().as_secs_f64(),
             dict.len(),
             dict.id_len()
         );
-    }
+        dict::Shared::new(dict)
+    };
 
     // Always started: the overlay can turn translation and collection on and
     // off while the game runs. The local translator only starts when needed.
@@ -156,6 +177,12 @@ pub fn init() {
             files: vec![st.paths.decrypted(), st.paths.local(), st.paths.discovered()],
             language: st.paths.language.clone(),
         });
+        // Checks the server in the background (only while `update_dictionary` is on, checked on every cycle).
+        release::start(release::Setup {
+            store: releases,
+            in_use,
+            apply: Box::new(apply_release),
+        });
     }
 
     match game::Image::current() {
@@ -168,7 +195,7 @@ pub fn init() {
         None => log!("game image not found; nothing to do"),
     }
     if let Some(st) = STATE.get() {
-        web::install(st.paths.language_dir().join("web.jsonl"), st.paths.web_local(), &st.dict);
+        web::install(st.paths.language_dir().join("web.jsonl"), st.paths.web_local());
     }
     if let Some(st) = STATE.get().filter(|s| s.config.overlay) {
         overlay::install(

@@ -89,7 +89,6 @@ struct CefString {
 static CREATE: OnceLock<GenericDetour<CreateBrowserFn>> = OnceLock::new();
 /// The script call with the page texts, ready to run.
 static PAYLOAD: OnceLock<Vec<u16>> = OnceLock::new();
-static DICT: OnceLock<&'static Dict> = OnceLock::new();
 /// Original `get_load_handler` of each client, by client address.
 static CLIENTS: Mutex<Option<HashMap<usize, usize>>> = Mutex::new(None);
 /// Original `on_load_end` of each load handler, by handler address.
@@ -345,8 +344,10 @@ unsafe extern "system" fn on_console_message(
         if enabled() && !browser.is_null() && unsafe { slot(browser, 0) } == BROWSER_SIZE {
             let mut found = HashMap::new();
             let mut missing = Vec::new();
+            // The dictionary in use now (a downloaded release can replace it while the game runs).
+            let dict = crate::STATE.get().map(|st| st.dict.load());
             for text in texts {
-                match DICT.get().and_then(|d| known_translation(d, &text)) {
+                match dict.as_deref().and_then(|d| known_translation(d, &text)) {
                     Some(tr) => {
                         found.insert(text, tr);
                     }
@@ -592,7 +593,7 @@ fn hook_cef() {
 }
 
 /// Prepares the scripts and waits for CEF, without blocking the game.
-pub fn install(web_file: PathBuf, web_local_file: PathBuf, dict: &'static Dict) {
+pub fn install(web_file: PathBuf, web_local_file: PathBuf) {
     let _ = std::thread::Builder::new()
         .name("gw2translated-web".into())
         .spawn(move || {
@@ -608,7 +609,6 @@ pub fn install(web_file: PathBuf, web_local_file: PathBuf, dict: &'static Dict) 
                 .map(|r| r.records)
                 .unwrap_or_default();
             WEB_TEXTS.fetch_add(web_local.len(), std::sync::atomic::Ordering::Relaxed);
-            let _ = DICT.set(dict);
             let payload = build_payload(&web, &web_local);
             log!(
                 "web: {} page texts, {} translated on this PC, script of {} KB",
