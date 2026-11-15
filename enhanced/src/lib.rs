@@ -303,6 +303,9 @@ impl ImguiRenderLoop for Overlay {
                     {
                         registry::report("graphics", "overlay", State::Off("panel panicked".into()));
                     }
+                    if let Some(_t) = ui.tab_item(tr("Version###tab-version", "Versão###tab-version")) {
+                        version_tab(ui);
+                    }
                     if let Some(_t) = ui.tab_item(tr("Health###tab-health", "Situação###tab-health")) {
                         health(ui);
                     }
@@ -406,19 +409,36 @@ fn health(ui: &Ui) {
         ui.text_wrapped(line);
     }
     ui.separator();
-    {
-        let c = ui.style_color(hudhook::imgui::StyleColor::TextDisabled);
-        let _c = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
-        ui.text_wrapped(update::summary());
+    log_switches(ui);
+}
+
+/// Version tab: what this DLL is, its update state, the manual check and the changelog of the newest release. One page
+/// for the whole build: the full build updates GW2 Enhanced as a whole, a single-feature build only that feature.
+fn version_tab(ui: &Ui) {
+    ui.text(gw2enhanced_core::trf!("{}: version {}", "{}: versão {}", update_target(), update::current_version()));
+    let names: Vec<&str> = log_features().into_iter().skip(1).map(|(_, n)| n).collect();
+    if names.len() > 1 {
+        dim_text(ui, &gw2enhanced_core::trf!("Included: {}", "Inclui: {}", names.join(", ")));
     }
-    // One update per build: the full build updates GW2 Enhanced as a whole, a single-feature build only that feature.
+    ui.separator();
+    dim_text(ui, &update::summary());
     if ui.button(gw2enhanced_core::trf!("Check for updates: {}###check-updates", "Verificar atualizações: {}###check-updates", update_target()))
         && !update::checking()
     {
         update::check_now();
     }
-    ui.separator();
-    log_switches(ui);
+    let (version, notes) = update::release_notes();
+    if !notes.is_empty() {
+        ui.separator();
+        ui.text(gw2enhanced_core::trf!("Changelog of {version}", "Novidades da {version}"));
+        ui.child_window("##version-notes").size([0.0, 260.0]).border(true).build(|| ui.text_wrapped(&notes));
+    }
+}
+
+fn dim_text(ui: &Ui, text: &str) {
+    let c = ui.style_color(hudhook::imgui::StyleColor::TextDisabled);
+    let _c = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
+    ui.text_wrapped(text);
 }
 
 /// What this build's updater updates: GW2 Enhanced in the full build, the one feature in a single-feature build.
