@@ -14,7 +14,7 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 SITE = Path(__file__).resolve().parents[1] / "site"
 
@@ -38,6 +38,29 @@ ITEMS = [
 ]
 
 
+TOTAL = STATS["texts"]
+
+
+def texts_page(qs):
+    """A page of the fake list: the sample items repeated, numbered, with the same answer shape as the server."""
+    page = int((qs.get("page") or ["1"])[0])
+    limit = int((qs.get("limit") or ["20"])[0])
+    search = bool((qs.get("q") or [""])[0])
+    total = 7 if search else TOTAL
+    first = (page - 1) * limit
+    items = []
+    for i in range(first, min(first + limit, total)):
+        it = dict(ITEMS[i % len(ITEMS)])
+        it["text_key"] = f"{i:032x}"
+        it["en"] = f"{it['en']} (#{i + 1})"
+        items.append(it)
+    more = first + limit < total
+    return {
+        "items": items, "page": page, "limit": limit, "offset": first, "more": more,
+        "total": None if search else total, "next_cursor": str(first + limit) if more else None,
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -54,7 +77,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/stats":
             return self.reply(200, json.dumps(STATS).encode(), "application/json")
         if path == "/v1/texts":
-            return self.reply(200, json.dumps({"items": ITEMS, "next_cursor": None}).encode(), "application/json")
+            return self.reply(200, json.dumps(texts_page(parse_qs(urlparse(self.path).query))).encode(), "application/json")
         file = (SITE / ("index.html" if path == "/" else path.lstrip("/"))).resolve()
         if SITE.resolve() in file.parents and file.is_file():
             data = file.read_bytes()

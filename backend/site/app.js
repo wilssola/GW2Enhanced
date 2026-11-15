@@ -10,7 +10,10 @@
   const LANG = "pt-BR";
   const SITEKEY = document.body.dataset.sitekey || "";
   const $ = (s) => document.querySelector(s);
-  const state = { sort: "recent", q: "", cursor: null, loading: false };
+  // The list's state lives in the URL (#dicionario?sort=best&p=3&n=50&q=…), so links, back and forward work.
+  const SORTS = ["recent", "oldest", "best", "worst"];
+  const SIZES = [20, 50, 100];
+  const state = { sort: "recent", p: 1, n: 20, q: "", total: null, more: false, seq: 0 };
   const REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const HAS_IO = "IntersectionObserver" in window;
   document.documentElement.classList.add("js");
@@ -33,6 +36,8 @@
     control_chars: "A tradução contém caracteres invisíveis ou de controle.",
     unknown_text: "Texto não encontrado.",
     unknown_translation: "Tradução não encontrada.",
+    bad_page: "Esta página não existe.",
+    bad_limit: "Tamanho de página inválido.",
   };
   const SOURCES = { ai: "IA", argos: "Argos", user: "Comunidade" };
 
@@ -128,11 +133,16 @@
     } catch (_) { /* metrics are optional */ }
   }
 
+  // Vote buttons; after a vote their counts are updated from the answer (the list itself is cached for a while).
   function voteButtons(t) {
-    const up = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar a favor", title: "Boa tradução", onclick: () => vote(t.id, 1) });
-    up.append(text("span", "up", "▲ " + num(t.up)));
-    const down = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar contra", title: "Tradução ruim", onclick: () => vote(t.id, -1) });
-    down.append(text("span", "down", "▼ " + num(t.down)));
+    const upN = text("span", "up", "▲ " + num(t.up));
+    const downN = text("span", "down", "▼ " + num(t.down));
+    const done = (r) => {
+      if (typeof r.up === "number") upN.textContent = "▲ " + num(r.up);
+      if (typeof r.down === "number") downN.textContent = "▼ " + num(r.down);
+    };
+    const up = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar a favor", title: "Boa tradução", onclick: () => vote(t.id, 1, done) }, upN);
+    const down = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar contra", title: "Tradução ruim", onclick: () => vote(t.id, -1, done) }, downN);
     return [up, down];
   }
 
@@ -163,26 +173,145 @@
     return card;
   }
 
-  async function load(reset) {
-    if (state.loading) return;
-    state.loading = true;
+  // ---- dictionary list: numbered pages, state in the URL hash ----
+
+  const HASH = "#dicionario";
+
+  /** Reads sort / page / size / search from `#dicionario?…`; anything invalid falls back to the default. */
+  function readHash() {
+    const h = location.hash;
+    const s = { sort: "recent", p: 1, n: 20, q: "" };
+    if (!h.startsWith(HASH + "?")) return null;
+    const u = new URLSearchParams(h.slice(HASH.length + 1));
+    if (SORTS.includes(u.get("sort"))) s.sort = u.get("sort");
+    const p = Number(u.get("p"));
+    if (Number.isInteger(p) && p >= 1 && p <= 1e6) s.p = p;
+    const n = Number(u.get("n"));
+    if (SIZES.includes(n)) s.n = n;
+    s.q = (u.get("q") || "").trim().slice(0, 100);
+    return s;
+  }
+
+  function hashFor(s) {
+    const u = new URLSearchParams({ sort: s.sort, p: String(s.p), n: String(s.n) });
+    if (s.q) u.set("q", s.q);
+    return HASH + "?" + u.toString();
+  }
+
+  /** Moves the list to `next` (merged into the current state). `replace` keeps it out of the history (typing). */
+  function go(next, replace) {
+    const s = Object.assign({ sort: state.sort, p: state.p, n: state.n, q: state.q }, next);
+    const h = hashFor(s);
+    if (replace) { history.replaceState(null, "", h); apply(s, false); }
+    else if (location.hash !== h) location.hash = h; // hashchange does the rest
+    else apply(s, true);
+  }
+
+  function apply(s, scroll) {
+    Object.assign(state, s);
+    for (const b of document.querySelectorAll(".tabs button")) b.setAttribute("aria-pressed", String(b.dataset.sort === state.sort));
+    $("#pg-size").value = String(state.n);
+    if ($("#q").value.trim() !== state.q) $("#q").value = state.q;
+    load(scroll);
+  }
+
+  const lastPage = () => (typeof state.total === "number" ? Math.max(1, Math.ceil(state.total / state.n)) : null);
+
+  /** Page numbers to show: first, last and two around the current one, with gaps as null. */
+  function pageList(cur, last) {
+    const w = window.innerWidth, r = w < 400 ? 0 : w < 600 ? 1 : 2; // fewer neighbours on phones, so the pager fits one line
+    const near = [];
+    for (let p = cur - r; p <= cur + r; p++) near.push(p);
+    const want = new Set([1, last, ...near].filter((p) => p >= 1 && p <= last));
+    const out = [];
+    let prev = 0;
+    for (const p of [...want].sort((a, b) => a - b)) {
+      if (p - prev > 2) out.push(null); else if (p - prev === 2) out.push(prev + 1);
+      out.push(p);
+      prev = p;
+    }
+    return out;
+  }
+
+  function renderPager(count) {
+    const nav = $("#pager"), cur = state.p, last = lastPage();
+    // A search has no total: number the pages seen so far, plus the next one when there is more.
+    const end = last != null ? last : cur + (state.more ? 1 : 0);
+    const link = (label, p, aria, cls) => {
+      const off = p < 1 || p > end || p === cur;
+      const b = el("button", { class: "pg " + (cls || ""), type: "button", "aria-label": aria }, label);
+      if (p === cur && !cls) { b.setAttribute("aria-current", "page"); b.classList.add("on"); }
+      if (off) b.disabled = true; else b.addEventListener("click", () => go({ p }));
+      return b;
+    };
+    const kids = [link("«", 1, "Primeira página", "edge far"), link("‹", cur - 1, "Página anterior", "edge")];
+    for (const p of pageList(cur, Math.max(end, cur))) {
+      kids.push(p == null ? text("span", "pg-gap", "…") : link(num(p), p, "Página " + num(p)));
+    }
+    kids.push(link("›", cur + 1, "Próxima página", "edge"));
+    if (last != null) kids.push(link("»", last, "Última página (" + num(last) + ")", "edge far"));
+    nav.replaceChildren(...kids);
+    nav.hidden = end <= 1 && cur === 1;
+    $("#pg-jump").hidden = last == null || last <= 1;
+    $("#pg-input").max = last != null ? String(last) : "";
+    const from = (cur - 1) * state.n + 1;
+    $("#pg-info").textContent = !count ? ""
+      : "Mostrando " + num(from) + "–" + num(from + count - 1)
+        + (typeof state.total === "number" ? " de " + num(state.total) : state.q ? " resultados da busca" : "");
+  }
+
+  async function load(scroll) {
+    const seq = ++state.seq; // a newer request wins over a slower older one
     const list = $("#list");
-    if (reset) { state.cursor = null; list.replaceChildren(text("div", "msg", "Carregando…")); }
-    const p = new URLSearchParams({ lang: LANG, sort: state.sort });
+    list.setAttribute("aria-busy", "true");
+    list.classList.add("busy");
+    if (scroll) $("#dicionario").scrollIntoView({ behavior: REDUCE ? "auto" : "smooth", block: "start" });
+    const p = new URLSearchParams({ lang: LANG, sort: state.sort, page: String(state.p), limit: String(state.n) });
     if (state.q) p.set("q", state.q);
-    if (state.cursor) p.set("cursor", state.cursor);
     try {
       const r = await api("/v1/texts?" + p.toString());
-      if (reset) list.replaceChildren();
-      for (const it of r.items) list.append(render(it));
-      if (reset && !r.items.length) list.append(text("div", "msg", state.q ? "Nada encontrado." : "Nenhum texto ainda."));
-      state.cursor = typeof r.next_cursor === "string" ? r.next_cursor : null;
-      $("#more").hidden = !state.cursor;
+      if (seq !== state.seq) return;
+      state.total = typeof r.total === "number" ? r.total : null;
+      state.more = r.more === true || typeof r.next_cursor === "string";
+      list.replaceChildren(...r.items.map(render));
+      if (!r.items.length) {
+        list.append(text("div", "msg", state.p > 1 ? "Esta página está vazia." : state.q ? "Nada encontrado." : "Nenhum texto ainda."));
+      }
+      renderPager(r.items.length);
     } catch (e) {
-      if (reset) list.replaceChildren(text("div", "msg", e.message)); else toast(e.message);
+      if (seq !== state.seq) return;
+      list.replaceChildren(text("div", "msg", e.message));
+      state.more = false;
+      renderPager(0);
     } finally {
-      state.loading = false;
+      if (seq === state.seq) { list.removeAttribute("aria-busy"); list.classList.remove("busy"); }
     }
+  }
+
+  function setupList() {
+    for (const b of document.querySelectorAll(".tabs button")) {
+      b.addEventListener("click", () => go({ sort: b.dataset.sort, p: 1 }));
+    }
+    $("#pg-size").addEventListener("change", (e) => {
+      const n = Number(e.target.value);
+      // Keep the first row in view: the page that holds it at the new size.
+      if (SIZES.includes(n)) go({ n, p: Math.floor(((state.p - 1) * state.n) / n) + 1 });
+    });
+    let qTimer;
+    $("#q").addEventListener("input", (e) => {
+      clearTimeout(qTimer);
+      qTimer = setTimeout(() => go({ q: e.target.value.trim().slice(0, 100), p: 1 }, true), 300);
+    });
+    $("#pg-jump").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const last = lastPage(), v = Number($("#pg-input").value);
+      if (!Number.isInteger(v) || v < 1) { toast("Digite o número de uma página."); return; }
+      go({ p: last != null ? Math.min(v, last) : v });
+      $("#pg-input").value = "";
+    });
+    window.addEventListener("hashchange", () => { const s = readHash(); if (s) apply(s, true); });
+    const s = readHash();
+    apply(s || { sort: "recent", p: 1, n: 20, q: "" }, !!s);
   }
 
   // One dialog for every write: shows the Turnstile widget, sends when confirmed.
@@ -224,13 +353,13 @@
     if (SITEKEY) mount(0);
   }
 
-  function vote(id, value) {
+  function vote(id, value, done) {
     ask(value > 0 ? "Votar a favor desta tradução" : "Votar contra esta tradução",
       [text("p", "note", "Confirme que você é humano para registrar o voto.")], null,
       async (token) => {
-        await api("/v1/votes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ translation_id: id, value, turnstile: token }) });
+        const r = await api("/v1/votes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ translation_id: id, value, turnstile: token }) });
+        if (r && done) done(r);
         toast("Voto registrado. Obrigado!");
-        load(true);
       });
   }
 
@@ -389,21 +518,8 @@
     renderGalleries();
     setupReveal();
     setupNav();
-    for (const b of document.querySelectorAll(".tabs button")) {
-      b.addEventListener("click", () => {
-        for (const o of document.querySelectorAll(".tabs button")) o.setAttribute("aria-pressed", String(o === b));
-        state.sort = b.dataset.sort;
-        load(true);
-      });
-    }
-    let qTimer;
-    $("#q").addEventListener("input", (e) => {
-      clearTimeout(qTimer);
-      qTimer = setTimeout(() => { state.q = e.target.value.trim().slice(0, 100); load(true); }, 300);
-    });
-    $("#more").addEventListener("click", () => load(false));
+    setupList();
     loadStats();
-    load(true);
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

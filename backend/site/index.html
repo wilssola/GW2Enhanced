@@ -189,7 +189,7 @@
       <div class="progress reveal" aria-hidden="true"><i id="s-bar"></i></div>
     </div>
 
-    <div id="textos" class="sub" aria-labelledby="t-textos">
+    <div id="dicionario" class="sub" aria-labelledby="t-textos">
       <header class="sub-head reveal">
         <p class="kicker">Original e tradução lado a lado</p>
         <h3 id="t-textos">Vote e sugira</h3>
@@ -197,17 +197,36 @@
       </header>
       <div class="toolbar">
         <div class="tabs" role="group" aria-label="Ordenar">
-          <button class="gbtn" data-sort="recent" aria-pressed="true">Recentes</button>
-          <button class="gbtn" data-sort="best" aria-pressed="false">Melhores</button>
-          <button class="gbtn" data-sort="worst" aria-pressed="false">Piores</button>
+          <button class="gbtn" type="button" data-sort="recent" aria-pressed="true">Mais recentes</button>
+          <button class="gbtn" type="button" data-sort="oldest" aria-pressed="false">Mais antigos</button>
+          <button class="gbtn" type="button" data-sort="best" aria-pressed="false">Melhores</button>
+          <button class="gbtn" type="button" data-sort="worst" aria-pressed="false">Piores</button>
         </div>
         <label class="search">
           <span class="sr">Buscar</span>
           <input id="q" type="search" maxlength="100" placeholder="Buscar em inglês ou português…" autocomplete="off">
         </label>
       </div>
+      <div class="pg-bar">
+        <p class="pg-info" id="pg-info" aria-live="polite"></p>
+        <label class="pg-size">
+          <span>Por página</span>
+          <select id="pg-size">
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+      </div>
       <div id="list" aria-live="polite"></div>
-      <div class="more"><button id="more" class="pennant" hidden>Carregar mais</button></div>
+      <div class="pager-wrap">
+        <nav class="pager" id="pager" aria-label="Páginas"></nav>
+        <form class="pg-jump" id="pg-jump">
+          <label for="pg-input">Ir para a página</label>
+          <input id="pg-input" type="number" min="1" step="1" inputmode="numeric" autocomplete="off">
+          <button class="gbtn" type="submit">Ir</button>
+        </form>
+      </div>
     </div>
   </section>
 

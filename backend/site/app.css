@@ -510,18 +510,32 @@ dialog[open]::backdrop { animation: fade 260ms ease both; }
 .dl-text span { display: block; margin-top: 4px; color: #b5ada1; }
 .dl-band .play { align-self: stretch; min-width: 280px; font-size: 1.8rem; clip-path: polygon(26px 0, 100% 0, 100% 100%, 0 100%); padding: 0 40px 0 54px; }
 
-/* ---------- pager pennant ---------- */
-.more { display: flex; justify-content: center; margin-top: 10px; }
-.pennant {
-  position: relative; cursor: pointer; padding: 14px 22px 10px; margin-top: 10px;
-  font: 600 .875rem/1 var(--label); letter-spacing: .12em; text-transform: uppercase; color: #fff;
-  background: linear-gradient(#b81e20, #7d1011); border: 1px solid #4a0708; transition: filter .15s ease, transform .2s var(--ease-out);
+/* ---------- numbered pager ---------- */
+.pg-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: -4px 0 14px; }
+.pg-info { margin: 0; color: var(--page-muted); font: 600 .95rem/1.3 var(--label); letter-spacing: .08em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.pg-size { display: inline-flex; align-items: center; gap: 8px; color: var(--page-muted); font: 600 .9rem/1 var(--label); letter-spacing: .08em; text-transform: uppercase; }
+.pg-size select, .pg-jump input {
+  min-height: 36px; padding: 6px 10px; color: var(--ink); font: 600 1rem/1 var(--label);
+  background: var(--parchment); border: 1px solid #8f8372; border-bottom: 2px solid var(--gold-deep); border-radius: 0;
 }
-.pennant::before {
-  content: ""; position: absolute; left: 50%; top: -10px; width: 22px; height: 12px; margin-left: -11px;
-  background: #9e1b1b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 60%, 0 100%);
+#list { transition: opacity .2s ease; }
+#list.busy { opacity: .45; }
+.pager-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 8px; }
+.pager { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; }
+.pg {
+  min-width: 40px; height: 40px; padding: 0 10px; cursor: pointer;
+  color: #e4ddd2; font: 600 1rem/1 var(--label); letter-spacing: .04em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(#3a3d44, #24262b); border: 1px solid #111;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 2px 4px rgba(0, 0, 0, .3);
+  transition: filter .15s ease, transform .15s var(--ease-out);
 }
-.pennant:hover { filter: brightness(1.12); transform: translateY(-2px); }
+.pg:not(:disabled):hover { filter: brightness(1.25); transform: translateY(-1px); }
+.pg.edge { font-size: 1.25rem; }
+.pg.on { color: #2a1a05; background: linear-gradient(#e0bd6e, #a07628); border-color: #5d4210; box-shadow: 0 0 12px rgba(214, 178, 101, .45); cursor: default; }
+.pg:disabled:not(.on) { opacity: .35; cursor: default; }
+.pg-gap { min-width: 22px; color: var(--page-muted); text-align: center; font: 600 1rem/1 var(--label); }
+.pg-jump { display: flex; align-items: center; gap: 8px; color: var(--page-muted); font: 600 .9rem/1 var(--label); letter-spacing: .08em; text-transform: uppercase; }
+.pg-jump input { width: 96px; }
 
 /* ---------- footer ---------- */
 .footer { position: relative; background: #0b0b0b; color: #a8a195; padding: 36px var(--gutter) 34px; text-align: center; font-size: .98rem; border-top: 1px solid #000; }
@@ -590,6 +604,9 @@ dialog textarea {
   .dl-band .play { min-height: 70px; clip-path: none; }
 }
 @media (max-width: 640px) {
+  .pager { gap: 4px; }
+  .pg { min-width: 36px; padding: 0 7px; }
+  .pg.far { display: none; } /* first and last pages are numbered anyway */
   html { scroll-padding-top: 56px; }
   .topbar { gap: 10px; }
   .topbar .tag span { display: none; }
@@ -629,5 +646,5 @@ dialog textarea {
 
 @media (forced-colors: active) {
   .paper::before { filter: none; }
-  .gbtn, .play, .pennant { border: 1px solid ButtonText; }
+  .gbtn, .play, .pg { border: 1px solid ButtonText; }
 }
