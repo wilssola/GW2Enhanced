@@ -12,7 +12,7 @@ workers_dev = true
 # routes = [{ pattern = "api.example.com", custom_domain = true }]
 
 [build]
-command = "cargo install -q worker-build && worker-build --release"
+command = "cargo install -q worker-build --version ~0.8 && worker-build --release"
 
 # Scheduled jobs (must match CRON_* in src/app/mod.rs):
 #   */5 * * * *  review queue (AI + reporter agreement), stats refresh
