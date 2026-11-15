@@ -22,6 +22,7 @@ use windows_sys::Win32::Foundation::{HMODULE, TRUE};
 use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
+use gw2enhanced_core::i18n::{self, Lang, tr};
 use gw2enhanced_core::registry::{self, State};
 
 /// Lets the installer recognise our `msimg32.dll`.
@@ -62,6 +63,8 @@ fn guarded(name: &'static str, f: impl FnOnce() + std::panic::UnwindSafe) {
 }
 
 fn init(module: usize) {
+    // Before any panel exists: they all draw in the overlay language.
+    i18n::init();
     let mut threads = Vec::new();
     // Each feature has its own panic guard and thread: they hook at different moments and one must not wait for another.
     #[cfg(feature = "translation")]
@@ -265,29 +268,30 @@ impl ImguiRenderLoop for Overlay {
             .opened(&mut open)
             .flags(WindowFlags::NO_COLLAPSE | WindowFlags::ALWAYS_AUTO_RESIZE)
             .build(|| {
+                language_picker(ui);
                 if let Some(_bar) = ui.tab_bar("gw2enhanced-tabs") {
                     #[cfg(feature = "translation")]
                     if let Some(o) = self.translated.as_mut()
-                        && let Some(_t) = ui.tab_item("Translation")
+                        && let Some(_t) = ui.tab_item(tr("Translation###tab-translation", "Tradução###tab-translation"))
                         && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.body(ui))).is_err()
                     {
                         registry::report("translation", "overlay", State::Off("panel panicked".into()));
                     }
                     #[cfg(feature = "textures")]
                     if let Some(o) = self.textures.as_mut()
-                        && let Some(_t) = ui.tab_item("Textures")
+                        && let Some(_t) = ui.tab_item(tr("Textures###tab-textures", "Texturas###tab-textures"))
                         && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.body(ui))).is_err()
                     {
                         registry::report("textures", "overlay", State::Off("panel panicked".into()));
                     }
                     #[cfg(feature = "graphics")]
                     if let Some(o) = self.graphics.as_mut()
-                        && let Some(_t) = ui.tab_item("Graphics")
+                        && let Some(_t) = ui.tab_item(tr("Graphics###tab-graphics", "Gráficos###tab-graphics"))
                         && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.body(ui))).is_err()
                     {
                         registry::report("graphics", "overlay", State::Off("panel panicked".into()));
                     }
-                    if let Some(_t) = ui.tab_item("Health") {
+                    if let Some(_t) = ui.tab_item(tr("Health###tab-health", "Situação###tab-health")) {
                         health(ui);
                     }
                 }
@@ -329,6 +333,23 @@ impl ImguiRenderLoop for Overlay {
     }
 }
 
+/// The overlay language, above the tabs so it is there whichever feature is built in.
+fn language_picker(ui: &Ui) {
+    let cur = i18n::current();
+    ui.text(tr("Overlay language", "Idioma do overlay"));
+    ui.same_line();
+    ui.set_next_item_width(200.0 * ui.io().font_global_scale);
+    if let Some(_c) = ui.begin_combo("##overlay-language", cur.name()) {
+        for l in Lang::ALL {
+            if ui.selectable_config(l.name()).selected(l == cur).build() && l != cur
+                && let Err(e) = i18n::choose(l)
+            {
+                registry::report("overlay", "language", State::Degraded(format!("could not save ui_language: {e}")));
+            }
+        }
+    }
+}
+
 /// Every feature and hook with its state, worst first: what the player needs to see after a game update.
 fn health(ui: &Ui) {
     let mut all = registry::snapshot();
@@ -341,9 +362,12 @@ fn health(ui: &Ui) {
     let off = all.iter().filter(|e| e.state.is_off()).count();
     let degraded = all.iter().filter(|e| matches!(e.state, State::Degraded(_))).count();
     if off == 0 && degraded == 0 {
-        ui.text_colored([0.4, 1.0, 0.4, 1.0], "Everything is working.");
+        ui.text_colored([0.4, 1.0, 0.4, 1.0], tr("Everything is working.", "Tudo funcionando."));
     } else {
-        ui.text_colored([1.0, 0.7, 0.3, 1.0], format!("{off} off, {degraded} degraded"));
+        ui.text_colored(
+            [1.0, 0.7, 0.3, 1.0],
+            gw2enhanced_core::trf!("{off} off, {degraded} degraded", "{off} desligado(s), {degraded} parcial(is)"),
+        );
     }
     ui.separator();
     for e in &all {
@@ -352,10 +376,12 @@ fn health(ui: &Ui) {
         } else {
             format!("{} / {}", e.feature, e.item)
         };
+        // The reasons come from the features as they report them (English, like the log).
+        let (ok, degraded, off) = ("OK", tr("DEGRADED", "PARCIAL"), tr("OFF", "DESLIGADO"));
         match &e.state {
-            State::Ok => ui.text_colored([0.4, 1.0, 0.4, 1.0], format!("OK        {what}")),
-            State::Degraded(t) => ui.text_colored([1.0, 0.85, 0.3, 1.0], format!("DEGRADED  {what}: {t}")),
-            State::Off(t) => ui.text_colored([1.0, 0.4, 0.4, 1.0], format!("OFF       {what}: {t}")),
+            State::Ok => ui.text_colored([0.4, 1.0, 0.4, 1.0], format!("{ok:<10}{what}")),
+            State::Degraded(t) => ui.text_colored([1.0, 0.85, 0.3, 1.0], format!("{degraded:<10}{what}: {t}")),
+            State::Off(t) => ui.text_colored([1.0, 0.4, 0.4, 1.0], format!("{off:<10}{what}: {t}")),
         }
     }
     ui.separator();

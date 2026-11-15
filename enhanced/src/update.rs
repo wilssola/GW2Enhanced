@@ -21,10 +21,12 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use gw2enhanced_core::i18n::tr;
 use gw2enhanced_core::registry::{self, State};
 use gw2enhanced_core::release::{
     OWNER, PACKAGES, REPO, SIG_ASSET, SUMS_ASSET, asset_name, asset_url_ok, expected_sum, is_protected, safe_relative,
 };
+use gw2enhanced_core::trf;
 use hudhook::imgui::{Condition, Ui, WindowFlags};
 
 /// How long after the start the check runs: the game is busy loading before that.
@@ -290,18 +292,24 @@ pub fn window_visible() -> bool {
     )
 }
 
-/// One line for the Health tab's footer.
+/// One line for the Health tab's footer (in the overlay language; the reasons and errors stay as reported).
 pub fn summary() -> String {
-    let pkg = package().unwrap_or("development build");
+    let pkg = package().unwrap_or(tr("development build", "build de desenvolvimento"));
     let state = match phase() {
-        Phase::Idle => "update check pending".to_string(),
+        Phase::Idle => tr("update check pending", "verificação de atualização pendente").to_string(),
         Phase::Disabled(why) => why,
-        Phase::UpToDate => "up to date".to_string(),
-        Phase::CheckFailed(e) => format!("update check failed: {e}"),
-        Phase::Available { version } | Phase::Dismissed { version } => format!("{version} available"),
-        Phase::Downloading { version } | Phase::Installing { version } => format!("updating to {version}"),
-        Phase::Done { version, .. } => format!("updated to {version}, restart the game"),
-        Phase::Failed { error, .. } => format!("update failed: {error}"),
+        Phase::UpToDate => tr("up to date", "atualizado").to_string(),
+        Phase::CheckFailed(e) => trf!("update check failed: {e}", "falha ao verificar atualização: {e}"),
+        Phase::Available { version } | Phase::Dismissed { version } => {
+            trf!("{version} available", "{version} disponível")
+        }
+        Phase::Downloading { version } | Phase::Installing { version } => {
+            trf!("updating to {version}", "atualizando para {version}")
+        }
+        Phase::Done { version, .. } => {
+            trf!("updated to {version}, restart the game", "atualizado para {version}, reinicie o jogo")
+        }
+        Phase::Failed { error, .. } => trf!("update failed: {error}", "falha na atualização: {error}"),
     };
     format!("GW2 Enhanced v{} ({pkg}): {state}", current_version())
 }
@@ -777,20 +785,27 @@ pub fn draw(ui: &Ui) {
         return;
     }
     let [w, _] = ui.io().display_size;
-    ui.window("GW2 Enhanced update###gw2enhanced-update")
+    ui.window(tr("GW2 Enhanced update###gw2enhanced-update", "Atualização do GW2 Enhanced###gw2enhanced-update"))
         .position([w * 0.5, 80.0], Condition::Appearing)
         .position_pivot([0.5, 0.0])
         .size([420.0, 0.0], Condition::Appearing)
         .flags(WindowFlags::NO_COLLAPSE | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SAVED_SETTINGS)
         .build(|| match &p {
             Phase::Available { version } => {
-                ui.text_wrapped(format!("GW2 Enhanced {version} is available (you have {}).", current_version()));
-                ui.text_disabled("The game closes after the update; start it again to use the new version.");
-                if ui.button("Update now") {
+                let current = current_version();
+                ui.text_wrapped(trf!(
+                    "GW2 Enhanced {version} is available (you have {current}).",
+                    "O GW2 Enhanced {version} está disponível (você tem a {current})."
+                ));
+                ui.text_disabled(tr(
+                    "The game closes after the update; start it again to use the new version.",
+                    "O jogo fecha depois da atualização; abra de novo para usar a nova versão.",
+                ));
+                if ui.button(tr("Update now", "Atualizar agora")) {
                     begin_update(version.clone());
                 }
                 ui.same_line();
-                if ui.button("Later") {
+                if ui.button(tr("Later", "Depois")) {
                     log(&format!("{version}: later"));
                     set_phase(Phase::Dismissed { version: version.clone() });
                 }
@@ -800,28 +815,40 @@ pub fn draw(ui: &Ui) {
                 let size = DOWNLOAD_SIZE.load(Ordering::Relaxed);
                 if size > 0 {
                     let pct = (done as f64 * 100.0 / size as f64).min(100.0);
-                    ui.text(format!("Downloading {version}: {} of {} ({pct:.0}%)", mb(done), mb(size)));
+                    let (done, size) = (mb(done), mb(size));
+                    ui.text(trf!(
+                        "Downloading {version}: {done} of {size} ({pct:.0}%)",
+                        "Baixando {version}: {done} de {size} ({pct:.0}%)"
+                    ));
                 } else {
-                    ui.text(format!("Downloading {version}: {}", mb(done)));
+                    let done = mb(done);
+                    ui.text(trf!("Downloading {version}: {done}", "Baixando {version}: {done}"));
                 }
-                ui.text_disabled("You can keep playing meanwhile.");
+                ui.text_disabled(tr("You can keep playing meanwhile.", "Você pode continuar jogando enquanto isso."));
             }
             Phase::Installing { version } => {
-                ui.text(format!("Installing {version}..."));
+                ui.text(trf!("Installing {version}...", "Instalando {version}..."));
             }
             Phase::Done { version, at } => {
                 let left = CLOSE_AFTER.saturating_sub(at.elapsed()).as_secs() + 1;
                 let left = if CLOSE_NOW.load(Ordering::Relaxed) || at.elapsed() >= CLOSE_AFTER { 0 } else { left };
-                ui.text_wrapped(format!(
-                    "Updated to {version}. The game will close in {left} s; start it again."
+                ui.text_wrapped(trf!(
+                    "Updated to {version}. The game will close in {left} s; start it again.",
+                    "Atualizado para {version}. O jogo vai fechar em {left} s; abra de novo depois."
                 ));
-                if ui.button("Close now") {
+                if ui.button(tr("Close now", "Fechar agora")) {
                     CLOSE_NOW.store(true, Ordering::Relaxed);
                 }
             }
             Phase::Failed { version, error } => {
-                ui.text_wrapped(format!("The update to {version} failed: {error}"));
-                ui.text_disabled("Nothing was replaced; the game keeps running on the current version.");
+                ui.text_wrapped(trf!(
+                    "The update to {version} failed: {error}",
+                    "A atualização para {version} falhou: {error}"
+                ));
+                ui.text_disabled(tr(
+                    "Nothing was replaced; the game keeps running on the current version.",
+                    "Nada foi substituído; o jogo continua na versão atual.",
+                ));
                 if ui.button("OK") {
                     set_phase(Phase::Dismissed { version: version.clone() });
                 }
