@@ -9,6 +9,7 @@
 //! patch-day tool uses.
 
 pub mod cache;
+pub mod i18n;
 pub mod module;
 pub mod pattern;
 pub mod registry;
