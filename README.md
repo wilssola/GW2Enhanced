@@ -9,7 +9,7 @@ An unofficial, client-side mod for **Guild Wars 2** with three features that can
 | Feature | What it does |
 |---|---|
 | **Translation** ([`translated/`](translated/README.md)) | Translates the game's text into Brazilian Portuguese, in memory, while you play. What the dictionary lacks is translated on your own PC (CPU or graphics card). |
-| **HD Textures** ([`remastered/`](remastered/README.md)) | Serves AI-upscaled versions of the game's textures (2x, and 4x for your character) from a separate HD pack. |
+| **HD Textures** ([`remastered/`](remastered/README.md)) | Serves AI-upscaled versions of the game's textures (2x, and 4x for your character) from a separate HD pack ([download on Nexus Mods](https://www.nexusmods.com/guildwars2/mods/10)). |
 | **Graphics** ([`graphics/`](graphics/README.md)) | Real HDR output (scRGB or HDR10), bloom, ambient occlusion, reflections, light shafts, contact shadows, lens effects, colour grading and photo mode, on top of the game's own renderer. |
 
 Everything ships as **one file, `msimg32.dll`**, placed next to `Gw2-64.exe`. The game's files (`Gw2.dat`, `Gw2-64.exe`) are never modified, and removing the DLL restores the original game.
@@ -81,7 +81,7 @@ Every release on the [Releases page](https://github.com/wilssola/GW2Enhanced/rel
 Each release also has a build provenance attestation: GitHub signs which commit and which workflow run produced every
 file, so anyone can check a download with `gh attestation verify <file> --repo wilssola/GW2Enhanced`.
 
-The **HD texture pack** (about 95 GB) is published on Nexus Mods, split into a required main pack and two optional 4x
+The **HD texture pack** (about 95 GB) is published on [Nexus Mods](https://www.nexusmods.com/guildwars2/mods/10), split into a required main pack and two optional 4x
 packs. Extract every part into the game folder; the mod looks for `GW2Remastered\pack` there (or the folder you pick
 in its panel).
 

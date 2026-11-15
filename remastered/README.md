@@ -43,8 +43,9 @@ BC7 and delivered as native ATEX; that path is new and still being validated in 
 
 ## Install
 
-The mod and the HD textures are separate: the textures are not distributed (they are derived from the game's own
-files and are very large), you generate them once from your copy of the game, see [Build the HD pack](#build-the-hd-pack).
+The mod and the HD textures are separate downloads. **Download the HD pack from [Nexus Mods](https://www.nexusmods.com/guildwars2/mods/10)** (a required
+main pack and two optional 4x packs, about 95 GB in all) and extract every part into the game folder. You can also
+generate the pack yourself from your copy of the game, see [Build the HD pack](#build-the-hd-pack).
 
 1. Close the game. Install GW2 Enhanced (`All` or `Textures` package) with its installer, or copy `msimg32.dll`
    into the game folder (next to `Gw2-64.exe`); see the [root README](../README.md#installing).
