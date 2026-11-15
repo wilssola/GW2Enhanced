@@ -437,6 +437,9 @@ fn hot_saver(path: PathBuf) {
 
 /// Fills the RAM cache with the files of the previous session, oldest request first, with a few
 /// below-normal threads, up to 60% of the cache budget.
+/// The prefetch stops while the free system commit is below this (12 GB).
+const PREFETCH_MIN_FREE_COMMIT: u64 = 12 << 30;
+
 fn prefetch(list: Vec<(u8, u32, [u8; 8])>) {
     use rayon::prelude::*;
     use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
@@ -454,7 +457,9 @@ fn prefetch(list: Vec<(u8, u32, [u8; 8])>) {
     pool.install(|| {
         list.par_iter().for_each(|&(kind, id, head)| {
             let (held, _, _) = memory_stats();
-            if held >= cache_budget(held) / 10 * 6 || !crate::overlay::enabled() {
+            // The game loads the character select at the same time: the prefetch never takes the system close to its
+            // commit limit (a full commit makes the game's own textures fail to allocate: black character select).
+            if held >= cache_budget(held) / 10 * 6 || free_commit() < PREFETCH_MIN_FREE_COMMIT || !crate::overlay::enabled() {
                 return;
             }
             let (map, is_comp) = match kind {
