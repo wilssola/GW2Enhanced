@@ -50,22 +50,36 @@ pub async fn verify_turnstile(ctx: &Ctx, req: &Request, token: &str) -> std::res
     Ok(())
 }
 
+/// Answer of one review call.
+pub enum AiReply {
+    /// One verdict per task (`None` where the answer had none).
+    Verdicts(Vec<Option<Verdict>>),
+    /// The call failed (HTTP status, 0 for a network error): the caller makes no more calls this run.
+    Failed(u16),
+}
+
 /// Reviews up to [`review::BATCH`] tasks in one chat completion. `Ok(None)`
 /// when no API key is configured (items stay queued).
-pub async fn ai_review(ctx: &Ctx, tasks: &[Task]) -> Result<Option<Vec<Option<Verdict>>>> {
+pub async fn ai_review(ctx: &Ctx, tasks: &[Task]) -> Result<Option<AiReply>> {
     let Some(key) = ctx.secret("NVIDIA_API_KEY") else {
         return Ok(None);
     };
     let url = ctx.var("NIM_URL", DEFAULT_NIM_URL);
     let model = ctx.var("NIM_MODEL", DEFAULT_NIM_MODEL);
-    let (status, v) = post_json(&url, &review::request_body(&model, tasks), Some(&key)).await?;
+    let (status, v) = match post_json(&url, &review::request_body(&model, tasks), Some(&key)).await {
+        Ok(r) => r,
+        Err(e) => {
+            console_warn!("NIM call failed: {e}");
+            return Ok(Some(AiReply::Failed(0)));
+        }
+    };
     if status != 200 {
         console_warn!(
             "NIM returned {status}: {}",
             v.to_string().chars().take(300).collect::<String>()
         );
-        return Ok(Some(vec![None; tasks.len()]));
+        return Ok(Some(AiReply::Failed(status)));
     }
     let text = review::completion_text(&v).unwrap_or("");
-    Ok(Some(review::parse_verdicts(text, tasks.len())))
+    Ok(Some(AiReply::Verdicts(review::parse_verdicts(text, tasks.len()))))
 }

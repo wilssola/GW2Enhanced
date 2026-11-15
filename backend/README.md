@@ -61,7 +61,7 @@ Every error body is `{"error": "<code>"}`.
 
 | Method & path | Notes |
 |---|---|
-| `POST /v1/contributions` | Contract body. `202 {"accepted","rejected"}` (`accepted + rejected` = items sent). `400` malformed / bad gzip / unsupported `lang`; `413` > 256 KiB (raw or gunzipped) or > 500 items; `429` + `Retry-After`; `403` banned. Gzip is detected by its magic bytes, so it works whether or not the runtime already decoded `Content-Encoding: gzip`. |
+| `POST /v1/contributions` | Contract body. `202 {"accepted","rejected"}` (`accepted + rejected` = items sent). `400` malformed / bad gzip / unsupported `lang`; `413` > 256 KiB (raw or gunzipped) or > 500 items; `429` + `Retry-After`; `503 write_budget_exhausted` + `Retry-After` (see [Cost protection](#cost-protection)); `403` banned. Gzip is detected by its magic bytes, so it works whether or not the runtime already decoded `Content-Encoding: gzip`. |
 | `GET /v1/releases/{lang}/latest` | Signed manifest (see below), `404 no_release` before the first build. |
 | `GET /v1/releases/{lang}/{version}/{name}` | `dictionary-NNN.jsonl.gz` or `manifest.json`, `cache-control: immutable`. |
 | `GET /v1/public-key` | `{"algorithm":"ed25519","public_key":"<base64>"}` (convenience; the mod ships its own copy). |
@@ -69,7 +69,7 @@ Every error body is `{"error": "<code>"}`.
 | `POST /v1/votes` | Contract body. `200 {"translation_id","up","down","score","current"}`; `403 turnstile_failed`; `404`; `409 already_voted` / `not_votable` (not passed review). |
 | `POST /v1/corrections` | Contract body. `202 {"translation_id","review"}`; `404 unknown_text` (unknown or untrusted text); `422 <rule>` (`markup`, `fixups`, `link`, `length`, …). |
 | `GET /v1/stats?lang` | `{"lang","texts","translated","perfect","translated_pct","perfect_pct","review_queue","updated_at","downloads"}` (refreshed by the 5-min cron; downloads are live). |
-| `GET /v1/download` | Counts (≤ 3 per IP hash, +1 per 8 h), then `302` to the latest release's installer (`DOWNLOAD_URL`/`GW2Enhanced-Installer-windows-x64.exe`; `?os=linux` the AppImage, `?os=deb` the .deb; without `os`, Linux browsers get the AppImage). |
+| `GET /v1/download` | Counts (≤ 10 per network hash, +1 per hour, within the write budget), then `302` to the latest release's installer (`DOWNLOAD_URL`/`GW2Enhanced-Installer-windows-x64.exe`; `?os=linux` the AppImage, `?os=deb` the .deb; without `os`, Linux browsers get the AppImage). |
 
 ### Release files
 
@@ -126,8 +126,10 @@ Nothing from clients is trusted; there is no login.
 - **IP privacy**: only `HMAC-SHA256(IP_SALT, "ip:"+addr)` and `HMAC(IP_SALT, "net:"+prefix)`
   (IPv4 /24, IPv6 /48) are used and stored (first 128 bits, hex). Raw IPs never hit D1.
 - **Bans**: `bans` holds IP or network hashes; banned callers get `403` on every write.
-- **Rate limits** (token buckets in D1, per IP hash): contributions 3000 items burst then
-  1 item/s; votes 30 then 1/10 s; corrections 10 then 1/min; `/v1/texts` 120 then 2/s.
+- **Rate limits** (token buckets in D1, per IP hash and per network hash): contributions 3000 items
+  burst then 1 item/s per IP, 10000 then 3/s per network; votes 30 then 1/10 s per IP, 120 then 1/2.5 s
+  per network; corrections 10 then 1/min per IP, 30 then 1/20 s per network. `/v1/texts` 120 tokens then
+  2/s per IP, in the isolate's memory (a read never writes). A refused request stores nothing.
 - **Sizes**: Content-Length checked before reading; body ≤ 256 KiB raw and after gunzip
   (bounded decoder, zip bombs stop at the limit); ≤ 500 items; text ≤ 8 KiB.
 - **Rule checks** (`validate.rs`) on every English text and translation, at ingest and again
@@ -152,6 +154,65 @@ Nothing from clients is trusted; there is no login.
   to the one that passed review first, so the first passing one stays until votes beat it.
   `flagged`/`hidden` ones and ones with ≥ 5 down votes and more than 2× as many down as up
   votes are never current.
+
+## Cost protection
+
+Assumed prices (Workers Paid, checked against the Cloudflare docs at the time of writing; re-check them): D1
+includes 25 billion rows read and 50 million rows written a month, then $0.001 per million read and $1.00 per
+million written; Workers include 10 million requests a month, then $0.30 per million; R2 bills class A/B operations
+and storage past its free tier. D1 bills one written row per table row and one more per index entry the write
+touches (a `TEXT PRIMARY KEY` or `UNIQUE` counts as an index).
+
+Cost per request (upper bounds from the schema; the host tests check the table rows):
+
+| Request | D1 rows written | D1 rows read |
+|---|---|---|
+| `POST /v1/contributions`, 500 new items with ID and translation | ≤ 14 009 (28 per item + 9) | ~3 per item |
+| same items again from a new player / from the same player | ~9 / 3 per item | ~3 per item |
+| `POST /v1/votes` | ≤ 16 | ~10 + the translation's votes |
+| `POST /v1/corrections` | ≤ 17 | ~10 |
+| `GET /v1/download` counted / not counted | ≤ 5 / 0 | ~3 / 1 |
+| Any refused (429, 403, Turnstile failure) request | 0 | ≤ 2 |
+| `GET /v1/texts` first page / page at offset N / search | 0 (≤ 1 per 30 s per isolate for the read budget) | ~500 / ~2·N / ~3 per text (~700k for 230k texts) |
+| Cached `/v1/texts` page or search, release file | 0 | 0 (release miss: 1, plus one R2 read) |
+| Cron run (`*/5`), idle | 0 | ~3 |
+| Cron run with a full batch (200 items) | ≤ ~2 500 (charged to the write budget) | ~1 000 |
+| Stats recount (cron, every 6 h) | 1 | ~5 per text (~1.2M) |
+
+Caps:
+
+- **Write budget** (`WRITE_BUDGET_DAILY`, default 1.5M rows per UTC day, so at most 45M a month, under the 50M
+  included even with the daily seed's 75k): every public write first reserves its worst case in `counters`
+  (`budget:w:YYYY-MM-DD`) with one atomic upsert that refuses past the cap, so no number of IPs or concurrent
+  requests can pass it. Contributions are then settled on the rows D1 reports, plus one unit per 64 bytes of text
+  (bounds storage growth to ~100 MB a day). Public writes stop at 4/5 of the budget with `503
+  write_budget_exhausted` and `Retry-After` until midnight UTC; the review cron charges what it writes and keeps
+  the last fifth, then pauses until the next day. Downloads still redirect, uncounted.
+- **Read budget** (`READ_BUDGET_DAILY`, default 700M rows a day, 21B a month, under the 25B included): the rows the
+  lists read (as D1 reports them) are added to `budget:r:YYYY-MM-DD` by each isolate every 200k rows or 30 s.
+  Searches and pages past offset 1000 stop at 4/5 of it, cheap pages at the whole of it (`503
+  read_budget_exhausted`).
+- **Nothing written before checks**: rate buckets are read first and stored only once the request is allowed,
+  passed Turnstile and reserved its budget. A refused bucket is remembered by the isolate, so a flood of refused
+  requests does not even read D1.
+- **Per-network limits** (IPv4 /24, IPv6 /48) on writes and download counts: rotating IPv6 addresses gets no new
+  buckets.
+- **Search**: `LIKE '%q%'` scans every text; it costs 5 read tokens (a first page 1), only its first 3000 rows are
+  served, and results are cached at the edge for 5 minutes like plain pages. Deep pages cost 1 token more per 5000
+  rows of offset.
+- **Release files** are served from the edge cache; a miss checks the version in D1 before reading R2, so random
+  versions cost one D1 row instead of an R2 operation.
+- **Cron**: the queue is read in `review_queue_next` order (a run reads only the rows it leases, however long the
+  queue is), the bucket cleanup runs once an hour, the stats recount every 6 hours.
+- **NVIDIA NIM** (free, rate limited to about 30-40 requests per minute): only the cron calls it, never a client
+  request. At most 10 calls per run, one after another, runs 5 minutes apart: at most 10 in any minute, 2 per
+  minute on average. After a failed call (429, 5xx, network) the run makes no more; the rest stays leased and is
+  retried after the 15-minute lease, so a rate-limited API costs no extra D1 work.
+
+Not covered by the code: every request reaching the Worker is billed ($0.30 per million past 10M), including
+refused ones. Add a Cloudflare WAF rate-limiting rule on the custom domain (for example on `/v1/`) so floods are
+dropped before the Worker runs. D1 storage past 5 GB is billed and a database holds at most 10 GB; the write
+budget bounds growth, admin cleanup handles the rest.
 
 ## SQL injection and XSS
 
@@ -219,7 +280,9 @@ only it sent. A rollback **pins** the language: scheduled builds stop until an a
 Vars (`wrangler.toml`): `LANGS` (comma-separated, default `pt-BR`), `NIM_MODEL`
 (default `nvidia/llama-3.3-nemotron-super-49b-v1`; `nvidia/llama-3.3-nemotron-super-49b-v1.5`
 is also hosted on build.nvidia.com), `NIM_URL`, `REVIEW_BATCH` (queue items per cron run,
-default 200), `TURNSTILE_SITE_KEY`, `TURNSTILE_HOSTNAME` (optional), `DOWNLOAD_URL`.
+default 200, at most 200), `TURNSTILE_SITE_KEY`, `TURNSTILE_HOSTNAME` (optional), `DOWNLOAD_URL`,
+`WRITE_BUDGET_DAILY` (default 1500000) and `READ_BUDGET_DAILY` (default 700000000), see
+[Cost protection](#cost-protection).
 
 Secrets (`bun wrangler secret put NAME`; never commit them):
 

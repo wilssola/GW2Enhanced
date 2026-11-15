@@ -6,6 +6,11 @@ use serde_json::{Value, json};
 
 /// Most tasks sent in one chat completion.
 pub const BATCH: usize = 20;
+/// Most chat completions one cron run makes (one after another). Runs are 5 minutes apart, so this is at most 10
+/// requests in any minute and 2 per minute on average, against the ~30-40 per minute of the NIM free tier.
+pub const MAX_CALLS_PER_RUN: usize = 10;
+/// Cron runs per minute (`*/5`).
+pub const RUNS_PER_MINUTE: f64 = 1.0 / 5.0;
 
 /// One thing to review.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +129,15 @@ fn extract_array(text: &str) -> Option<Vec<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nim_calls_stay_far_under_the_free_tier_rate() {
+        // Worst minute: one whole run's calls. Average: calls per run times runs per minute.
+        const { assert!(MAX_CALLS_PER_RUN <= 10) };
+        assert!(MAX_CALLS_PER_RUN as f64 * RUNS_PER_MINUTE <= 2.0);
+        // The default batch of the queue (REVIEW_BATCH = 200) fits the call cap exactly.
+        assert_eq!(200usize.div_ceil(BATCH), MAX_CALLS_PER_RUN);
+    }
 
     #[test]
     fn prompt_carries_untrusted_text_as_json_data() {

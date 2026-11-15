@@ -8,7 +8,7 @@ use worker::*;
 
 use super::Ctx;
 use super::db;
-use super::external::ai_review;
+use super::external::{AiReply, ai_review};
 use crate::chunk::gzip;
 use crate::manifest;
 use crate::queries::{self as q, BackupTable};
@@ -37,6 +37,12 @@ pub struct ReviewReport {
     pub flagged: usize,
     pub deferred: usize,
     pub ai_calls: usize,
+    /// HTTP status of the AI call that failed (no more calls were made in the run), 0 for a network error.
+    pub ai_failed: Option<u16>,
+    /// The day's write budget was spent, so nothing was leased.
+    pub budget_exhausted: bool,
+    /// D1 rows the run wrote (charged to the write budget).
+    pub rows_written: u64,
 }
 
 #[derive(Deserialize)]
@@ -56,20 +62,39 @@ fn list(v: &[impl serde::Serialize]) -> String {
 /// the AI review (NVIDIA NIM), then refreshes stats.
 pub async fn review(ctx: &Ctx) -> Result<ReviewReport> {
     let mut rep = ReviewReport::default();
+    let result = review_inner(ctx, &mut rep).await;
+    // Every row the run wrote counts against the day's write budget (also when it failed half way).
+    if let Some(w) = ctx.rows_written().filter(|w| *w > 0) {
+        rep.rows_written = w;
+        if let Err(e) = db::charge_writes(ctx, w as i64).await {
+            console_warn!("review: write budget not charged: {e}");
+        }
+    }
+    result.map(|_| rep)
+}
+
+async fn review_inner(ctx: &Ctx, rep: &mut ReviewReport) -> Result<()> {
+    // At most as many items as the run's AI calls can review (more would only be leased and wait).
     let batch: usize = ctx
         .var("REVIEW_BATCH", "")
         .parse()
         .unwrap_or(DEFAULT_REVIEW_BATCH)
-        .clamp(1, 500);
-    let rows: Vec<QueueRow> = ctx.q(q::queue_due(ctx.now_ms, batch as u64))?.all().await?.results()?;
-    rep.leased = rows.len();
-    if !rows.is_empty() {
-        let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-        ctx.q(q::queue_lease(&list(&ids), ctx.now_ms + LEASE_MS))?.run().await?;
-        process(ctx, &rows, &mut rep).await?;
+        .clamp(1, review::MAX_CALLS_PER_RUN * review::BATCH);
+    // When the day's write budget is spent the queue waits for the next day (it is only drained, never lost).
+    rep.budget_exhausted = !db::writes_left(ctx, crate::budget::Tier::Reserve).await?;
+    if !rep.budget_exhausted {
+        let rows: Vec<QueueRow> = ctx.all(ctx.q(q::queue_due(ctx.now_ms, batch as u64))?).await?.results()?;
+        rep.leased = rows.len();
+        if !rows.is_empty() {
+            let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+            ctx.run(ctx.q(q::queue_lease(&list(&ids), ctx.now_ms + LEASE_MS))?).await?;
+            process(ctx, &rows, rep).await?;
+        }
     }
-    // Housekeeping: full buckets need no row.
-    ctx.q(q::rate_cleanup(ctx.now_ms - 2 * 86_400_000))?.run().await?;
+    // Housekeeping, once an hour (it scans the bucket table): full buckets need no row.
+    if ctx.now_ms.rem_euclid(3_600_000) < 300_000 {
+        ctx.run(ctx.q(q::rate_cleanup(ctx.now_ms - 2 * 86_400_000))?).await?;
+    }
     // Counting the whole dictionary reads every row, and D1 Free allows 5M rows read per day: the stats are refreshed
     // at most every STATS_EVERY_MS, not on every run.
     for lang in ctx.langs().split(',').map(str::trim).filter(|l| !l.is_empty()) {
@@ -81,7 +106,7 @@ pub async fn review(ctx: &Ctx) -> Result<ReviewReport> {
             store_stats(ctx, lang).await?;
         }
     }
-    Ok(rep)
+    Ok(())
 }
 
 /// What to do with a leased queue item.
@@ -207,19 +232,23 @@ async fn process(ctx: &Ctx, rows: &[QueueRow], rep: &mut ReviewReport) -> Result
 
     // --- AI review, in batches ---
     let mut passed_keys: Vec<(String, String)> = Vec::new();
-    for group in ai.chunks(review::BATCH) {
+    // Calls run one after another and at most review::MAX_CALLS_PER_RUN per run (every 5 minutes), far under the
+    // ~30-40 requests per minute of the NIM free tier. After a failed call (429, 5xx, network) no more are made this
+    // run: the rest stays leased and is retried after the lease, so a rate-limited API costs no extra D1 work.
+    for group in ai.chunks(review::BATCH).take(review::MAX_CALLS_PER_RUN) {
         let tasks: Vec<Task> = group.iter().map(|(_, t, _)| t.clone()).collect();
-        let verdicts = match ai_review(ctx, &tasks).await {
-            Ok(Some(v)) => {
+        let verdicts = match ai_review(ctx, &tasks).await? {
+            Some(AiReply::Verdicts(v)) => {
                 rep.ai_calls += 1;
                 v
             }
-            // No API key: leave everything leased, it is retried later.
-            Ok(None) => break,
-            Err(e) => {
-                console_warn!("AI review call failed: {e}");
-                vec![None; tasks.len()]
+            Some(AiReply::Failed(status)) => {
+                rep.ai_calls += 1;
+                rep.ai_failed = Some(status);
+                break;
             }
+            // No API key: leave everything leased, it is retried later.
+            None => break,
         };
         for ((qid, _, target), verdict) in group.iter().zip(verdicts) {
             let Some(Verdict { ok, reason }) = verdict else {
@@ -256,7 +285,7 @@ async fn process(ctx: &Ctx, rows: &[QueueRow], rep: &mut ReviewReport) -> Result
         writes.push(ctx.q(q::enqueue_pairs_of_texts(&list(&trusted_texts), &now))?);
     }
     if !writes.is_empty() {
-        ctx.db.batch(std::mem::take(&mut writes)).await?;
+        ctx.batch(std::mem::take(&mut writes)).await?;
     }
 
     // --- ID ↔ text pairs (after text states are written) ---
@@ -319,7 +348,7 @@ async fn process(ctx: &Ctx, rows: &[QueueRow], rep: &mut ReviewReport) -> Result
         }
     }
     if !writes.is_empty() {
-        ctx.db.batch(writes).await?;
+        ctx.batch(writes).await?;
     }
     passed_keys.sort();
     passed_keys.dedup();
@@ -342,9 +371,21 @@ const STATS_EVERY_MS: i64 = 6 * 3_600_000;
 /// Computes the stats and caches them in `kv`.
 pub async fn store_stats(ctx: &Ctx, lang: &str) -> Result<Value> {
     let v = compute_stats(ctx, lang).await?;
-    ctx.q(q::kv_put(&format!("stats:{lang}"), &v.to_string(), &ctx.now()))?
-        .run()
+    ctx.run(ctx.q(q::kv_put(&format!("stats:{lang}"), &v.to_string(), &ctx.now()))?)
         .await?;
+    Ok(v)
+}
+
+/// The cached stats, or freshly counted and cached (so a missing cache costs one recount, not one per request).
+pub async fn stats_for(ctx: &Ctx, lang: &str) -> Result<Value> {
+    if let Some(v) = cached_stats(ctx, lang).await? {
+        return Ok(v);
+    }
+    let v = compute_stats(ctx, lang).await?;
+    if let Ok(stmt) = ctx.q(q::kv_put(&format!("stats:{lang}"), &v.to_string(), &ctx.now())) {
+        // Best effort: the count is still answered when the write fails.
+        let _ = stmt.run().await;
+    }
     Ok(v)
 }
 
@@ -522,7 +563,7 @@ pub async fn build_release(ctx: &Ctx, lang: &str, force: bool) -> Result<BuildRe
         content_hash: &content_hash,
         records: records as i64,
     };
-    ctx.db.batch(ctx.qs(q::release_insert(&new))?).await?;
+    ctx.batch(ctx.qs(q::release_insert(&new))?).await?;
     Ok(BuildResult::Built {
         lang: lang.into(),
         version,

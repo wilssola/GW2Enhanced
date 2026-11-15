@@ -318,6 +318,17 @@ pub fn rate_put(bucket: &str, tokens: f64, updated_ms: i64) -> Q {
     )
 }
 
+/// Several buckets in one read (the IP and network buckets of a request).
+pub fn rate_get_many(buckets: &[String]) -> Q {
+    sqlite(
+        &Query::select()
+            .columns([RateLimits::Bucket, RateLimits::Tokens, RateLimits::UpdatedMs])
+            .from(RateLimits::Table)
+            .and_where(Expr::col(RateLimits::Bucket).is_in(buckets.iter().map(String::as_str)))
+            .to_owned(),
+    )
+}
+
 pub fn rate_cleanup(before_ms: i64) -> Q {
     sqlite(
         &Query::delete()
@@ -796,6 +807,50 @@ pub fn counter_increment(name: &str) -> Q {
     )
 }
 
+/// Reserves `units` of a daily budget counter: adds them only while the total stays at most `cap`, and returns the
+/// new total (no row when refused, and then nothing is written). The caller never asks for more than `cap` at once.
+pub fn budget_reserve(name: &str, units: i64, cap: i64) -> Q {
+    let total = Expr::col((Counters::Table, Counters::Value)).add(Expr::col((Excluded, Counters::Value)));
+    sqlite(
+        &Query::insert()
+            .into_table(Counters::Table)
+            .columns([Counters::Name, Counters::Value])
+            .values_panic([name.into(), units.into()])
+            .on_conflict(
+                OnConflict::column(Counters::Name)
+                    .value(Counters::Value, total.clone())
+                    .action_and_where(total.lte(cap))
+                    .to_owned(),
+            )
+            .returning_col(Counters::Value)
+            .to_owned(),
+    )
+}
+
+/// Adds `delta` (may be negative: a refund of an over-estimate) to a daily budget counter, never below 0, and
+/// returns the new total.
+pub fn budget_add(name: &str, delta: i64) -> Q {
+    sqlite(
+        &Query::insert()
+            .into_table(Counters::Table)
+            .columns([Counters::Name, Counters::Value])
+            .values_panic([name.into(), std::cmp::Ord::max(delta, 0).into()])
+            .on_conflict(
+                OnConflict::column(Counters::Name)
+                    .value(
+                        Counters::Value,
+                        Func::cust(MaxScalar).args([
+                            Expr::col((Counters::Table, Counters::Value)).add(delta),
+                            Expr::val(0),
+                        ]),
+                    )
+                    .to_owned(),
+            )
+            .returning_col(Counters::Value)
+            .to_owned(),
+    )
+}
+
 // ------------------------------------------------------------- site reads ---
 
 /// `sort` of the text listing.
@@ -1007,6 +1062,9 @@ pub fn queue_due(now_ms: i64, limit: u64) -> Q {
             ])
             .from(ReviewQueue::Table)
             .and_where(Expr::col(ReviewQueue::NotBeforeMs).lte(now_ms))
+            // In the order of `review_queue_next`, so a run reads only the rows it leases, however long the queue
+            // (new items have `not_before_ms` 0 and come first, oldest first).
+            .order_by(ReviewQueue::NotBeforeMs, Order::Asc)
             .order_by(ReviewQueue::Id, Order::Asc)
             .limit(limit)
             .to_owned(),

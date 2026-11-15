@@ -470,3 +470,101 @@ fn listing_reads_an_index_in_order_without_sorting() {
         assert!(!plan.contains("TEMP B-TREE"), "{sort:?} sorts: {plan}");
     }
 }
+
+fn plan(c: &Connection, (sql, v): &Q) -> String {
+    rows(c, &(format!("EXPLAIN QUERY PLAN {sql}"), v.clone()))
+        .iter()
+        .map(|r| text(&r[3]).to_owned())
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+#[test]
+fn contribution_rows_stay_within_the_budget_estimate() {
+    // Table rows SQLite changes (D1 also bills one row per index entry: the estimate counts those, so the table rows
+    // alone must be well under it).
+    let c = db();
+    let before = c.total_changes();
+    contribute(&c, "ip1"); // 2 new texts, 1 pair, 1 translation
+    let first = c.total_changes() - before;
+    let estimate = crate::budget::contribution_rows(2, 1, 1) - 3 - 2 * crate::budget::BUCKET_ROWS - crate::budget::RESERVE_ROWS;
+    assert!(first <= estimate / 2, "{first} table rows vs estimate {estimate}");
+    // The same items again from another player: no new texts, only reporters and recounts.
+    let before = c.total_changes();
+    contribute(&c, "ip2");
+    let again = c.total_changes() - before;
+    assert!(again < first, "{again} vs {first}");
+    // And again from the same player: only the recount updates.
+    let before = c.total_changes();
+    contribute(&c, "ip2");
+    let same = c.total_changes() - before;
+    assert_eq!(same, 2 + 1 + 1, "texts, pair and translation recounts");
+}
+
+#[test]
+fn budget_reserves_up_to_the_cap_and_refunds() {
+    let c = db();
+    let reserve = |units, cap| rows(&c, &budget_reserve("budget:w:d", units, cap));
+    // A new day's row, then additions while the total stays within the cap.
+    assert_eq!(int(&reserve(60, 100)[0][0]), 60);
+    assert_eq!(int(&reserve(40, 100)[0][0]), 100);
+    // Refused: no row back and nothing added.
+    assert!(reserve(1, 100).is_empty());
+    assert_eq!(int(&rows(&c, &counter_get("budget:w:d"))[0][0]), 100);
+    // A refund of an over-estimate, never below 0; a charge always goes in.
+    assert_eq!(int(&rows(&c, &budget_add("budget:w:d", -30))[0][0]), 70);
+    assert_eq!(int(&rows(&c, &budget_add("budget:w:d", -500))[0][0]), 0);
+    assert_eq!(int(&rows(&c, &budget_add("budget:w:d", 7))[0][0]), 7);
+    assert_eq!(int(&rows(&c, &budget_add("budget:r:new", 9))[0][0]), 9);
+    assert_eq!(int(&rows(&c, &budget_add("budget:r:new2", -9))[0][0]), 0);
+    // The download counter is untouched.
+    assert_eq!(int(&rows(&c, &counter_get("downloads"))[0][0]), 0);
+}
+
+#[test]
+fn rate_buckets_read_together() {
+    let c = db();
+    exec(&c, &rate_put("vote:ip", 1.0, 10));
+    exec(&c, &rate_put("vote-net:net", 2.0, 20));
+    let r = rows(&c, &rate_get_many(&["vote:ip".into(), "vote-net:net".into(), "vote:other".into()]));
+    assert_eq!(r.len(), 2);
+    assert!(plan(&c, &rate_get_many(&["a".into(), "b".into()])).contains("USING INDEX"));
+}
+
+#[test]
+fn review_queue_reads_only_the_leased_rows() {
+    let c = db();
+    // Due rows come out in index order (new items first), so no sort of the whole queue.
+    let p = plan(&c, &queue_due(1_000, 200));
+    assert!(p.contains("review_queue_next"), "{p}");
+    assert!(!p.contains("TEMP B-TREE"), "{p}");
+    for (i, nb) in [(1, 500), (2, 0), (3, 0), (4, 2_000)] {
+        exec(
+            &c,
+            &(
+                "INSERT INTO review_queue (id, kind, ref, enqueued_at, not_before_ms) VALUES (?, 'text', ?, 't', ?)".into(),
+                Values(vec![Value::BigInt(Some(i)), Value::String(Some(format!("r{i}"))), Value::BigInt(Some(nb))]),
+            ),
+        );
+    }
+    let ids: Vec<i64> = rows(&c, &queue_due(1_000, 10)).iter().map(|r| int(&r[0])).collect();
+    assert_eq!(ids, [2, 3, 1]);
+}
+
+#[test]
+fn point_lookups_of_write_paths_use_indexes() {
+    let c = db();
+    for q in [
+        ban_check("a", "b"),
+        rate_get("x"),
+        counter_get("downloads"),
+        translation_target("t"),
+        text_get("k"),
+        release_exists("pt-BR", 1),
+        active_manifest("pt-BR"),
+        kv_get("stats:pt-BR"),
+    ] {
+        let p = plan(&c, &q);
+        assert!(!p.starts_with("SCAN") && !p.contains("| SCAN"), "{}: {p}", q.0);
+    }
+}

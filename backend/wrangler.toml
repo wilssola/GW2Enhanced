@@ -28,6 +28,9 @@ LANGS = "pt-BR"
 NIM_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
 NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 REVIEW_BATCH = "200"
+# Daily D1 budgets (rows per UTC day); see "Cost protection" in README.md.
+WRITE_BUDGET_DAILY = "1500000"
+READ_BUDGET_DAILY = "700000000"
 TURNSTILE_SITE_KEY = "0x4AAAAAAGCjx51hXMttecDA"
 # Optional: only accept Turnstile tokens issued for this hostname.
 TURNSTILE_HOSTNAME = "gw2enhanced.wilssola.dev"

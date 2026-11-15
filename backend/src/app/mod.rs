@@ -50,6 +50,12 @@ pub(crate) struct Ctx {
     pub env: Env,
     pub db: D1Database,
     pub now_ms: i64,
+    /// Rows D1 reported written / read by the statements run through [`Ctx::run`], [`Ctx::all`] and
+    /// [`Ctx::batch`] (what the daily budgets are charged).
+    written: std::cell::Cell<u64>,
+    read: std::cell::Cell<u64>,
+    /// A statement came back without row counts (then estimates are kept).
+    unmetered: std::cell::Cell<bool>,
 }
 
 impl Ctx {
@@ -59,7 +65,53 @@ impl Ctx {
             env,
             db,
             now_ms: Date::now().as_millis() as i64,
+            written: Default::default(),
+            read: Default::default(),
+            unmetered: Default::default(),
         })
+    }
+
+    fn meter(&self, r: &D1Result) {
+        match r.meta().ok().flatten() {
+            Some(m) if m.rows_written.is_some() || m.rows_read.is_some() => {
+                self.written.set(self.written.get() + m.rows_written.unwrap_or(0) as u64);
+                self.read.set(self.read.get() + m.rows_read.unwrap_or(0) as u64);
+            }
+            _ => self.unmetered.set(true),
+        }
+    }
+
+    /// Runs a statement, counting its rows.
+    pub async fn run(&self, s: D1PreparedStatement) -> Result<D1Result> {
+        let r = s.run().await?;
+        self.meter(&r);
+        Ok(r)
+    }
+
+    /// Runs a query, counting its rows.
+    pub async fn all(&self, s: D1PreparedStatement) -> Result<D1Result> {
+        let r = s.all().await?;
+        self.meter(&r);
+        Ok(r)
+    }
+
+    /// Runs a batch, counting its rows.
+    pub async fn batch(&self, s: Vec<D1PreparedStatement>) -> Result<Vec<D1Result>> {
+        let rs = self.db.batch(s).await?;
+        for r in &rs {
+            self.meter(r);
+        }
+        Ok(rs)
+    }
+
+    /// Rows written so far by this request (`None` when D1 did not report them all).
+    pub fn rows_written(&self) -> Option<u64> {
+        (!self.unmetered.get()).then(|| self.written.get())
+    }
+
+    /// Rows read so far by the metered statements of this request.
+    pub fn rows_read(&self) -> u64 {
+        self.read.get()
     }
 
     pub fn now(&self) -> String {
@@ -228,7 +280,7 @@ async fn route(req: &mut Request, ctx: &Ctx) -> HResult {
         (Method::Get, ["v1", "download"]) => public::download(req, ctx).await,
         (Method::Get, ["v1", "public-key"]) => public::public_key(ctx),
         (Method::Get, ["v1", "releases", lang, "latest"]) => public::latest(ctx, lang).await,
-        (Method::Get, ["v1", "releases", lang, version, name]) => public::release_file(ctx, lang, version, name).await,
+        (Method::Get, ["v1", "releases", lang, version, name]) => public::release_file(req, ctx, lang, version, name).await,
         (_, ["v1", "admin", rest @ ..]) => admin::route(req, ctx, rest).await,
         (_, ["v1", ..]) => Err(api_err(404, "not_found")),
         _ => Err(api_err(404, "not_found")),

@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use worker::*;
 
-use super::db::{self, ensure_not_banned, ensure_rate, ensure_read_rate};
+use super::db::{self, ensure_not_banned, ensure_rate, ensure_read_rate, ensure_writes};
 use super::external::verify_turnstile;
 use super::{Ctx, Fail, HResult, api_err, apply_headers, body, json};
 use crate::api::{self, CorrectionRequest, Sort, VoteRequest};
+use crate::budget;
 use crate::chunk::{GunzipError, gunzip_limited, is_gzip};
 use crate::hash::translation_id;
 use crate::headers::{Kind, escape_html};
@@ -105,6 +106,18 @@ pub fn image(name: &str) -> HResult {
     Ok(r)
 }
 
+/// Worst-case rows written by storing `p`, and the budget units of the text it carries.
+fn budget_units(p: &api::Prepared) -> (u64, u64) {
+    let pairs = p.items.iter().filter(|i| i.game_id.is_some()).count();
+    let trs = p.items.iter().filter(|i| i.tr.is_some()).count();
+    let bytes: usize = p
+        .items
+        .iter()
+        .map(|i| i.en.len() + i.tr.as_ref().map_or(0, |t| t.tr.len()))
+        .sum();
+    (budget::contribution_rows(p.items.len(), pairs, trs), budget::bytes_units(bytes))
+}
+
 /// `POST /v1/contributions`
 pub async fn contributions(req: &mut Request, ctx: &Ctx) -> HResult {
     let who = ctx.client(req)?;
@@ -121,9 +134,21 @@ pub async fn contributions(req: &mut Request, ctx: &Ctx) -> HResult {
         raw
     };
     let prepared = api::prepare_contribution(&data, &ctx.langs())?;
-    ensure_rate(ctx, &ratelimit::CONTRIBUTIONS, &who.ip, prepared.total.max(1) as f64).await?;
+    let limits = [(&ratelimit::CONTRIBUTIONS, who.ip.as_str()), (&ratelimit::CONTRIBUTIONS_NET, who.net.as_str())];
+    let buckets = ensure_rate(ctx, &limits, prepared.total.max(1) as f64).await?;
+    // Reserve the worst case (every item new) plus the text's size, then settle on what D1 reports it wrote.
+    let (estimate, text_units) = budget_units(&prepared);
+    ensure_writes(ctx, estimate + text_units).await?;
+    ctx.batch(buckets.statements(ctx)?).await?;
     if !prepared.items.is_empty() {
         db::store_contribution(ctx, &prepared, &who.ip).await?;
+    }
+    if let Some(written) = ctx.rows_written() {
+        // +1: the settling write itself.
+        let delta = (written + 1) as i64 - estimate as i64;
+        if let Err(e) = db::charge_writes(ctx, delta).await {
+            console_warn!("write budget not settled: {e}");
+        }
     }
     json(
         202,
@@ -161,9 +186,19 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
             return Ok(hit);
         }
     }
-    // Only a miss costs D1, so only a miss is counted.
+    // Only a miss costs D1, so only a miss is counted. Searches and deep pages read far more rows, so they take more
+    // tokens, and they stop first when the day's read budget runs low (cheap first pages keep the last fifth).
     if let Ok(who) = ctx.client(req) {
-        ensure_read_rate(ctx, &ratelimit::READS, &who.ip, 1.0).await?;
+        let cost = ratelimit::read_cost(tq.q.is_some(), tq.offset);
+        ensure_read_rate(ctx, &ratelimit::READS, &who.ip, cost)?;
+    }
+    let expensive = tq.q.is_some() || tq.offset >= EXPENSIVE_OFFSET;
+    let tier = if expensive { budget::Tier::Public } else { budget::Tier::Reserve };
+    if !db::reads_allowed(ctx, tier).await? {
+        let retry = budget::seconds_to_midnight(ctx.now_ms);
+        let mut r = json(503, &json!({ "error": "read_budget_exhausted", "retry_after": retry }))?;
+        r.headers_mut().set("retry-after", &retry.to_string())?;
+        return Ok(r);
     }
     #[derive(Deserialize)]
     struct Row {
@@ -179,26 +214,26 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
     };
     let pattern = tq.q.as_deref().map(api::like_pattern);
     let rows: Vec<Row> = ctx
-        .q(q::list_texts(
+        .all(ctx.q(q::list_texts(
             &tq.lang,
             sort,
             pattern.as_deref(),
             tq.limit as u64 + 1,
             tq.offset as u64,
-        ))?
-        .all()
+        ))?)
         .await?
         .results()?;
     let more = rows.len() > tq.limit as usize;
     let rows = &rows[..rows.len().min(tq.limit as usize)];
     let keys = json!(rows.iter().map(|r| &r.key).collect::<Vec<_>>()).to_string();
-    let trs: Vec<TrOut> = ctx.q(q::passed_translations(&tq.lang, &keys))?.all().await?.results()?;
+    let trs: Vec<TrOut> = ctx.all(ctx.q(q::passed_translations(&tq.lang, &keys))?).await?.results()?;
     #[derive(Deserialize)]
     struct Ids {
         text_key: String,
         ids: Option<String>,
     }
-    let ids: Vec<Ids> = ctx.q(q::trusted_ids(&keys))?.all().await?.results()?;
+    let ids: Vec<Ids> = ctx.all(ctx.q(q::trusted_ids(&keys))?).await?.results()?;
+    db::charge_reads(ctx, ctx.rows_read()).await;
     let items: Vec<Value> = rows
         .iter()
         .map(|r| {
@@ -218,10 +253,7 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
     let total = match tq.q {
         Some(_) => Value::Null,
         None => {
-            let stats = match super::jobs::cached_stats(ctx, &tq.lang).await? {
-                Some(v) => v,
-                None => super::jobs::compute_stats(ctx, &tq.lang).await?,
-            };
+            let stats = super::jobs::stats_for(ctx, &tq.lang).await?;
             stats.get("translated").cloned().unwrap_or(Value::Null)
         }
     };
@@ -246,12 +278,18 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
 /// How long the edge keeps a page of `GET /v1/texts` (votes show up in the list after at most this long).
 pub const TEXTS_CACHE_SECS: u32 = 300;
 
+/// Pages from this offset on count as expensive reads (the index walk to reach them reads about 2 rows per skipped
+/// text), like searches.
+const EXPENSIVE_OFFSET: u32 = 1_000;
+
 /// `POST /v1/votes`
 pub async fn vote(req: &mut Request, ctx: &Ctx) -> HResult {
     let who = ctx.client(req)?;
     let v = VoteRequest::parse(&body(req, 8 * 1024).await?)?;
     ensure_not_banned(ctx, &who).await?;
-    ensure_rate(ctx, &ratelimit::VOTES, &who.ip, 1.0).await?;
+    // Nothing is written before the Turnstile check and the budget reservation pass.
+    let limits = [(&ratelimit::VOTES, who.ip.as_str()), (&ratelimit::VOTES_NET, who.net.as_str())];
+    let buckets = ensure_rate(ctx, &limits, 1.0).await?;
     verify_turnstile(ctx, req, &v.turnstile).await?;
     let Some((text_key, lang, review)) = db::translation_target(ctx, &v.translation_id).await? else {
         return Err(api_err(404, "unknown_translation"));
@@ -259,10 +297,10 @@ pub async fn vote(req: &mut Request, ctx: &Ctx) -> HResult {
     if review != "passed" {
         return Err(api_err(409, "not_votable"));
     }
-    let res = ctx
-        .q(q::vote_insert(&v.translation_id, &who.ip, v.value, &ctx.now()))?
-        .run()
-        .await?;
+    ensure_writes(ctx, budget::VOTE_ROWS).await?;
+    let mut stmts = buckets.statements(ctx)?;
+    stmts.push(ctx.q(q::vote_insert(&v.translation_id, &who.ip, v.value, &ctx.now()))?);
+    let res = ctx.batch(stmts).await?.pop().ok_or_else(|| api_err(500, "internal"))?;
     if res.meta()?.and_then(|m| m.changes).unwrap_or(0) == 0 {
         return Err(api_err(409, "already_voted"));
     }
@@ -300,12 +338,14 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
         .filter(|t| t.state == "trusted")
         .ok_or_else(|| api_err(404, "unknown_text"))?;
     validate::check_tr(&t.en, &c.tr).map_err(|e| api_err(422, e.as_str()))?;
-    ensure_rate(ctx, &ratelimit::CORRECTIONS, &who.ip, 1.0).await?;
+    let limits = [(&ratelimit::CORRECTIONS, who.ip.as_str()), (&ratelimit::CORRECTIONS_NET, who.net.as_str())];
+    let buckets = ensure_rate(ctx, &limits, 1.0).await?;
     verify_turnstile(ctx, req, &c.turnstile).await?;
+    ensure_writes(ctx, budget::CORRECTION_ROWS + budget::bytes_units(c.tr.len())).await?;
     let id = translation_id(&c.text_key, &c.lang, &c.tr);
-    ctx.db
-        .batch(ctx.qs(q::correction(&id, &c.text_key, &c.lang, &c.tr, &who.ip, &ctx.now()))?)
-        .await?;
+    let mut stmts = buckets.statements(ctx)?;
+    stmts.extend(ctx.qs(q::correction(&id, &c.text_key, &c.lang, &c.tr, &who.ip, &ctx.now()))?);
+    ctx.batch(stmts).await?;
     let (_, _, review) = db::translation_target(ctx, &id)
         .await?
         .ok_or_else(|| api_err(500, "internal"))?;
@@ -323,10 +363,7 @@ pub async fn stats(req: &mut Request, ctx: &Ctx) -> HResult {
     if !validate::lang_allowed(&lang, &ctx.langs()) {
         return Err(api_err(400, "unsupported_lang"));
     }
-    let mut v = match super::jobs::cached_stats(ctx, &lang).await? {
-        Some(v) => v,
-        None => super::jobs::store_stats(ctx, &lang).await?,
-    };
+    let mut v = super::jobs::stats_for(ctx, &lang).await?;
     v["downloads"] = json!(db::counter(ctx, "downloads").await?);
     json(200, &v)
 }
@@ -346,16 +383,19 @@ pub fn installer_asset(os: Option<&str>, user_agent: &str) -> &'static str {
     }
 }
 
-/// `GET /v1/download[?os=windows|linux|deb]`: counts (at most a few per IP per day), then redirects to the installer
-/// of the latest release.
+/// `GET /v1/download[?os=windows|linux|deb]`: counts (at most a few per network per day, within the write budget),
+/// then redirects to the installer of the latest release.
 pub async fn download(req: &mut Request, ctx: &Ctx) -> HResult {
-    // The count is best effort: a database error (e.g. the daily write limit) never blocks the download.
+    // The count is best effort: a database error or a spent budget never blocks the download. An uncounted download
+    // writes nothing (a refused bucket is not stored).
     if let Ok(who) = ctx.client(req)
-        && let Ok(d) = db::rate(ctx, &ratelimit::DOWNLOADS, &who.ip, 1.0).await
-        && d.allowed
+        && let Ok(Ok(buckets)) = db::rate_check(ctx, &[(&ratelimit::DOWNLOADS, who.net.as_str())], 1.0).await
+        && let Ok(true) = db::reserve_writes(ctx, budget::DOWNLOAD_ROWS, budget::Tier::Public).await
+        && let Ok(mut stmts) = buckets.statements(ctx)
         && let Ok(stmt) = ctx.q(q::counter_increment("downloads"))
     {
-        let _ = stmt.run().await;
+        stmts.push(stmt);
+        let _ = ctx.batch(stmts).await;
     }
     let url = req.url()?;
     let os = url.query_pairs().find(|(k, _)| k == "os").map(|(_, v)| v.into_owned());
@@ -420,11 +460,37 @@ fn valid_file_name(name: &str) -> bool {
 }
 
 /// `GET /v1/releases/{lang}/{version}/{name}` (immutable).
-pub async fn release_file(ctx: &Ctx, lang: &str, version: &str, name: &str) -> HResult {
+///
+/// Served from the edge cache when it can be: each R2 read is a billed class B operation. A miss first checks the
+/// version in D1 (one row read, far cheaper), so random versions never reach R2.
+pub async fn release_file(req: &Request, ctx: &Ctx, lang: &str, version: &str, name: &str) -> HResult {
     let version: u64 = version.parse().map_err(|_| api_err(404, "not_found"))?;
-    if !validate::lang_allowed(lang, &ctx.langs()) || !valid_file_name(name) {
+    if !validate::lang_allowed(lang, &ctx.langs()) || !valid_file_name(name) || version > i64::MAX as u64 {
         return Err(api_err(404, "not_found"));
     }
+    let url = req.url()?;
+    let key = format!("{}/v1/releases/{lang}/{version}/{name}", url.origin().ascii_serialization());
+    let cache = Cache::default();
+    if let Ok(Some(hit)) = cache.get(&key, false).await {
+        return Ok(hit);
+    }
+    #[derive(Deserialize)]
+    struct Exists {
+        #[allow(dead_code)]
+        version: i64,
+    }
+    let known: Option<Exists> = ctx.q(q::release_exists(lang, version as i64))?.first(None).await?;
+    if known.is_none() {
+        return Err(api_err(404, "not_found"));
+    }
+    let mut r = release_object(ctx, lang, version, name).await?;
+    if let Ok(copy) = r.cloned() {
+        let _ = cache.put(&key, copy).await;
+    }
+    Ok(r)
+}
+
+async fn release_object(ctx: &Ctx, lang: &str, version: u64, name: &str) -> HResult {
     let obj = ctx
         .bucket()?
         .get(release::r2_key(lang, version, name))

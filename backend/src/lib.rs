@@ -6,6 +6,7 @@
 //! `wasm32-unknown-unknown`.
 
 pub mod api;
+pub mod budget;
 pub mod chunk;
 pub mod hash;
 pub mod headers;

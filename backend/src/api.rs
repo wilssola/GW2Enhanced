@@ -332,19 +332,28 @@ fn small_number(v: &str) -> Option<u32> {
 }
 
 /// Edge-cache key of a `GET /v1/texts` answer: the canonical URL of the page (so extra or reordered parameters
-/// cannot multiply cache entries), or `None` for searches, which are never cached.
+/// cannot multiply cache entries). Searches are cached too (the search text percent-encoded): each one scans the
+/// whole dictionary, so a repeated search must not.
 pub fn texts_cache_key(origin: &str, q: &TextsQuery) -> Option<String> {
-    if q.q.is_some() {
-        return None;
-    }
-    Some(format!(
+    let mut key = format!(
         "{}/v1/texts?lang={}&sort={}&offset={}&limit={}",
         origin.trim_end_matches('/'),
         q.lang,
         q.sort.name(),
         q.offset,
         q.limit
-    ))
+    );
+    if let Some(s) = &q.q {
+        key.push_str("&q=");
+        for b in s.bytes() {
+            if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+                key.push(b as char);
+            } else {
+                key.push_str(&format!("%{b:02X}"));
+            }
+        }
+    }
+    Some(key)
 }
 
 /// Escapes `%`, `_` and `\` for `LIKE ... ESCAPE '\'`.
@@ -496,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn texts_cache_key_is_canonical_and_skips_searches() {
+    fn texts_cache_key_is_canonical_and_covers_searches() {
         let key = |pairs: &[(&str, &str)]| {
             texts_cache_key("https://x.dev/", &parse_texts_query(pairs.iter().copied(), LANGS).unwrap())
         };
@@ -509,6 +518,14 @@ mod tests {
             key(&[("lang", "pt-BR")]).as_deref(),
             Some("https://x.dev/v1/texts?lang=pt-BR&sort=recent&offset=0&limit=20")
         );
-        assert_eq!(key(&[("lang", "pt-BR"), ("q", "sword")]), None);
+        assert_eq!(
+            key(&[("lang", "pt-BR"), ("q", " sword ")]).as_deref(),
+            Some("https://x.dev/v1/texts?lang=pt-BR&sort=recent&offset=0&limit=20&q=sword")
+        );
+        // Anything that could break out of the query string is encoded.
+        assert_eq!(
+            key(&[("lang", "pt-BR"), ("q", "a&b=c#d é")]).as_deref(),
+            Some("https://x.dev/v1/texts?lang=pt-BR&sort=recent&offset=0&limit=20&q=a%26b%3Dc%23d%20%C3%A9")
+        );
     }
 }

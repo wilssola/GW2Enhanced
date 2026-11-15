@@ -35,8 +35,9 @@ allowed (`Content-Encoding: gzip`). At most 500 items and 256 KiB per request.
   translations (`MAX_TRANSLATIONS_PER_TEXT`); sending an existing one still counts its
   reporter.
 - Response `202 {"accepted": n, "rejected": m}`; `400` on a malformed body;
-  `413` when too large; `429` when the IP is over its rate limit (the mod
-  waits and retries later).
+  `413` when too large; `429` when the IP or its network is over its rate limit,
+  `503 write_budget_exhausted` when the server's daily write budget is spent (both
+  with `Retry-After`; the mod waits and retries later).
 
 Server rules:
 
@@ -127,10 +128,13 @@ Answer:
 - Searches scan for matches, so they only serve their first 3000 rows
   (`page` beyond that → 400 `bad_page`) and have no total; `more` says whether a
   next page exists.
-- Pages without `q` are cached at the edge for 5 minutes, keyed by a canonical
-  URL (`lang`, `sort`, offset, `limit`; any other parameter is ignored), so a
+- Pages and searches are cached at the edge for 5 minutes, keyed by a canonical
+  URL (`lang`, `sort`, offset, `limit`, `q`; any other parameter is ignored), so a
   vote can take up to 5 minutes to show in the lists. The Cache API only works
-  on a custom domain, not on `*.workers.dev`. The read rate limit applies before the cache.
+  on a custom domain, not on `*.workers.dev`. The read rate limit only applies to
+  cache misses; a search or a deep page costs more of it than a first page.
+- `503 read_budget_exhausted` (with `Retry-After`) when the server's daily read
+  budget is spent: searches and deep pages stop first, first pages last.
 - Errors (400): `bad_sort`, `bad_page` (not a whole number ≥ 1, or past the
   last row served), `bad_limit` (not 1–100), `bad_cursor`, `unsupported_lang`.
 
