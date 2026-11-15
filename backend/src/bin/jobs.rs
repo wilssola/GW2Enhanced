@@ -343,7 +343,10 @@ fn seed_sql(path: &str, lang: &str, prefix: &str, from: usize) -> Res<String> {
     };
     for (i, l) in lines.iter().enumerate() {
         let r: SeedLine = serde_json::from_str(l).map_err(|e| format!("{path}:{}: {e}", i + 1))?;
-        if validate::unusable(&r.en, &r.tr) {
+        // A few records hold corrupt game text (NUL and other control bytes): unusable, and a NUL ends a statement for
+        // the D1 file import.
+        let corrupt = |s: &str| s.chars().any(|c| c < ' ' && !matches!(c, '\n' | '\r' | '\t'));
+        if validate::unusable(&r.en, &r.tr) || corrupt(&r.en) || corrupt(&r.tr) {
             continue;
         }
         catalog += 1;
