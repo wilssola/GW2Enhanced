@@ -187,6 +187,32 @@ mod tests {
         assert!(!css.contains("@import") && !css.contains("url(\"http") && !css.contains("url(http"));
     }
 
+    /// Every translatable part of the page (`data-i18n="key"`, `data-i18n-attr="attr:key …"`) has its English
+    /// in app.js; the Portuguese is the markup itself.
+    #[test]
+    fn site_strings_have_english() {
+        let html = include_str!("../site/index.html");
+        let js = include_str!("../site/app.js");
+        let attr = |name: &str| -> Vec<String> {
+            let pat = format!(" {name}=\"");
+            html.split(pat.as_str())
+                .skip(1)
+                .map(|rest| rest[..rest.find('"').unwrap()].to_string())
+                .collect()
+        };
+        let mut keys = attr("data-i18n");
+        for v in attr("data-i18n-attr") {
+            for pair in v.split_whitespace() {
+                let (_, key) = pair.split_once(':').expect("data-i18n-attr is attr:key");
+                keys.push(key.to_string());
+            }
+        }
+        assert!(keys.len() > 100, "data-i18n markers missing from index.html");
+        for k in &keys {
+            assert!(js.contains(&format!("\"{k}\":")), "no English for {k} in app.js");
+        }
+    }
+
     #[test]
     fn escapes_html() {
         assert_eq!(

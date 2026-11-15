@@ -7,60 +7,494 @@
 "use strict";
 
 (() => {
-  const LANG = "pt-BR";
+  // The dictionary's language (the API's `lang`), not the language of the page.
+  const DICT_LANG = "pt-BR";
   const SITEKEY = document.body.dataset.sitekey || "";
   const $ = (s) => document.querySelector(s);
   // The list's state lives in the URL (#dicionario?sort=best&p=3&n=50&q=…), so links, back and forward work.
   const SORTS = ["recent", "oldest", "best", "worst"];
   const SIZES = [20, 50, 100];
-  const state = { sort: "recent", p: 1, n: 20, q: "", total: null, more: false, seq: 0 };
+  const state = { sort: "recent", p: 1, n: 20, q: "", total: null, more: false, seq: 0, items: null, err: null };
   const REDUCE = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const HAS_IO = "IntersectionObserver" in window;
   document.documentElement.classList.add("js");
 
-  const ERRORS = {
-    already_voted: "Você já votou nesta tradução.",
-    not_votable: "Esta tradução ainda não pode receber votos.",
-    turnstile_failed: "Não foi possível confirmar que você é humano. Tente de novo.",
-    turnstile_required: "Confirme que você é humano antes de enviar.",
-    turnstile_not_configured: "A verificação está indisponível no momento.",
-    rate_limited: "Muitas ações em pouco tempo. Espere um pouco e tente de novo.",
-    banned: "Seu acesso para envio foi bloqueado.",
-    markup: "A tradução precisa manter as marcações do jogo (%str1%, <c=…>, <br>, [s]…) iguais às do original.",
-    fixups: "A tradução usa uma marcação [..] que não existe no original (só [s] é permitido).",
-    hides_original: "A tradução não pode conter [null].",
-    link: "Links não são permitidos.",
-    length: "O tamanho da tradução está muito diferente do original.",
-    empty: "A tradução está vazia.",
-    too_long: "A tradução é longa demais.",
-    control_chars: "A tradução contém caracteres invisíveis ou de controle.",
-    unknown_text: "Texto não encontrado.",
-    unknown_translation: "Tradução não encontrada.",
-    bad_page: "Esta página não existe.",
-    bad_limit: "Tamanho de página inválido.",
+  // ---- languages ----
+  //
+  // index.html is written in Portuguese and stays readable without JS. Its translatable parts carry
+  // data-i18n="key" (the element's content) or data-i18n-attr="attr:key ..." (attributes). Their Portuguese is the
+  // markup itself; STR.en holds the English. In a page template, {0}, {1}… stand for the element's child elements,
+  // in order (links, <b>, <code>…), which keep their own data-i18n. Strings built here have both languages in STR,
+  // and {0}, {1}… in them are the arguments of t().
+  const LANGS = ["pt-BR", "en"];
+  const LANG_KEY = "gw2e-lang";
+  const STR = {
+    "pt-BR": {
+      "err.already_voted": "Você já votou nesta tradução.",
+      "err.not_votable": "Esta tradução ainda não pode receber votos.",
+      "err.turnstile_failed": "Não foi possível confirmar que você é humano. Tente de novo.",
+      "err.turnstile_required": "Confirme que você é humano antes de enviar.",
+      "err.turnstile_not_configured": "A verificação está indisponível no momento.",
+      "err.rate_limited": "Muitas ações em pouco tempo. Espere um pouco e tente de novo.",
+      "err.banned": "Seu acesso para envio foi bloqueado.",
+      "err.markup": "A tradução precisa manter as marcações do jogo (%str1%, <c=…>, <br>, [s]…) iguais às do original.",
+      "err.fixups": "A tradução usa uma marcação [..] que não existe no original (só [s] é permitido).",
+      "err.hides_original": "A tradução não pode conter [null].",
+      "err.link": "Links não são permitidos.",
+      "err.length": "O tamanho da tradução está muito diferente do original.",
+      "err.empty": "A tradução está vazia.",
+      "err.too_long": "A tradução é longa demais.",
+      "err.control_chars": "A tradução contém caracteres invisíveis ou de controle.",
+      "err.unknown_text": "Texto não encontrado.",
+      "err.unknown_translation": "Tradução não encontrada.",
+      "err.bad_page": "Esta página não existe.",
+      "err.bad_limit": "Tamanho de página inválido.",
+      "err.other": "Algo deu errado ({0}). Tente de novo.",
+      "src.ai": "IA",
+      "src.argos": "Argos",
+      "src.user": "Comunidade",
+      "vote.up": "Votar a favor",
+      "vote.down": "Votar contra",
+      "vote.upTitle": "Boa tradução",
+      "vote.downTitle": "Tradução ruim",
+      "vote.mine": "Seu voto",
+      "item.source": "Fonte",
+      "item.none": "Ainda sem tradução.",
+      "item.correct": "Sugerir correção",
+      "item.suggest": "Sugerir tradução",
+      "item.en": "Original (inglês)",
+      "item.tr": "Tradução (português)",
+      "item.alts": "Outras traduções ({0})",
+      "pager.first": "Primeira página",
+      "pager.prev": "Página anterior",
+      "pager.page": "Página {0}",
+      "pager.next": "Próxima página",
+      "pager.last": "Última página ({0})",
+      "pager.of": "Mostrando {0}–{1} de {2}",
+      "pager.search": "Mostrando {0}–{1} resultados da busca",
+      "pager.range": "Mostrando {0}–{1}",
+      "list.emptyPage": "Esta página está vazia.",
+      "list.noMatch": "Nada encontrado.",
+      "list.empty": "Nenhum texto ainda.",
+      "jump.invalid": "Digite o número de uma página.",
+      "dlg.verifyOff": "A verificação está indisponível no momento.",
+      "dlg.verifyFail": "Falha na verificação. Recarregue a página.",
+      "vote.titleUp": "Votar a favor desta tradução",
+      "vote.titleDown": "Votar contra esta tradução",
+      "vote.confirm": "Confirme que você é humano para registrar o voto.",
+      "vote.done": "Voto registrado. Obrigado!",
+      "fix.yours": "Sua tradução",
+      "fix.title": "Sugerir tradução",
+      "fix.note": "Mantenha as marcações do jogo iguais às do original. Sua sugestão passa por revisão antes de aparecer.",
+      "fix.done": "Sugestão enviada para revisão. Obrigado!",
+      "cmp.before": "Original",
+      "cmp.after": "HD",
+      "cmp.range": "Comparar original e HD",
+      "cmp.zoom": "Ampliar",
+      "cmp.zoomOf": "Ampliar: {0}",
+      "cmp.pick": "Escolher a textura",
+      "cmp.show": "Mostrar: {0}",
+      "img.wall": "Muro",
+      "img.wall.alt": "Textura de muro de pedra: original à esquerda, HD à direita",
+      "img.weapon": "Arma",
+      "img.weapon.alt": "Textura de arma: original à esquerda, HD à direita",
+      "img.building": "Construção",
+      "img.building.alt": "Textura de construção: original à esquerda, HD à direita",
+      "img.city": "Cidade",
+      "img.city.alt": "Textura de cidade: original à esquerda, HD à direita",
+      "img.armorLeaves": "Armadura de folhas",
+      "img.armorLeaves.alt": "Armadura de folhas: original à esquerda, HD à direita",
+      "img.armorTrim": "Acabamento de armadura",
+      "img.armorTrim.alt": "Acabamento de armadura: original à esquerda, HD à direita",
+      "img.creature": "Criatura",
+      "img.creature.alt": "Criatura: original à esquerda, HD à direita",
+      "img.fur": "Pelagem",
+      "img.fur.alt": "Pelagem: original à esquerda, HD à direita",
+      "img.leaf": "Folha",
+      "img.leaf.alt": "Folha: original à esquerda, HD à direita",
+      "img.wood": "Madeira",
+      "img.wood.alt": "Madeira: original à esquerda, HD à direita",
+      "img.flower": "Flor",
+      "img.flower.alt": "Flor: original à esquerda, HD à direita",
+      "img.crystalBlade": "Lâmina de cristal",
+      "img.crystalBlade.alt": "Lâmina de cristal: original à esquerda, HD à direita",
+      "img.engraving": "Gravura de arma",
+      "img.engraving.alt": "Gravura de arma: original à esquerda, HD à direita",
+      "img.blade": "Lâmina e cabo",
+      "img.blade.alt": "Lâmina e cabo: original à esquerda, HD à direita",
+    },
+    en: {
+      "err.already_voted": "You have already voted on this translation.",
+      "err.not_votable": "This translation can't receive votes yet.",
+      "err.turnstile_failed": "We couldn't confirm that you're human. Please try again.",
+      "err.turnstile_required": "Confirm that you're human before sending.",
+      "err.turnstile_not_configured": "Verification is unavailable right now.",
+      "err.rate_limited": "Too many actions in a short time. Wait a moment and try again.",
+      "err.banned": "Your access to sending has been blocked.",
+      "err.markup": "The translation must keep the game's markup (%str1%, <c=…>, <br>, [s]…) the same as the original.",
+      "err.fixups": "The translation uses a [..] tag that isn't in the original (only [s] is allowed).",
+      "err.hides_original": "The translation can't contain [null].",
+      "err.link": "Links are not allowed.",
+      "err.length": "The translation's length is too different from the original.",
+      "err.empty": "The translation is empty.",
+      "err.too_long": "The translation is too long.",
+      "err.control_chars": "The translation contains invisible or control characters.",
+      "err.unknown_text": "Text not found.",
+      "err.unknown_translation": "Translation not found.",
+      "err.bad_page": "This page doesn't exist.",
+      "err.bad_limit": "Invalid page size.",
+      "err.other": "Something went wrong ({0}). Please try again.",
+      "src.ai": "AI",
+      "src.argos": "Argos",
+      "src.user": "Community",
+      "vote.up": "Vote for",
+      "vote.down": "Vote against",
+      "vote.upTitle": "Good translation",
+      "vote.downTitle": "Bad translation",
+      "vote.mine": "Your vote",
+      "item.source": "Source",
+      "item.none": "Not translated yet.",
+      "item.correct": "Suggest a correction",
+      "item.suggest": "Suggest a translation",
+      "item.en": "Original (English)",
+      "item.tr": "Translation (Portuguese)",
+      "item.alts": "Other translations ({0})",
+      "pager.first": "First page",
+      "pager.prev": "Previous page",
+      "pager.page": "Page {0}",
+      "pager.next": "Next page",
+      "pager.last": "Last page ({0})",
+      "pager.of": "Showing {0}–{1} of {2}",
+      "pager.search": "Showing search results {0}–{1}",
+      "pager.range": "Showing {0}–{1}",
+      "list.emptyPage": "This page is empty.",
+      "list.noMatch": "Nothing found.",
+      "list.empty": "No texts yet.",
+      "jump.invalid": "Enter a page number.",
+      "dlg.verifyOff": "Verification is unavailable right now.",
+      "dlg.verifyFail": "Verification failed. Reload the page.",
+      "vote.titleUp": "Vote for this translation",
+      "vote.titleDown": "Vote against this translation",
+      "vote.confirm": "Confirm that you're human to cast your vote.",
+      "vote.done": "Vote recorded. Thank you!",
+      "fix.yours": "Your translation",
+      "fix.title": "Suggest a translation",
+      "fix.note": "Keep the game's markup the same as the original. Your suggestion is reviewed before it appears.",
+      "fix.done": "Suggestion sent for review. Thank you!",
+      "cmp.before": "Original",
+      "cmp.after": "HD",
+      "cmp.range": "Compare original and HD",
+      "cmp.zoom": "Enlarge",
+      "cmp.zoomOf": "Enlarge: {0}",
+      "cmp.pick": "Choose the texture",
+      "cmp.show": "Show: {0}",
+      "img.wall": "Wall",
+      "img.wall.alt": "Stone wall texture: original on the left, HD on the right",
+      "img.weapon": "Weapon",
+      "img.weapon.alt": "Weapon texture: original on the left, HD on the right",
+      "img.building": "Building",
+      "img.building.alt": "Building texture: original on the left, HD on the right",
+      "img.city": "City",
+      "img.city.alt": "City texture: original on the left, HD on the right",
+      "img.armorLeaves": "Leaf armor",
+      "img.armorLeaves.alt": "Leaf armor: original on the left, HD on the right",
+      "img.armorTrim": "Armor trim",
+      "img.armorTrim.alt": "Armor trim: original on the left, HD on the right",
+      "img.creature": "Creature",
+      "img.creature.alt": "Creature: original on the left, HD on the right",
+      "img.fur": "Fur",
+      "img.fur.alt": "Fur: original on the left, HD on the right",
+      "img.leaf": "Leaf",
+      "img.leaf.alt": "Leaf: original on the left, HD on the right",
+      "img.wood": "Wood",
+      "img.wood.alt": "Wood: original on the left, HD on the right",
+      "img.flower": "Flower",
+      "img.flower.alt": "Flower: original on the left, HD on the right",
+      "img.crystalBlade": "Crystal blade",
+      "img.crystalBlade.alt": "Crystal blade: original on the left, HD on the right",
+      "img.engraving": "Weapon engraving",
+      "img.engraving.alt": "Weapon engraving: original on the left, HD on the right",
+      "img.blade": "Blade and hilt",
+      "img.blade.alt": "Blade and hilt: original on the left, HD on the right",
+
+      // index.html (data-i18n / data-i18n-attr)
+      "meta.title": "GW2 Enhanced — Guild Wars 2 in Brazilian Portuguese, in HD and with better graphics",
+      "meta.desc": "Free mod for Guild Wars 2: the whole game in Brazilian Portuguese, HD textures and better-looking graphics. All in a single mod, without changing any game file.",
+      "skip": "Skip to content",
+      "nav.aria": "Shortcuts",
+      "nav.translation": "Translation",
+      "nav.textures": "Textures",
+      "nav.texturesHd": "HD textures",
+      "nav.graphics": "Graphics",
+      "nav.install": "Install",
+      "nav.source": "Source code",
+      "nav.sections": "Sections",
+      "lang.aria": "Language",
+      "lang.label": "Language",
+      "dl": "Download",
+      "hero.kicker": "Free mod for Guild Wars 2",
+      "hero.tagline": "The game in Brazilian Portuguese, with HD textures and better-looking graphics. All in a single mod, and no game file is changed.",
+      "hero.dl": "Download now",
+      "hero.more": "Explore the mod",
+      "promise.aria": "In short",
+      "promise.1": "No game file is changed",
+      "promise.2": "Every feature can be turned on and off",
+      "promise.3": "Updates itself, if you want",
+      "promise.4": "Free and open source",
+      "res.kicker": "One mod, three features",
+      "res.title": "All in a single mod",
+      "res.lead": "Install once and use what you want. Each feature works alone or together with the others and can be turned on and off at any time. Uninstall it and the game is exactly as it was.",
+      "feat.1": "Feature I",
+      "feat.2": "Feature II",
+      "feat.3": "Feature III",
+      "feat.1.title": "Translation",
+      "feat.1.text": "The whole game in Brazilian Portuguese, with a dictionary made by the community. Whatever is still missing is translated on the fly, on your own PC.",
+      "feat.1.more": "See the translation",
+      "feat.2.title": "HD textures",
+      "feat.2.text": "The game's own textures, much sharper up close. Same colors and the same hand-painted style: nothing is redrawn.",
+      "feat.2.more": "See the comparison",
+      "feat.3.title": "Graphics",
+      "feat.3.text": "Better lighting, true HDR and modern effects, rendered inside the game itself and light on your computer.",
+      "feat.3.more": "See the effects",
+      "tr.title": "Translation into Portuguese",
+      "tr.lead": "Quests, dialogue, items, skills, the interface and even the Trading Post, the Gem Store and the Wizard's Vault: the whole game in Brazilian Portuguese.",
+      "tr.p1.title": "Community dictionary",
+      "tr.p1.text": "The mod already ships with about 205,000 texts translated, reviewed and voted on by the players themselves, here on this site. A new version with the best translations comes out every day.",
+      "tr.p2.title": "Translates on your PC",
+      "tr.p2.text": "Whatever the dictionary doesn't have yet is translated on the fly by a translation model that runs on your computer, offline, on the processor or the graphics card.",
+      "tr.p3.title": "Help, if you want",
+      "tr.p3.text": "Only with your permission, the mod sends the texts it finds to improve the dictionary. Nothing goes straight in: everything is checked and voted on by the community first.",
+      "tr.p4.title": "Always the official version",
+      "tr.p4.text": "Every new version of the translation is checked by the mod, to make sure it really came from this site before it is used.",
+      "tr.privacy.title": "Your privacy",
+      "tr.privacy.text": "{0} If you agree to help (the mod asks the first time), it sends only the original English text and the translations made on your PC. The Trading Post, Gem Store and Wizard's Vault pages are not sent either. You can change your mind at any time, in the mod's panel. This site does not store your IP address.",
+      "tr.privacy.bold": "Chat between players is never read or sent.",
+      "tech": "Technical details",
+      "tr.tech.1": "The mod swaps the text in memory, by each text's number, at the moment the game is about to show it. {0} is never changed, and with the game in another language everything that has a translation appears in Portuguese.",
+      "tr.tech.2": "The translation doesn't have to fit in the space of the English text. The game's protected texts are translated as soon as the server releases their key.",
+      "tr.tech.3": "Every dictionary version published here is signed (Ed25519), and the mod checks the signature before using it.",
+      "tr.tech.4": "The local translator is an OPUS-MT model running on CTranslate2, in a separate process: on the processor, on NVIDIA cards (CUDA) or on any DirectX 12 card (DirectML). Map dialogue is translated before it appears.",
+      "tr.tech.5": "Everything that is sent goes through rules (game markup, links, length). An English text is only accepted when different players send the same one or when the automatic review recognizes it, and every translation is reviewed before it can receive votes.",
+      "tr.tech.6": "Instead of the IP, the site stores only a code derived from it (HMAC-SHA256 with a secret key), used to limit abuse and to allow one vote per person. Votes and suggestions require Cloudflare's anti-bot check (Turnstile).",
+      "stats.kicker": "Community progress",
+      "stats.title": "The dictionary so far",
+      "stats.translated": "of texts translated",
+      "stats.perfect": "approved by the community",
+      "stats.texts": "known texts",
+      "stats.downloads": "mod downloads",
+      "dict.kicker": "Original and translation side by side",
+      "dict.title": "Vote and suggest",
+      "dict.hint": "Compare the original English text with the translation, vote for the best ones and suggest corrections. Each person gets one vote per translation, and suggestions are checked before they appear.",
+      "sort.aria": "Sort",
+      "sort.recent": "Newest",
+      "sort.oldest": "Oldest",
+      "sort.best": "Best",
+      "sort.worst": "Worst",
+      "dict.search": "Search",
+      "dict.placeholder": "Search in English or Portuguese…",
+      "dict.perPage": "Per page",
+      "pager.aria": "Pages",
+      "dict.jump": "Go to page",
+      "dict.go": "Go",
+      "tex.title": "HD textures",
+      "tex.lead": "Guild Wars 2's own textures, upscaled and much sharper up close. The game still looks like itself: same colors, same hand-painted style.",
+      "tex.cmp.kicker": "Original and HD",
+      "tex.cmp.title": "Drag to compare",
+      "tex.cmp.hint": "On the left, the game's original texture; on the right, the same texture in HD. Pick another texture below.",
+      "tex.p1.title": "The original style",
+      "tex.p1.text": "Nothing is redrawn, recolored or swapped for a “realistic” look. The art is still ArenaNet's; the pack only makes it sharper.",
+      "tex.p2.title": "Super-resolution AI, not generative",
+      "tex.p2.text": "The textures were upscaled by a super-resolution AI model (UltraSharp 4x). It only takes the original texture, has no prompt and creates no new content: it rebuilds edges and fine detail that ordinary upscaling would blur.",
+      "tex.p3.title": "Your character in 4x",
+      "tex.p3.text": "Scenery, creatures, weapons and armor get twice the resolution, and your own character four times as much.",
+      "tex.p4.title": "Pack on Nexus Mods",
+      "tex.p4.text": "The HD pack is large (about 95 GB) and is hosted on {0}: one main pack and two optional ones with even more detail. Just extract it into the game folder.",
+      "tex.p4.dl": "Download the textures on Nexus Mods →",
+      "tex.tech.1": "When the game is about to read a texture from {0}, the mod hands it the HD version from the pack, if there is one; otherwise, the original. {1} is not changed.",
+      "tex.tech.2": "Of the game's roughly 432,000 textures, about 231,000 go into the pack. Each one is classified by what uses it (character, weapons and armor, scenery, creatures, effects, terrain) and gets a target size. Interface, cinematics and textures that are small or already large stay as they are.",
+      "tex.tech.3": "Color textures go through {0} (super-resolution with the ESRGAN architecture, image to image, running locally on the GPU). Normal maps and masks don't go through any model: they are resized with Lanczos.",
+      "tex.tech.4": "Every result goes back to the same GPU format the game uses (BC1/BC3/BC5/BC7), and the pack is stored in a few large files with an index. Nothing is converted while you play.",
+      "tex.tech.5": "The mod looks for the {0} folder inside the game folder, or the folder you choose in the panel.",
+      "tex.credit": "Upscaled with {0} by Kim2091, under {1}: the HD pack is free and non-commercial.",
+      "gfx.title": "Better graphics",
+      "gfx.lead": "Better lighting, true HDR and modern effects, rendered inside the game itself, not as a filter over the finished image.",
+      "gfx.p1.title": "Light on your PC",
+      "gfx.p1.text": "The effects run on your graphics card along with the game, with no AI needed. Performance barely changes.",
+      "gfx.p2.title": "True HDR",
+      "gfx.p2.text": "On HDR monitors, the glow of spells, the sun and fire goes beyond white without blowing out the image.",
+      "gfx.p3.title": "Interface untouched",
+      "gfx.p3.text": "The effects apply only to the game world: the interface stays sharp, and nothing the game shows gets hidden.",
+      "gfx.p4.title": "Your way",
+      "gfx.p4.text": "Every effect has its own settings in the mod's panel, inside the game, and can be turned on or off.",
+      "fx.kicker": "What's included",
+      "fx.title": "Effects",
+      "fx.hdr": "Real HDR",
+      "fx.hdr.d": "brightness beyond white",
+      "fx.bloom": "Bloom",
+      "fx.bloom.d": "the glow of lights",
+      "fx.ao": "Ambient occlusion",
+      "fx.ao.d": "shadows in corners and crevices",
+      "fx.refl": "Reflections",
+      "fx.refl.d": "surfaces that reflect the scene",
+      "fx.rays": "Light shafts",
+      "fx.rays.d": "light streaming through the scene",
+      "fx.contact": "Contact shadows",
+      "fx.contact.d": "where objects touch",
+      "fx.lens": "Lens effects",
+      "fx.lens.d": "like a real camera",
+      "fx.color": "Color grading",
+      "fx.color.d": "fine-tuning the colors",
+      "fx.photo": "Photo mode",
+      "fx.photo.d": "for screenshots",
+      "gfx.cmp.kicker": "Before and after",
+      "gfx.cmp.title": "In game",
+      "gfx.cmp.empty": "Before and after screenshots, with and without the effects, coming soon.",
+      "gfx.tech.1": "The mod follows the steps the game (Direct3D 11) uses to draw each frame and recognizes them by their shaders. On loading screens, character select and cinematics, the effects turn off.",
+      "gfx.tech.2": "The game draws the scene with 8 bits per color and clips everything at white. The mod replaces those intermediate images with 16-bit floating point, so brightness goes past white without blowing out.",
+      "gfx.tech.3": "The effects slot in between the game's own steps and use its depth buffer, so they respect the scene's geometry. The interface is drawn afterwards and is not affected.",
+      "gfx.tech.4": "With Windows HDR on, the image is output in scRGB (or HDR10, in testing), up to your monitor's peak. In SDR, the result is clipped as before.",
+      "inst.kicker": "Installation",
+      "inst.title": "Get started in three steps",
+      "inst.s1.title": "Download and open the installer",
+      "inst.s1.text": "With the game closed. It finds Guild Wars 2 on its own, whether on Steam or from the ArenaNet installer, and installs the mod.",
+      "inst.s2.title": "Open the game",
+      "inst.s2.text": "The mod starts with the game. {0}+{1} opens the panel, with a tab for each feature.",
+      "inst.s3.title": "Choose what to use",
+      "inst.s3.text": "Turn each feature on and off whenever you want. For the HD textures, also download the {0}.",
+      "inst.s3.link": "pack on Nexus Mods",
+      "inst.upd.title": "Automatic updates",
+      "inst.upd.text": "When a new version comes out, the mod lets you know in game and asks whether you want to update. Before installing, it checks that the update is official. Your settings and translations stay as they are.",
+      "inst.uninst.title": "Uninstall",
+      "inst.uninst.text": "Open the installer and choose {0}. The game goes back to exactly the original.",
+      "inst.uninst.word": "Uninstall",
+      "inst.tech.1": "The mod is a single file, {0}, placed next to {1}. If another mod already uses that name, the installer backs it up first. Deleting the file restores the original game.",
+      "inst.tech.2": "There are also standalone packages: only the translation (with the translator on the processor, on NVIDIA cards or on any DirectX 12 card), only the textures, only the graphics, or everything together.",
+      "inst.tech.3": "Every version on GitHub comes with the SHA-256 checksum of all files and a provenance attestation. Automatic updates are only installed if the downloaded file matches the checksum.",
+      "band.title": "Ready to play in Portuguese?",
+      "band.text": "Free and open source. The button opens the latest version on GitHub: installer for Windows, AppImage and .deb for Linux. Every version is listed in the {0}, and developers can read the {1}.",
+      "band.releases": "GitHub releases",
+      "band.source": "source code",
+      "foot.1": "{0} It is not made, endorsed, supported by or affiliated with ArenaNet, LLC or NCSOFT Corporation. It only changes what your computer displays: it sends nothing to the game servers and gives no one an advantage. Third-party programs that connect to the game are used {1}; read {2} and the game's User Agreement before using it.",
+      "foot.1.bold": "GW2 Enhanced is an unofficial fan project.",
+      "foot.1.risk": "at your own risk",
+      "foot.1.policy": "ArenaNet's policy on third-party programs",
+      "foot.2": "© ArenaNet, LLC. All rights reserved. NCSOFT, the NC logo, ArenaNet, Guild Wars, Guild Wars 2 and all associated logos and designs are trademarks or registered trademarks of NCSOFT Corporation. All other trademarks are the property of their respective owners.",
+      "foot.3": "Code under the MIT license · Cinzel, EB Garamond and Barlow Condensed fonts under the SIL Open Font License · {0}",
+      "foot.3.source": "Source code on GitHub",
+      "dlg.cancel": "Cancel",
+      "dlg.send": "Send",
+      "lb.aria": "Enlarged image",
+      "lb.close": "Close",
+    },
   };
-  const SOURCES = { ai: "IA", argos: "Argos", user: "Comunidade" };
+
+  /** The saved choice, else the first of the browser's languages that is Portuguese or English; English otherwise. */
+  function pickLang() {
+    try { const s = localStorage.getItem(LANG_KEY); if (LANGS.includes(s)) return s; } catch (_) { /* storage unavailable */ }
+    const prefs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ""];
+    for (const l of prefs) {
+      const b = String(l).toLowerCase();
+      if (b === "pt" || b.startsWith("pt-")) return "pt-BR";
+      if (b === "en" || b.startsWith("en-")) return "en";
+    }
+    return "en";
+  }
+  let ui = pickLang();
+
+  /** The string `key` in the page's language, with {0}, {1}… replaced by `args`. */
+  function t(key, ...args) {
+    const d = STR[ui], v = Object.prototype.hasOwnProperty.call(d, key) ? d[key] : STR["pt-BR"][key];
+    if (typeof v !== "string") return key;
+    return args.length ? v.replace(/\{(\d+)\}/g, (m, i) => (i < args.length ? String(args[i]) : m)) : v;
+  }
+  const has = (key) => Object.prototype.hasOwnProperty.call(STR[ui], key) || Object.prototype.hasOwnProperty.call(STR["pt-BR"], key);
+
+  // The Portuguese of the static page, kept the first time it is replaced (element -> its original child nodes, and
+  // element -> { attribute: original value }).
+  const origKids = new WeakMap(), origAttrs = new WeakMap();
+
+  /** Nodes for a page template: text, with {n} taken from the original child elements `kids`. */
+  function fill(tpl, kids) {
+    const out = [];
+    let last = 0;
+    tpl.replace(/\{(\d+)\}/g, (m, i, at) => {
+      if (at > last) out.push(tpl.slice(last, at));
+      out.push(kids[Number(i)] || m);
+      last = at + m.length;
+      return m;
+    });
+    if (last < tpl.length) out.push(tpl.slice(last));
+    return out;
+  }
+
+  /** Writes the static page in the current language. */
+  function translatePage() {
+    const en = STR[ui] === STR.en;
+    for (const n of document.querySelectorAll("[data-i18n]")) {
+      if (!origKids.has(n)) { if (!en) continue; origKids.set(n, [...n.childNodes]); }
+      const orig = origKids.get(n), tpl = STR.en[n.dataset.i18n];
+      if (!en || typeof tpl !== "string") n.replaceChildren(...orig);
+      else n.replaceChildren(...fill(tpl, orig.filter((c) => c.nodeType === 1)));
+    }
+    for (const n of document.querySelectorAll("[data-i18n-attr]")) {
+      if (!origAttrs.has(n)) { if (!en) continue; origAttrs.set(n, {}); }
+      const orig = origAttrs.get(n);
+      for (const pair of n.dataset.i18nAttr.split(/\s+/)) {
+        const [attr, key] = pair.split(":");
+        if (!attr || !key) continue;
+        if (!(attr in orig)) orig[attr] = n.getAttribute(attr) || "";
+        const v = en ? STR.en[key] : undefined;
+        n.setAttribute(attr, typeof v === "string" ? v : orig[attr]);
+      }
+    }
+  }
+
+  // Parts built by this script redraw their texts through these when the language changes.
+  const relabel = [];
+
+  function setLang(l, save) {
+    if (!LANGS.includes(l)) return;
+    const changed = l !== ui;
+    ui = l;
+    if (save) { try { localStorage.setItem(LANG_KEY, l); } catch (_) { /* storage unavailable */ } }
+    document.documentElement.lang = l;
+    translatePage();
+    for (const b of document.querySelectorAll("[data-lang]")) b.setAttribute("aria-pressed", String(b.dataset.lang === l));
+    if (changed) for (const f of relabel) f();
+  }
+
+  function setupLang() {
+    for (const b of document.querySelectorAll("[data-lang]")) {
+      b.hidden = false;
+      b.addEventListener("click", () => setLang(b.dataset.lang, true));
+    }
+    setLang(ui, false);
+  }
 
   // Comparison images. To add one: put the file in backend/site/img/, list it
-  // in backend/src/images.rs, and add an entry here. `gallery` picks the
-  // section ("texturas" or "graficos"). Optional `before`/`after` put labels
-  // on the left and right halves of a side-by-side image that has none.
+  // in backend/src/images.rs, and add an entry here plus its caption and alt
+  // text ("img.<key>", "img.<key>.alt") to STR in both languages. `gallery`
+  // picks the section ("texturas" or "graficos"). Optional `before`/`after`
+  // (STR keys) put labels on the left and right halves of a side-by-side
+  // image that has none.
   const GALLERY = [
-    { gallery: "texturas", src: "/img/hd-wall.jpg", alt: "Textura de muro de pedra: original à esquerda, HD à direita", caption: "Muro" },
-    { gallery: "texturas", src: "/img/hd-weapon.jpg", alt: "Textura de arma: original à esquerda, HD à direita", caption: "Arma" },
-    { gallery: "texturas", src: "/img/hd-building.jpg", alt: "Textura de construção: original à esquerda, HD à direita", caption: "Construção" },
-    { gallery: "texturas", src: "/img/hd-city.jpg", alt: "Textura de cidade: original à esquerda, HD à direita", caption: "Cidade" },
-    { gallery: "texturas", src: "/img/hd-armor-leaves.jpg", alt: "Armadura de folhas: original à esquerda, HD à direita", caption: "Armadura de folhas" },
-    { gallery: "texturas", src: "/img/hd-armor-trim.jpg", alt: "Acabamento de armadura: original à esquerda, HD à direita", caption: "Acabamento de armadura" },
-    { gallery: "texturas", src: "/img/hd-creature.jpg", alt: "Criatura: original à esquerda, HD à direita", caption: "Criatura" },
-    { gallery: "texturas", src: "/img/hd-fur.jpg", alt: "Pelagem: original à esquerda, HD à direita", caption: "Pelagem" },
-    { gallery: "texturas", src: "/img/hd-leaf.jpg", alt: "Folha: original à esquerda, HD à direita", caption: "Folha" },
-    { gallery: "texturas", src: "/img/hd-wood.jpg", alt: "Madeira: original à esquerda, HD à direita", caption: "Madeira" },
-    { gallery: "texturas", src: "/img/hd-flower.jpg", alt: "Flor: original à esquerda, HD à direita", caption: "Flor" },
-    { gallery: "texturas", src: "/img/hd-crystal-blade.jpg", alt: "Lâmina de cristal: original à esquerda, HD à direita", caption: "Lâmina de cristal" },
-    { gallery: "texturas", src: "/img/hd-engraving.jpg", alt: "Gravura de arma: original à esquerda, HD à direita", caption: "Gravura de arma" },
-    { gallery: "texturas", src: "/img/hd-blade.jpg", alt: "Lâmina e cabo: original à esquerda, HD à direita", caption: "Lâmina e cabo" },
+    { gallery: "texturas", src: "/img/hd-wall.jpg", key: "wall" },
+    { gallery: "texturas", src: "/img/hd-weapon.jpg", key: "weapon" },
+    { gallery: "texturas", src: "/img/hd-building.jpg", key: "building" },
+    { gallery: "texturas", src: "/img/hd-city.jpg", key: "city" },
+    { gallery: "texturas", src: "/img/hd-armor-leaves.jpg", key: "armorLeaves" },
+    { gallery: "texturas", src: "/img/hd-armor-trim.jpg", key: "armorTrim" },
+    { gallery: "texturas", src: "/img/hd-creature.jpg", key: "creature" },
+    { gallery: "texturas", src: "/img/hd-fur.jpg", key: "fur" },
+    { gallery: "texturas", src: "/img/hd-leaf.jpg", key: "leaf" },
+    { gallery: "texturas", src: "/img/hd-wood.jpg", key: "wood" },
+    { gallery: "texturas", src: "/img/hd-flower.jpg", key: "flower" },
+    { gallery: "texturas", src: "/img/hd-crystal-blade.jpg", key: "crystalBlade" },
+    { gallery: "texturas", src: "/img/hd-engraving.jpg", key: "engraving" },
+    { gallery: "texturas", src: "/img/hd-blade.jpg", key: "blade" },
   ];
+  const caption = (g) => t("img." + g.key);
+  const altText = (g) => t("img." + g.key + ".alt");
 
   /** Creates an element. `attrs` values must be constants or numbers, never API data. */
   function el(tag, attrs, ...kids) {
@@ -76,11 +510,11 @@
   const text = (tag, cls, value) => { const e = el(tag, cls ? { class: cls } : {}); e.textContent = value; return e; };
 
   function toast(msg) {
-    const t = $("#toast");
-    t.textContent = msg;
-    t.hidden = false;
+    const tst = $("#toast");
+    tst.textContent = msg;
+    tst.hidden = false;
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => { t.hidden = true; }, 4000);
+    toast.timer = setTimeout(() => { tst.hidden = true; }, 4000);
   }
 
   async function api(path, opts) {
@@ -89,15 +523,22 @@
     try { body = await r.json(); } catch (_) { /* not JSON */ }
     if (!r.ok) {
       const code = body && typeof body.error === "string" ? body.error.split(":")[0] : "";
-      const err = new Error(Object.prototype.hasOwnProperty.call(ERRORS, code) ? ERRORS[code] : "Algo deu errado (" + r.status + "). Tente de novo.");
+      const err = new Error(code);
       err.code = code;
+      err.status = r.status;
       throw err;
     }
     return body;
   }
 
-  const pct = (x) => (typeof x === "number" ? x.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%" : "–");
-  const num = (x) => (typeof x === "number" ? x.toLocaleString("pt-BR") : "–");
+  /** The message for an error, in the current language: API error codes are looked up, anything else keeps its own. */
+  function errorText(e) {
+    if (e && typeof e.status === "number") return /^[a-z_]+$/.test(e.code) && has("err." + e.code) ? t("err." + e.code) : t("err.other", e.status);
+    return e && e.message ? e.message : t("err.other", "?");
+  }
+
+  const pct = (x) => (typeof x === "number" ? x.toLocaleString(ui, { maximumFractionDigits: 1 }) + "%" : "–");
+  const num = (x) => (typeof x === "number" ? x.toLocaleString(ui) : "–");
 
   /** Runs `fn` once, the first time `node` scrolls into view (right away without IntersectionObserver). */
   function whenVisible(node, fn, margin) {
@@ -112,8 +553,8 @@
   function countUp(node, target, fmt) {
     if (typeof target !== "number" || REDUCE) { node.textContent = fmt(target); return; }
     const t0 = performance.now(), dur = 1400;
-    const step = (t) => {
-      const k = Math.min(1, (t - t0) / dur);
+    const step = (tm) => {
+      const k = Math.min(1, (tm - t0) / dur);
       node.textContent = fmt(k < 1 ? target * (1 - Math.pow(1 - k, 3)) : target);
       if (k < 1) requestAnimationFrame(step);
     };
@@ -122,16 +563,18 @@
 
   async function loadStats() {
     try {
-      const s = await api("/v1/stats?lang=" + encodeURIComponent(LANG));
+      const s = await api("/v1/stats?lang=" + encodeURIComponent(DICT_LANG));
       const int = (x) => num(typeof x === "number" ? Math.round(x) : x);
+      const fields = [["#s-translated", s.translated_pct, pct], ["#s-perfect", s.perfect_pct, pct], ["#s-texts", s.texts, int], ["#s-downloads", s.downloads, int]];
+      let shown = false;
       whenVisible($("#metricas"), () => {
-        countUp($("#s-translated"), s.translated_pct, pct);
-        countUp($("#s-perfect"), s.perfect_pct, pct);
-        countUp($("#s-texts"), s.texts, int);
-        countUp($("#s-downloads"), s.downloads, int);
+        shown = true;
+        for (const [id, v, fmt] of fields) countUp($(id), v, fmt);
         const w = Math.max(0, Math.min(100, Number(s.translated_pct) || 0));
         $("#s-bar").style.width = w + "%";
       });
+      // The formatters read the current language, so a running count-up switches by itself; a finished one is rewritten.
+      relabel.push(() => { if (shown) for (const [id, v, fmt] of fields) $(id).textContent = fmt(v); });
     } catch (_) { /* metrics are optional */ }
   }
 
@@ -148,33 +591,33 @@
 
   // Vote buttons. A vote updates its counts in place from the answer and marks the chosen button; nothing else is
   // redrawn, so the list stays where it is.
-  function voteButtons(t) {
-    const upN = text("span", "up", "▲ " + num(t.up));
-    const downN = text("span", "down", "▼ " + num(t.down));
-    const up = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar a favor", title: "Boa tradução" }, upN);
-    const down = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar contra", title: "Tradução ruim" }, downN);
+  function voteButtons(tr) {
+    const upN = text("span", "up", "▲ " + num(tr.up));
+    const downN = text("span", "down", "▼ " + num(tr.down));
+    const up = el("button", { class: "gbtn vote", type: "button", "aria-label": t("vote.up"), title: t("vote.upTitle") }, upN);
+    const down = el("button", { class: "gbtn vote", type: "button", "aria-label": t("vote.down"), title: t("vote.downTitle") }, downN);
     const mark = (value) => {
       for (const [b, v] of [[up, 1], [down, -1]]) {
         b.disabled = true;
         b.classList.toggle("voted", v === value);
-        if (v === value) { b.setAttribute("aria-pressed", "true"); b.title = "Seu voto"; }
+        if (v === value) { b.setAttribute("aria-pressed", "true"); b.title = t("vote.mine"); }
       }
     };
     const done = (r, value) => {
       if (r && typeof r.up === "number") upN.textContent = "▲ " + num(r.up);
       if (r && typeof r.down === "number") downN.textContent = "▼ " + num(r.down);
-      rememberVote(t.id, value);
+      rememberVote(tr.id, value);
       mark(value);
     };
-    up.onclick = () => vote(t.id, 1, done);
-    down.onclick = () => vote(t.id, -1, done);
-    if (voted[t.id] === 1 || voted[t.id] === -1) mark(voted[t.id]);
+    up.onclick = () => vote(tr.id, 1, done);
+    down.onclick = () => vote(tr.id, -1, done);
+    if (voted[tr.id] === 1 || voted[tr.id] === -1) mark(voted[tr.id]);
     return [up, down];
   }
 
   function sourceChip(source) {
     const c = el("span", { class: "chip" });
-    c.append(text("span", "", "Fonte"), text("span", "", Object.prototype.hasOwnProperty.call(SOURCES, source) ? SOURCES[source] : "?"));
+    c.append(text("span", "", t("item.source")), text("span", "", /^[a-z]+$/.test(source) && has("src." + source) ? t("src." + source) : "?"));
     return c;
   }
 
@@ -182,18 +625,23 @@
     const cur = item.current;
     const en = text("div", "txt", item.en);
     en.setAttribute("lang", "en");
-    const tr = cur ? text("div", "txt", cur.tr) : text("div", "txt none", "Ainda sem tradução.");
+    const tr = cur ? text("div", "txt", cur.tr) : text("div", "txt none", t("item.none"));
+    if (cur) tr.setAttribute("lang", DICT_LANG);
     const actions = el("div", { class: "actions" });
     if (cur) actions.append(...voteButtons(cur), sourceChip(cur.source));
-    actions.append(el("span", { class: "spacer" }), el("button", { class: "gbtn", type: "button", onclick: () => correct(item) }, cur ? "Sugerir correção" : "Sugerir tradução"));
+    actions.append(el("span", { class: "spacer" }), el("button", { class: "gbtn", type: "button", onclick: () => correct(item) }, cur ? t("item.correct") : t("item.suggest")));
     const card = el("article", { class: "item paper" },
       el("div", { class: "pair" },
-        el("div", {}, text("div", "label", "Original (inglês)"), en),
-        el("div", {}, text("div", "label gold", "Tradução (português)"), tr)),
+        el("div", {}, text("div", "label", t("item.en")), en),
+        el("div", {}, text("div", "label gold", t("item.tr")), tr)),
       actions);
     if (Array.isArray(item.alternatives) && item.alternatives.length) {
-      const d = el("details", {}, text("summary", "", "Outras traduções (" + item.alternatives.length + ")"));
-      for (const a of item.alternatives) d.append(el("div", { class: "alt" }, text("div", "txt", a.tr), ...voteButtons(a)));
+      const d = el("details", {}, text("summary", "", t("item.alts", num(item.alternatives.length))));
+      for (const a of item.alternatives) {
+        const alt = text("div", "txt", a.tr);
+        alt.setAttribute("lang", DICT_LANG);
+        d.append(el("div", { class: "alt" }, alt, ...voteButtons(a)));
+      }
       card.append(d);
     }
     return card;
@@ -270,20 +718,48 @@
       if (off) b.disabled = true; else b.addEventListener("click", () => go({ p }));
       return b;
     };
-    const kids = [link("«", 1, "Primeira página", "edge far"), link("‹", cur - 1, "Página anterior", "edge")];
+    const kids = [link("«", 1, t("pager.first"), "edge far"), link("‹", cur - 1, t("pager.prev"), "edge")];
     for (const p of pageList(cur, Math.max(end, cur))) {
-      kids.push(p == null ? text("span", "pg-gap", "…") : link(num(p), p, "Página " + num(p)));
+      kids.push(p == null ? text("span", "pg-gap", "…") : link(num(p), p, t("pager.page", num(p))));
     }
-    kids.push(link("›", cur + 1, "Próxima página", "edge"));
-    if (last != null) kids.push(link("»", last, "Última página (" + num(last) + ")", "edge far"));
+    kids.push(link("›", cur + 1, t("pager.next"), "edge"));
+    if (last != null) kids.push(link("»", last, t("pager.last", num(last)), "edge far"));
     nav.replaceChildren(...kids);
     nav.hidden = end <= 1 && cur === 1;
     $("#pg-jump").hidden = last == null || last <= 1;
     $("#pg-input").max = last != null ? String(last) : "";
-    const from = (cur - 1) * state.n + 1;
+    const from = (cur - 1) * state.n + 1, to = from + count - 1;
     $("#pg-info").textContent = !count ? ""
-      : "Mostrando " + num(from) + "–" + num(from + count - 1)
-        + (typeof state.total === "number" ? " de " + num(state.total) : state.q ? " resultados da busca" : "");
+      : typeof state.total === "number" ? t("pager.of", num(from), num(to), num(state.total))
+        : state.q ? t("pager.search", num(from), num(to)) : t("pager.range", num(from), num(to));
+  }
+
+  /** Draws the last answer of the list (or its error) and the pager. */
+  function drawList() {
+    const list = $("#list");
+    if (state.err) {
+      list.replaceChildren(text("div", "msg", errorText(state.err)));
+      renderPager(0);
+      return;
+    }
+    const items = state.items;
+    if (!items) return;
+    // Revalidation without a full redraw: a card whose data (and language) did not change keeps its node (scroll
+    // position, an open "other translations", focus and vote marks stay); only new or changed cards are built.
+    const old = new Map();
+    for (const c of list.children) if (c.dataset && c.dataset.sig) old.set(c.dataset.sig, c);
+    list.replaceChildren(...items.map((item) => {
+      const sig = ui + " " + JSON.stringify(item);
+      const keep = old.get(sig);
+      if (keep) return keep;
+      const card = render(item);
+      card.dataset.sig = sig;
+      return card;
+    }));
+    if (!items.length) {
+      list.append(text("div", "msg", state.p > 1 ? t("list.emptyPage") : state.q ? t("list.noMatch") : t("list.empty")));
+    }
+    renderPager(items.length);
   }
 
   async function load(scroll) {
@@ -292,34 +768,22 @@
     list.setAttribute("aria-busy", "true");
     list.classList.add("busy");
     if (scroll) $("#dicionario").scrollIntoView({ behavior: REDUCE ? "auto" : "smooth", block: "start" });
-    const p = new URLSearchParams({ lang: LANG, sort: state.sort, page: String(state.p), limit: String(state.n) });
+    const p = new URLSearchParams({ lang: DICT_LANG, sort: state.sort, page: String(state.p), limit: String(state.n) });
     if (state.q) p.set("q", state.q);
     try {
       const r = await api("/v1/texts?" + p.toString());
       if (seq !== state.seq) return;
       state.total = typeof r.total === "number" ? r.total : null;
       state.more = r.more === true || typeof r.next_cursor === "string";
-      // Revalidation without a full redraw: a card whose data did not change keeps its node (scroll position, an open
-      // "Outras traduções", focus and vote marks stay); only new or changed cards are built.
-      const old = new Map();
-      for (const c of list.children) if (c.dataset && c.dataset.sig) old.set(c.dataset.sig, c);
-      list.replaceChildren(...r.items.map((item) => {
-        const sig = JSON.stringify(item);
-        const keep = old.get(sig);
-        if (keep) return keep;
-        const card = render(item);
-        card.dataset.sig = sig;
-        return card;
-      }));
-      if (!r.items.length) {
-        list.append(text("div", "msg", state.p > 1 ? "Esta página está vazia." : state.q ? "Nada encontrado." : "Nenhum texto ainda."));
-      }
-      renderPager(r.items.length);
+      state.items = r.items;
+      state.err = null;
+      drawList();
     } catch (e) {
       if (seq !== state.seq) return;
-      list.replaceChildren(text("div", "msg", e.message));
+      state.err = e;
+      state.items = null;
       state.more = false;
-      renderPager(0);
+      drawList();
     } finally {
       if (seq === state.seq) { list.removeAttribute("aria-busy"); list.classList.remove("busy"); }
     }
@@ -342,22 +806,24 @@
     $("#pg-jump").addEventListener("submit", (e) => {
       e.preventDefault();
       const last = lastPage(), v = Number($("#pg-input").value);
-      if (!Number.isInteger(v) || v < 1) { toast("Digite o número de uma página."); return; }
+      if (!Number.isInteger(v) || v < 1) { toast(t("jump.invalid")); return; }
       go({ p: last != null ? Math.min(v, last) : v });
       $("#pg-input").value = "";
     });
     window.addEventListener("hashchange", () => { const s = readHash(); if (s) apply(s, true); });
+    relabel.push(drawList);
     const s = readHash();
     apply(s || { sort: "recent", p: 1, n: 20, q: "" }, !!s);
   }
 
-  // One dialog for every write: shows the Turnstile widget, sends when confirmed.
+  // One dialog for every write: shows the Turnstile widget, sends when confirmed. The dialog is modal, so the language
+  // cannot change while it is open.
   let widget = null;
   function ask(title, bodyNodes, needsInput, send) {
     const dlg = $("#dlg"), ok = $("#dlg-ok"), note = $("#dlg-note");
     $("#dlg-title").textContent = title;
     $("#dlg-body").replaceChildren(...bodyNodes);
-    note.textContent = SITEKEY ? "" : "A verificação está indisponível no momento.";
+    note.textContent = SITEKEY ? "" : t("dlg.verifyOff");
     let token = null;
     ok.disabled = true;
     const refresh = () => { ok.disabled = !token || (needsInput && !needsInput()); };
@@ -370,7 +836,7 @@
     ok.onclick = async () => {
       ok.disabled = true;
       try { await send(token); close(); } catch (e) {
-        note.textContent = e.message;
+        note.textContent = errorText(e);
         token = null;
         if (widget != null && window.turnstile) window.turnstile.reset(widget);
       }
@@ -381,62 +847,62 @@
       $("#ts").replaceChildren();
       widget = window.turnstile.render("#ts", {
         sitekey: SITEKEY,
-        language: "pt-br",
-        callback: (t) => { token = t; refresh(); },
+        language: ui === "en" ? "en" : "pt-br",
+        callback: (tk) => { token = tk; refresh(); },
         "expired-callback": () => { token = null; refresh(); },
-        "error-callback": () => { note.textContent = "Falha na verificação. Recarregue a página."; },
+        "error-callback": () => { note.textContent = t("dlg.verifyFail"); },
       });
     };
     if (SITEKEY) mount(0);
   }
 
   function vote(id, value, done) {
-    ask(value > 0 ? "Votar a favor desta tradução" : "Votar contra esta tradução",
-      [text("p", "note", "Confirme que você é humano para registrar o voto.")], null,
+    ask(value > 0 ? t("vote.titleUp") : t("vote.titleDown"),
+      [text("p", "note", t("vote.confirm"))], null,
       async (token) => {
         let r;
         try {
           r = await api("/v1/votes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ translation_id: id, value, turnstile: token }) });
         } catch (e) {
           // Voted before (another visit, another browser on the same network): mark it and close, it is not an error.
-          if (e.code === "already_voted") { if (done) done(null, value); toast(e.message); return; }
+          if (e.code === "already_voted") { if (done) done(null, value); toast(errorText(e)); return; }
           throw e;
         }
         if (done) done(r, value);
-        toast("Voto registrado. Obrigado!");
+        toast(t("vote.done"));
       });
   }
 
   function correct(item) {
-    const ta = el("textarea", { "aria-label": "Sua tradução", maxlength: 8000 });
+    const ta = el("textarea", { "aria-label": t("fix.yours"), maxlength: 8000, lang: DICT_LANG });
     ta.value = item.current ? item.current.tr : "";
     const en = text("p", "txt", item.en);
     en.setAttribute("lang", "en");
-    ask("Sugerir tradução", [
-      text("div", "label", "Original (inglês)"), en,
-      text("div", "label gold", "Sua tradução"), ta,
-      text("p", "note", "Mantenha as marcações do jogo iguais às do original. Sua sugestão passa por revisão antes de aparecer."),
+    ask(t("fix.title"), [
+      text("div", "label", t("item.en")), en,
+      text("div", "label gold", t("fix.yours")), ta,
+      text("p", "note", t("fix.note")),
     ], () => ta.value.trim() !== "" && ta.value !== (item.current && item.current.tr),
     async (token) => {
-      await api("/v1/corrections", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text_key: item.text_key, lang: LANG, tr: ta.value, turnstile: token }) });
-      toast("Sugestão enviada para revisão. Obrigado!");
+      await api("/v1/corrections", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text_key: item.text_key, lang: DICT_LANG, tr: ta.value, turnstile: token }) });
+      toast(t("fix.done"));
     });
   }
 
   // A gallery is a before/after slider (each image holds the original on its left half and the HD version on its
-  // right half) plus a row of thumbnails that pick the image. "Ampliar" opens the whole image in the lightbox.
+  // right half) plus a row of thumbnails that pick the image. The zoom button opens the whole image in the lightbox.
   function viewer(shots, openLightbox) {
     let current = null, touched = false, dragging = false;
     const base = el("img", { alt: "", decoding: "async" });
     const hd = el("img", { alt: "", decoding: "async", "aria-hidden": "true" });
-    const left = text("span", "badge left", "Original");
-    const right = text("span", "badge right", "HD");
-    const range = el("input", { class: "cmp-range", type: "range", min: 0, max: 100, step: 1, value: 50, "aria-label": "Comparar original e HD" });
+    const left = text("span", "badge left", "");
+    const right = text("span", "badge right", "");
+    const range = el("input", { class: "cmp-range", type: "range", min: 0, max: 100, step: 1, value: 50 });
     const cmp = el("div", { class: "cmp" }, base, el("div", { class: "cmp-hd" }, hd),
       el("span", { class: "cmp-line", "aria-hidden": "true" }, el("span", { class: "cmp-knob" })), left, right, range);
     const cap = text("figcaption", "cmp-cap", "");
-    const zoom = el("button", { class: "gbtn", type: "button", onclick: () => openLightbox(current) }, "Ampliar");
-    const thumbs = el("div", { class: "thumbs", role: "group", "aria-label": "Escolher a textura" });
+    const zoom = el("button", { class: "gbtn", type: "button", onclick: () => openLightbox(current) });
+    const thumbs = el("div", { class: "thumbs", role: "group" });
 
     // The two halves are separated by a 4 px gap: scale the image so one half fills the frame, and shift the HD copy
     // past the gap.
@@ -467,32 +933,47 @@
     cmp.addEventListener("pointercancel", stop);
     range.addEventListener("input", () => { touched = true; setPos(Number(range.value)); });
 
+    // Every text of the viewer, in the current language.
+    const labels = () => {
+      const g = current;
+      base.alt = altText(g);
+      left.textContent = t(g.before || "cmp.before");
+      right.textContent = t(g.after || "cmp.after");
+      cap.textContent = caption(g);
+      range.setAttribute("aria-label", t("cmp.range"));
+      zoom.textContent = t("cmp.zoom");
+      zoom.setAttribute("aria-label", t("cmp.zoomOf", caption(g)));
+      thumbs.setAttribute("aria-label", t("cmp.pick"));
+      for (const b of thumbs.children) {
+        const s = shots.find((x) => x.src === b.dataset.src);
+        b.setAttribute("aria-label", t("cmp.show", caption(s)));
+        b.lastChild.textContent = caption(s);
+      }
+    };
     const show = (g, animate) => {
       current = g;
-      base.src = g.src; hd.src = g.src; base.alt = g.alt;
-      left.textContent = g.before || "Original";
-      right.textContent = g.after || "HD";
-      cap.textContent = g.caption;
-      zoom.setAttribute("aria-label", "Ampliar: " + g.caption);
-      for (const t of thumbs.children) t.setAttribute("aria-pressed", String(t.dataset.src === g.src));
+      base.src = g.src; hd.src = g.src;
+      labels();
+      for (const b of thumbs.children) b.setAttribute("aria-pressed", String(b.dataset.src === g.src));
       if (animate && !REDUCE) { cmp.classList.remove("cmp-swap"); void cmp.offsetWidth; cmp.classList.add("cmp-swap"); }
     };
     for (const g of shots) {
-      const b = el("button", { class: "thumb", type: "button", "aria-pressed": "false", "aria-label": "Mostrar: " + g.caption, onclick: () => show(g, true) },
-        el("img", { src: g.src, alt: "", loading: "lazy", decoding: "async" }), text("span", "", g.caption));
+      const b = el("button", { class: "thumb", type: "button", "aria-pressed": "false", onclick: () => show(g, true) },
+        el("img", { src: g.src, alt: "", loading: "lazy", decoding: "async" }), text("span", "", ""));
       b.dataset.src = g.src;
       thumbs.append(b);
     }
     show(shots[0], false);
     setPos(50);
+    relabel.push(labels);
 
     // A short sweep the first time the slider is seen, so it is clear that it can be dragged.
     if (!REDUCE) {
       whenVisible(cmp, () => {
         const t0 = performance.now(), dur = 1800;
-        const step = (t) => {
+        const step = (tm) => {
           if (touched) return;
-          const k = Math.min(1, (t - t0) / dur);
+          const k = Math.min(1, (tm - t0) / dur);
           setPos(50 + 28 * Math.sin(k * Math.PI * 2) * (1 - k));
           if (k < 1) requestAnimationFrame(step);
         };
@@ -507,13 +988,18 @@
 
   function renderGalleries() {
     const lb = $("#lightbox"), lbImg = $("#lb-img"), lbCap = $("#lb-cap");
+    let shown = null;
     $("#lb-close").addEventListener("click", () => lb.close());
     lb.addEventListener("click", (e) => { if (e.target === lb) lb.close(); });
+    const lbLabels = () => { if (shown) { lbImg.alt = altText(shown); lbCap.textContent = caption(shown); } };
     const openLightbox = (g) => {
       if (!g) return;
-      lbImg.src = g.src; lbImg.alt = g.alt; lbCap.textContent = g.caption;
+      shown = g;
+      lbImg.src = g.src;
+      lbLabels();
       lb.showModal();
     };
+    relabel.push(lbLabels);
     for (const box of document.querySelectorAll("[data-gallery]")) {
       const name = box.dataset.gallery;
       const shots = GALLERY.filter((g) => g.gallery === name);
@@ -559,6 +1045,7 @@
   }
 
   function init() {
+    setupLang();
     renderGalleries();
     setupReveal();
     setupNav();

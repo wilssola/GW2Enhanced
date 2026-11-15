@@ -11,7 +11,7 @@ contributions from the mod, the voting/correction site, and signed dictionary re
   They run outside the Worker so it fits the Free plan (10 ms CPU per run); they use D1 and R2 through the
   Cloudflare API with the same statements.
 - **Site**: `GET /` ([`site/index.html`](site/index.html)) plus `/app.css`, `/app.js`, self-hosted
-  fonts under `/fonts/` and images under `/img/` (all embedded in the Worker; Brazilian Portuguese UI; no
+  fonts under `/fonts/` and images under `/img/` (all embedded in the Worker; UI in Brazilian Portuguese and English; no
   inline script or style). It presents the three parts of the mod and hosts the translation dictionary.
 - **Dictionary seed** (same workflow, daily until done): `jobs seed` loads the dictionary the mod ships
   (`translated/data/languages/pt-BR/dictionary.jsonl`) into D1 as trusted, reviewed translations, about 75k written
