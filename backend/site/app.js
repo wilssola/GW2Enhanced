@@ -1,4 +1,4 @@
-// GW2 Translated site. Served as /app.js (the CSP allows no inline script).
+// GW2 Enhanced site. Served as /app.js (the CSP allows no inline script).
 //
 // XSS rule for this file: data from the API (English texts, translations,
 // corrections, error codes) is only ever written with textContent / DOM
@@ -32,6 +32,17 @@
     unknown_translation: "Tradução não encontrada.",
   };
   const SOURCES = { ai: "IA", argos: "Argos", user: "Comunidade" };
+
+  // Comparison images. To add one: put the file in backend/site/img/, list it
+  // in backend/src/images.rs, and add an entry here. `gallery` picks the
+  // section ("texturas" or "graficos"). Optional `before`/`after` put labels
+  // on the left and right halves of a side-by-side image that has none.
+  const GALLERY = [
+    { gallery: "texturas", src: "/img/hd-wall.jpg", alt: "Textura de muro de pedra: original à esquerda, HD à direita", caption: "Muro" },
+    { gallery: "texturas", src: "/img/hd-weapon.jpg", alt: "Textura de arma: original à esquerda, HD à direita", caption: "Arma" },
+    { gallery: "texturas", src: "/img/hd-building.jpg", alt: "Textura de construção: original à esquerda, HD à direita", caption: "Construção" },
+    { gallery: "texturas", src: "/img/hd-city.jpg", alt: "Textura de cidade: original à esquerda, HD à direita", caption: "Cidade" },
+  ];
 
   /** Creates an element. `attrs` values must be constants or numbers, never API data. */
   function el(tag, attrs, ...kids) {
@@ -202,7 +213,31 @@
     });
   }
 
+  function renderGalleries() {
+    const lb = $("#lightbox"), lbImg = $("#lb-img"), lbCap = $("#lb-cap");
+    $("#lb-close").addEventListener("click", () => lb.close());
+    lb.addEventListener("click", (e) => { if (e.target === lb) lb.close(); });
+    for (const box of document.querySelectorAll("[data-gallery]")) {
+      const name = box.dataset.gallery;
+      const shots = GALLERY.filter((g) => g.gallery === name);
+      const empty = document.querySelector('[data-empty="' + name + '"]');
+      if (empty) empty.hidden = shots.length > 0;
+      box.hidden = !shots.length;
+      for (const g of shots) {
+        const img = el("img", { src: g.src, alt: g.alt, loading: "lazy", decoding: "async" });
+        const frame = el("button", { class: "shot-frame", type: "button", "aria-label": "Ampliar: " + g.caption, onclick: () => {
+          lbImg.src = g.src; lbImg.alt = g.alt; lbCap.textContent = g.caption;
+          lb.showModal();
+        } }, img);
+        if (g.before) frame.append(text("span", "badge left", g.before));
+        if (g.after) frame.append(text("span", "badge right", g.after));
+        box.append(el("figure", { class: "shot paper" }, frame, text("figcaption", "", g.caption)));
+      }
+    }
+  }
+
   function init() {
+    renderGalleries();
     for (const b of document.querySelectorAll(".tabs button")) {
       b.addEventListener("click", () => {
         for (const o of document.querySelectorAll(".tabs button")) o.setAttribute("aria-pressed", String(o === b));

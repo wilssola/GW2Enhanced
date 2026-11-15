@@ -72,10 +72,12 @@ mod tests {
                     .unwrap()
                     .to_string()
             })
+            .filter(|n| n.contains('.'))
             .collect();
         for u in &used {
             assert!(image(u).is_some(), "/img/{u} is used by the site but not served");
         }
+        assert_eq!(&used, &listed(), "an image is served but not shown");
     }
 
     #[test]
