@@ -292,5 +292,5 @@ created from `migrations/`.
 - D1 queries per request are constant (rows go in as JSON arrays expanded with `json_each`).
 - Release build reads `current` by key in pages of 5000 and gzips in memory (tens of MB for
   ~300k texts: fine within 128 MB).
-- workers.dev responses are not CDN-cached; release files still carry `immutable` headers for
+- Served on the custom domain gw2enhanced.wilssola.dev (edge cache available); workers.dev responses are not CDN-cached; release files still carry `immutable` headers for
   clients. Use a custom domain + Cache Rules if download volume grows.

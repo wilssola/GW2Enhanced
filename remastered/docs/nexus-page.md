@@ -51,6 +51,12 @@ To uninstall, delete msimg32.dll and the GW2Remastered folder from the game fold
 [*]16 GB of RAM or more is recommended
 [/list]
 
+[size=4][b]Links[/b][/size]
+[list]
+[*]Website: [url=https://gw2enhanced.wilssola.dev]gw2enhanced.wilssola.dev[/url]
+[*]Source code and every release: [url=https://github.com/wilssola/GW2Enhanced]GitHub[/url]
+[/list]
+
 [size=4][b]Shout outs[/b][/size]
 [list]
 [*][b]Kim2091[/b], for the 4x-UltraSharp upscaling model (CC BY-NC-SA 4.0). This pack is free and non-commercial because of it.
