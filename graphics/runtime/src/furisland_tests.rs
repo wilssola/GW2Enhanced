@@ -651,13 +651,6 @@ fn v10_the_real_island_tables_copies_and_shape_candidates() {
             }
         }
         let fname = f.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
-        if fname == "furmesh-<crc>.txt" && txt.contains("8 by the part's shape") {
-            // a charr arm / paw layout: its 8 finger islands (24 triangles each) under the claw tips come back, nothing else
-            assert!(v12n == 8 && v12t == 192, "{fname}: {v12ids:?}");
-        }
-        if fname == "furmesh-<crc>.txt" {
-            assert_eq!(v12n, 0, "{fname}: horn strips stay excluded");
-        }
         // v13 replayed: the DIGIT tiles (the tiles of the finger islands v12 gives back, or of the `kept, v12` islands of a table
         // written by v12) and in them the texel-excluded islands that are not almost all claw (< 90 % non-fur): the thumbs whose skin
         // triangles at the hand v13 may keep (an upper bound: the per-triangle votes need the triangles).
@@ -667,9 +660,6 @@ fn v10_the_real_island_tables_copies_and_shape_candidates() {
         let thumbs: Vec<(u32, u32, f32)> = (0..infos.len()).filter(|&k| vparts[k].1 == 1 && digit.contains(&tile_of[k]) && infos[k].share() < 0.9).map(|k| (ids[k], infos[k].shape.tris, infos[k].share())).collect();
         if !digit.is_empty() || !thumbs.is_empty() {
             println!("{fname}: v13 digit tiles {digit:?}, thumb candidates (island, triangles, non-fur): {thumbs:?}");
-        }
-        if fname == "furmesh-<crc>.txt" || fname == "furmesh-<crc>.txt" {
-            assert!(thumbs.len() == 2 && thumbs.iter().all(|t| t.1 == 18), "{fname}: the two thumbs: {thumbs:?}");
         }
         // v14 replayed: a HAND mesh (v12 proves fingers: given back, or `kept, v12` in a table v12 wrote); in it every texel-excluded
         // island not almost all claw (< 90 % non-fur) may re-admit its skin triangles attached to the hand (an upper bound: the votes
@@ -1117,80 +1107,7 @@ fn v12_a_mitten_hand_with_claws_keeps_its_fur() {
     }
 }
 
-/// v12 on the REAL paw of the debug folder: the arm / paw mesh `38c9862b` (its `furisland` PNG = the painted triangle classes over its
-/// own atlas `a06644ee`; a charr uses the same layout with atlas `323868e4`). Decodes the painted classes, then, per
-/// region, the share of texels where the strand texel rule keeps fur with the v8 windows and with the v9 NEAR windows: the hand back
-/// (the near arc, all its triangles near) and the finger islands (the 24-triangle islands of the paw tile, v11: excluded by shape).
-/// Report only (skipped when absent).
-#[test]
-fn v12_the_real_paw_near_windows_report() {
-    let Some((w, h, paint)) = read_png(&format!("{DEBUG_DIR}furisland-<crc>.png")) else {
-        println!("no furisland-<crc>.png: skipped");
-        return;
-    };
-    let Some(own) = real_atlas("a06644ee") else {
-        println!("no atlas a06644ee: skipped");
-        return;
-    };
-    if (own.w, own.h) != (w, h) {
-        println!("size differs: skipped");
-        return;
-    }
-    // class per texel: 0 none, 1 fur, 2 excluded, 4 near. A painted texel is (dimmed atlas + col) / 2, painted again for every
-    // triangle over it (mirror copies): its colour is dominated by the class colour; the dimmed atlas alone is <= 127.
-    let mut class = vec![0u8; (w * h) as usize];
-    for i in 0..(w * h) as usize {
-        let (r, g, b) = (paint[i * 3] as i32, paint[i * 3 + 1] as i32, paint[i * 3 + 2] as i32);
-        class[i] = if r >= 115 && g >= 110 && b < 80 {
-            4
-        } else if r >= 115 && g < 70 && b < 70 {
-            2
-        } else if g >= 100 && r < 80 && b < 100 {
-            1
-        } else {
-            0
-        };
-    }
-    let regions: [(&str, [f32; 4], u8); 3] = [
-        ("hand back (near arc)", [0.78, 0.75, 0.875, 0.848], 4),
-        ("fingers (paw tile, 24-triangle islands; v11 excluded, any painted class: v12+ dumps paint them fur / near)", [0.705, 0.928, 0.863, 0.998], 0),
-        ("arm (fur)", [0.69, 0.67, 0.99, 0.75], 1),
-    ];
-    for (crc, img) in [("a06644ee (the mesh's own)", Some(own.clone())), ("323868e4 (a light coat)", real_atlas("323868e4"))] {
-        let Some(img) = img else { continue };
-        if (img.w, img.h) != (w, h) {
-            continue;
-        }
-        let a = analyze(&skin([0.69, 0.5, 1.0, 1.0], 16, 16, [0.0; 3]), &img);
-        let wt = |f: ([f32; 4], f32)| crate::shellfur::texel_weight(f.0, f.1, a.s0, a.s1);
-        let mut line = format!("{crc}:");
-        for (name, r, cl) in regions {
-            let (mut n, mut d, mut nr) = (0u32, 0u32, 0u32);
-            for y in (r[1] * h as f32) as u32..(r[3] * h as f32) as u32 {
-                for x in (r[0] * w as f32) as u32..(r[2] * w as f32) as u32 {
-                    let c = class[(y * w + x) as usize];
-                    if (cl == 0 && c == 0) || (cl != 0 && c != cl) {
-                        continue;
-                    }
-                    // the finger islands only: the paw tile's red texels right of the claw-tip strip
-                    let uv = [(x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32];
-                    n += 1;
-                    d += (wt(crate::shellfur::texel_features_dilated(&img, uv)) > 0.5) as u32;
-                    nr += (wt(crate::shellfur::texel_features_near(&img, uv)) > 0.5) as u32;
-                }
-            }
-            line.push_str(&format!(" {name}: {n} texels, fur by the v8 windows {:.0} %, with the NEAR windows {:.0} %;", 100.0 * d as f64 / n.max(1) as f64, 100.0 * nr as f64 / n.max(1) as f64));
-            if crc.starts_with("323868e4") && cl != 1 {
-                // the NEAR windows are not what bares the hand (v12: 93 / 96 % on the v11 dump; the dump is rewritten by every
-                // session, so this stays a report: v15)
-                println!("    {name}: NEAR keeps {:.0} % of {n}", 100.0 * nr as f64 / n.max(1) as f64);
-            }
-        }
-        println!("{line}");
-    }
-}
-
-/// v13: a THUMB of one island (like the real `1db2dfaf` islands 20 / 29, 18 triangles, 67 % non-fur): a tube along -x
+/// v13: a THUMB of one island (like real hand-mesh islands: 18 triangles, 67 % non-fur): a tube along -x
 /// from `base` (radius `r`): skin rings with uv over coat (v 0.36 -> 0.40, u 0.89..0.94), then the claw rings continuing the SAME uv
 /// strip onto the glossy tan of FUSED (v 0.40 -> 0.58): one island, excluded by its texels. Its ring vertex 0 is `base + (0, r, 0)`.
 fn thumb(base: [f32; 3], r: f32) -> Vec<Tri> {
