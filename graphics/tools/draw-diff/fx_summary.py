@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Summarises a draws-fx-<unix>.log (effects passes capture of the GW2 Enhanced Graphics overlay).
 
-    python fx_summary.py a debug log [--top 8]
+    python fx_summary.py draws-fx-<unix>.log [--top 8]
 
 Per pass (the `# fxpass=` header lines: colour/depth format, draws) it prints the top groups, quad-like groups first
 (screen-aligned quads / small meshes: the usual hard-edged effect rectangles), then by draw count. Each line shows the

@@ -1,3 +1,4 @@
+import os
 import unittest
 import dxbc_dump as d
 
@@ -7,6 +8,8 @@ EXE = os.environ.get("GW2_EXE", "Gw2-64.exe")
 class T(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if not os.path.exists(EXE):
+            raise unittest.SkipTest("set GW2_EXE to a Gw2-64.exe")
         cls.idx, cls.data = d.build_index(EXE)
 
     def test_fnv_known(self):
