@@ -1,0 +1,69 @@
+name: Graphics calibration report
+description: Help test and calibrate the Graphics feature on your hardware (help wanted!).
+labels: [graphics, calibration]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping! Effects can only be judged in the game, on many GPUs, monitors and maps.
+        The most useful report has two screenshots of the **same spot**: effect on and effect off
+        (the overlay, Shift+Home → Graphics, has a toggle for each effect and one for the whole feature).
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver version
+      placeholder: e.g. NVIDIA RTX 4070, 566.36
+    validations:
+      required: true
+  - type: input
+    id: monitor
+    attributes:
+      label: Monitor
+      placeholder: e.g. 2560x1440 165 Hz, HDR on / SDR
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows, Linux (Proton / Wine)]
+    validations:
+      required: true
+  - type: dropdown
+    id: effect
+    attributes:
+      label: Effect
+      multiple: true
+      options: [HDR output, Bloom, Lens flare, Ambient occlusion, Halo, Reflections (SSR), Light shafts, Contact shadows, Aerial perspective, Auto exposure, Local tone, Colour grading, Rim light, Fur, Anti-aliasing / sharpening / texture filtering, Photo mode, Whole feature]
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where in the game
+      placeholder: e.g. Lion's Arch, near the Mystic Forge, night
+  - type: textarea
+    id: what
+    attributes:
+      label: What looks wrong, and what would look right?
+      description: Too bright or dark, halos, lines or dots, flicker, colours off the original art, effects through walls, performance drop...
+    validations:
+      required: true
+  - type: textarea
+    id: shots
+    attributes:
+      label: Screenshots (on / off) and files
+      description: Drag the two screenshots here, plus GW2Graphics\config.ini and GW2Graphics\gw2graphics_log.txt from that session.
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings you found that look better (optional)
+      description: Slider values that worked well across several places are very welcome.

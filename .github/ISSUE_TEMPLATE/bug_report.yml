@@ -1,0 +1,50 @@
+name: Bug report
+description: Something is broken or wrong (crash, feature not working, wrong translation of the interface).
+labels: [bug, triage]
+body:
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Feature
+      options: [Translation, HD Textures, Graphics, Installer / launcher, Updates, Website, Other]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+      description: Shown at the bottom of the overlay (Shift+Home).
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows (Steam), Windows (ArenaNet launcher), Linux (Steam / Proton), Linux (Lutris / Wine), Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Go to ...\n2. Open ...\n3. See ..."
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Attach the log of the feature (GW2Translated, GW2Remastered or GW2Graphics folder in the game folder) and the overlay's Health tab status. Never attach game files.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I am on the latest release.
+          required: true
+        - label: I searched existing issues.
+          required: true

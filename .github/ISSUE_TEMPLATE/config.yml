@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/wilssola/GW2Enhanced/security/advisories/new
+    about: Report security problems privately, never in a public issue.
+  - name: Vote and suggest translations
+    url: https://app.gw2enhanced.workers.dev
+    about: Translation wording is improved on the website, not in issues.
