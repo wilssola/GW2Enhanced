@@ -12,12 +12,15 @@
 # Needs the repository secret UPDATE_SIGNING_KEY: base64 of the 32-byte ed25519 seed whose public key the updater
 # has built in. The run fails at once without it.
 #
-# Trigger: pushing a tag v<version> (git tag v1.2.0 && git push origin v1.2.0), or running this workflow by hand
-# with a version, which creates the tag v<version> on the commit it runs on (main only) unless it already exists.
-# Not on every push to main (as Zapive does): every release asks every player in game to update and restarts the
-# game, and one release uploads several GB of zips (the CUDA ones carry cuBLAS and the big model), so a release
-# is a deliberate act. A version with a suffix (1.2.0-beta.1) is published as a prerelease, which the
-# "latest release" the updater looks at never points to.
+# Trigger: every push to main versions itself (as Zapive does): the bump comes from the conventional-commit history
+# since the last tag (`type!:` or BREAKING CHANGE -> major, feat -> minor, anything else -> patch) and the tag
+# v<version> is created on the pushed commit. A push made only of chore / docs / ci / test / style commits ships no
+# release (every release asks the players in game to update and uploads several GB of zips). Also: pushing a tag
+# v<version> by hand, or running this workflow with a version (the tag is created on main if missing). A version with
+# a suffix (1.2.0-beta.1) is published as a prerelease, which the "latest release" the updater looks at never points to.
+# The release notes (generate_changelog.py) are the changelog the in-game updater shows. The automatic release runs
+# only while the repository variable AUTO_RELEASE is `true` (gh variable set AUTO_RELEASE --body true), so the first
+# release waits until the build has been tested in game.
 #
 # Supply chain: actions pinned to commit SHAs; no build cache of any kind (the job attests and publishes, a
 # poisoned cache must not reach it); every download is pinned and sha256-checked by the scripts, except the big
@@ -29,6 +32,7 @@ name: release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -50,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write # creates the tag on a manual run
+      contents: write # creates the tag (automatic version or manual run)
     outputs:
       tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
@@ -64,12 +68,48 @@ jobs:
             echo "::error::secret UPDATE_SIGNING_KEY is missing: the in-game updater refuses a release whose SHA256SUMS.txt is not signed"
             exit 1
           fi
+      # Full history and tags for the automatic version (no token kept).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - id: v
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
+          AUTO_RELEASE: ${{ vars.AUTO_RELEASE }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ] && [ "$AUTO_RELEASE" != true ]; then
+            echo "automatic releases are off (repository variable AUTO_RELEASE is not true); no release"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = branch ]; then
+            # Automatic version from the commits since the last release tag (no tag yet: from v0.1.0).
+            last=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v0.1.0)
+            range="$last..HEAD"
+            git rev-parse -q --verify "$last" >/dev/null || range=HEAD
+            # Subjects only (chore / docs / ci / test / style never release); BREAKING CHANGE may sit in a body.
+            commits=$(git log --format=%s $range | grep -vE '^(chore|docs|ci|test|style)(\(.+\))?:' || true)
+            breaking=$(git log --format=%b $range | grep -c 'BREAKING CHANGE' || true)
+            if [ -z "$commits" ]; then
+              echo "no releasable commits since $last; no release"
+              echo "tag=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            base="${last#v}"; base="${base%%-*}"
+            IFS=. read -r major minor patch <<< "$base"
+            if [ "$breaking" -gt 0 ] || echo "$commits" | grep -qE '^[a-z]+(\(.+\))?!:'; then
+              major=$((major+1)); minor=0; patch=0
+            elif echo "$commits" | grep -qE '^feat(\(.+\))?:'; then
+              minor=$((minor+1)); patch=0
+            else
+              patch=$((patch+1))
+            fi
+            tag="v$major.$minor.$patch"
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null
+            echo "created tag $tag on $GITHUB_SHA (from $last)"
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
             tag="$GITHUB_REF_NAME"
           else
             tag="v${INPUT_VERSION#v}"
@@ -99,6 +139,7 @@ jobs:
 
   release:
     needs: version
+    if: needs.version.outputs.tag != ''
     runs-on: windows-latest
     timeout-minutes: 240
     permissions:
@@ -179,6 +220,7 @@ jobs:
   # --locked; the AppImage step downloads linuxdeploy from its GitHub releases (Tauri's bundler does that itself).
   linux-installer:
     needs: version
+    if: needs.version.outputs.tag != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
