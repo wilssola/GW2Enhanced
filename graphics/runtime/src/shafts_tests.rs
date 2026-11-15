@@ -128,6 +128,27 @@ fn depth_stats(g: &Gpu, sh: &Shafts) -> [f32; 4] {
     read(g, &t, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, false)[0]
 }
 
+/// This frame's 1x1 sun measurement: (peak luminance, mean sky luminance, emitter radius, core spread).
+fn sun_meas(g: &Gpu, sh: &Shafts) -> [f32; 4] {
+    let t: ID3D11Texture2D = unsafe { ID3D11Texture2D::from_raw_borrowed(&sh.meas.tex).unwrap().clone() };
+    read(g, &t, 1, 1, DXGI_FORMAT_R32G32B32A32_FLOAT, false)[0]
+}
+
+/// Runs `n` frames of a scene given as closures (encoded colour, linear depth).
+fn settle_scene(r: &mut Rig, n: usize, colour: impl Fn(usize, usize) -> [f32; 3], depth: impl Fn(usize, usize) -> f32) {
+    let scene = scene_tex(&r.g, N, N, colour);
+    let depth = depth_tex(&r.g, N, N, depth);
+    let srv = srv_of(&r.g, &scene);
+    let p = Params { width: N as u32, height: N as u32, length: 0.7, debug: false };
+    for _ in 0..n {
+        assert!(unsafe { r.sh.run(r.g.dev.as_raw(), r.g.ctx.as_raw(), srv.as_raw(), depth.as_raw(), &p) });
+    }
+}
+
+fn max_light(px: &[[f32; 4]]) -> f32 {
+    px.iter().flat_map(|p| p[..3].iter()).fold(0.0f32, |a, b| a.max(b.abs()))
+}
+
 /// The current 1x1 sun state: (u, v, confidence, mean luminance) and the tint.
 fn sun_state(g: &Gpu, sh: &Shafts) -> ([f32; 4], [f32; 4]) {
     let a: ID3D11Texture2D = unsafe { ID3D11Texture2D::from_raw_borrowed(&sh.sun[sh.cur][0].tex).unwrap().clone() };
@@ -235,7 +256,7 @@ fn light_at(px: &[[f32; 4]], qw: usize, x: usize, y: usize) -> f32 {
 #[test]
 fn shafts_hlsl_compiles_for_all_entries() {
     let b = blobs();
-    for (name, code) in [("vs", &b.vs), ("dtile", &b.dtile), ("dreduce", &b.dreduce), ("mask", &b.mask), ("reduce_a", &b.reduce_a), ("reduce_b", &b.reduce_b), ("shafts", &b.shafts)] {
+    for (name, code) in [("vs", &b.vs), ("dtile", &b.dtile), ("dreduce", &b.dreduce), ("mask", &b.mask), ("reduce_a", &b.reduce_a), ("core", &b.core), ("reduce_b", &b.reduce_b), ("shafts", &b.shafts)] {
         assert_eq!(&code[..4], b"DXBC", "{name}");
     }
 }
@@ -249,9 +270,11 @@ fn rays_appear_between_the_columns_and_fan_out_from_the_sun() {
     r.settle(w, 1.0, 14);
     let (px, qw, _) = shaft_light(&r.g, &r.sh);
     // The sun blob is at (64, 6); the columns are x % 32 in 4..28, so x = 64 is the middle of an 8 px slit through which
-    // the bright sky is seen, and x = 48 is the middle of a column.
-    let gap = light_at(&px, qw, 64, 80);
-    let col = light_at(&px, qw, 36, 80).max(light_at(&px, qw, 92, 80));
+    // the sun and its glow are seen. Only the sun and its glow emit, so the shadows are cast by the occluders in front
+    // of the glow: at the same distance from the sun (30 px), the ray straight down the slit is brighter than the rays
+    // whose last part crosses a column (45 degrees to either side).
+    let gap = light_at(&px, qw, 64, 36);
+    let col = light_at(&px, qw, 43, 27).max(light_at(&px, qw, 85, 27));
     let far = light_at(&px, qw, 64, 120);
     let near = light_at(&px, qw, 64, 56);
     println!("shafts columns: gap {gap:.4} column {col:.4}; below the sun in the gap: near {near:.4} far {far:.4}");
@@ -325,6 +348,69 @@ fn a_sky_that_is_everywhere_bright_has_low_confidence() {
     let (s0, _) = sun_state(&r.g, &r.sh);
     println!("shafts all-sky confidence {}", s0[2]);
     assert!(s0[2] < 0.05, "{}", s0[2]);
+}
+
+#[test]
+fn an_evenly_bright_sky_gives_no_shafts() {
+    // An overcast or hazy sky: bright everywhere (encoded 0.85 at the top to 0.97 at the horizon, with a little
+    // ripple), no distinct sun, seen between columns. The old rule (any bright sky emits, the centroid of a band is
+    // compact enough) found a "sun" in the middle of the band and blurred the whole sky into rays.
+    let Some(mut r) = Rig::new() else { return };
+    let w = World { blob: None, columns: true, ..BAND };
+    let colour = |x: usize, y: usize| {
+        if w.is_sky(x, y) {
+            let e = 0.85 + 0.12 * y as f32 / SKY_ROWS as f32 + 0.02 * ((x as f32 * 0.3).sin() * (y as f32 * 0.5).cos());
+            [e, e, e * 0.97]
+        } else {
+            w.colour(x, y)
+        }
+    };
+    settle_scene(&mut r, 20, colour, |x, y| w.depth(x, y));
+    let (px, _, _) = shaft_light(&r.g, &r.sh);
+    let (s0, _) = sun_state(&r.g, &r.sh);
+    let m = sun_meas(&r.g, &r.sh);
+    println!("shafts even sky: max {}, confidence {}, measurement {m:?}", max_light(&px), s0[2]);
+    assert!(s0[2] < 0.01, "an evenly bright sky must not be a sun: confidence {}", s0[2]);
+    assert!(max_light(&px) < 1e-3, "an evenly bright sky made shafts: {}", max_light(&px));
+}
+
+#[test]
+fn a_bright_sky_with_a_distinct_sun_radiates_only_from_the_sun() {
+    // A bright sky (encoded 0.9), the sun at (100, 8) and a bright cloud (encoded 1.0) at (55, 30), between the sun
+    // and the ground at the left edge. The sun must be found on the sun, rays must come from it, and the cloud and
+    // the bright sky away from the sun must emit nothing: the old rule blurred them into rays of their own.
+    let sun = |x: usize, y: usize| ((x as f32 - 100.0).powi(2) + (y as f32 - 8.0).powi(2)).sqrt() < 5.0;
+    let cloud = |x: usize, y: usize| ((x as f32 - 55.0).powi(2) + (y as f32 - 30.0).powi(2)).sqrt() < 10.0;
+    let depth = |_: usize, y: usize| if y < SKY_ROWS { 0.0 } else { 10.0 };
+    let scene = |with_cloud: bool| {
+        move |x: usize, y: usize| match (y < SKY_ROWS, sun(x, y), with_cloud && cloud(x, y)) {
+            (false, ..) => [0.1, 0.1, 0.1],
+            (true, true, _) => [1.6, 1.6, 1.5],
+            (true, false, true) => [1.0, 1.0, 1.0],
+            _ => [0.9, 0.9, 0.86],
+        }
+    };
+    let Some(mut r) = Rig::new() else { return };
+    settle_scene(&mut r, 20, scene(true), depth);
+    let (s0, _) = sun_state(&r.g, &r.sh);
+    let m = sun_meas(&r.g, &r.sh);
+    let (px, qw, _) = shaft_light(&r.g, &r.sh);
+    let mut rr = Rig::new().unwrap();
+    settle_scene(&mut rr, 20, scene(false), depth);
+    let (refpx, _, _) = shaft_light(&rr.g, &rr.sh);
+    println!("shafts sun in a bright sky: sun ({:.3}, {:.3}) conf {:.3}, measurement {m:?}", s0[0], s0[1], s0[2]);
+    assert!((s0[0] - 100.0 / N as f32).abs() < 0.04 && (s0[1] - 8.0 / N as f32).abs() < 0.04, "sun estimate ({}, {}) is not on the sun", s0[0], s0[1]);
+    assert!(s0[2] > 0.8, "a distinct sun in a bright sky must be found: confidence {}", s0[2]);
+    // Rays below the sun.
+    let below = light_at(&px, qw, 100, 50);
+    assert!(below > 0.01, "no rays below the sun: {below}");
+    // The ground at (2, 56) looks at the sun through the cloud; its ray (length 0.7) ends well away from the sun.
+    let (through, through_ref) = (light_at(&px, qw, 2, 56), light_at(&refpx, qw, 2, 56));
+    // Ground far to the left, whose rays cross only bright sky.
+    let far = light_at(&px, qw, 2, 44);
+    println!("shafts sun in a bright sky: below the sun {below:.4}; through the cloud {through:.5} (no cloud {through_ref:.5}); far left {far:.5}");
+    assert!(through < 0.05 * below && through <= through_ref + 1e-3, "the cloud emits rays: {through} (no cloud {through_ref}, below the sun {below})");
+    assert!(far < 0.05 * below, "the bright sky away from the sun emits rays: {far} (below the sun {below})");
 }
 
 #[test]
@@ -449,9 +535,9 @@ fn run_restores_pipeline_state_and_leaves_no_references() {
         c.PSGetShaderResources(9, Some(&mut mine[..1]));
         assert_eq!(mine[0].as_ref().unwrap().as_raw(), sampled[0].as_raw(), "t9 must be left alone");
         drop(mine);
-        let mut leftovers: [Option<ID3D11ShaderResourceView>; 7] = Default::default();
+        let mut leftovers: [Option<ID3D11ShaderResourceView>; 10] = Default::default();
         c.PSGetShaderResources(10, Some(&mut leftovers));
-        assert!(leftovers.iter().all(|x| x.is_none()), "t10..t16 left bound");
+        assert!(leftovers.iter().all(|x| x.is_none()), "t10..t19 left bound");
         let mut smp = [None];
         c.PSGetSamplers(15, Some(&mut smp));
         assert!(smp[0].is_none(), "sampler s15 left bound");
@@ -701,8 +787,8 @@ fn a_finite_sky_far_plane_gives_shafts() {
     r.settle(w, 1.0, 14);
     let (s0, _) = sun_state(&r.g, &r.sh);
     let (px, qw, _) = shaft_light(&r.g, &r.sh);
-    let gap = light_at(&px, qw, 64, 80);
-    let col = light_at(&px, qw, 36, 80).max(light_at(&px, qw, 92, 80));
+    let gap = light_at(&px, qw, 64, 36);
+    let col = light_at(&px, qw, 43, 27).max(light_at(&px, qw, 85, 27));
     println!("shafts finite sky: sun ({:.3}, {:.3}) conf {:.3} sky {:.3}; gap {gap:.4} column {col:.4}", s0[0], s0[1], s0[2], s0[3]);
     assert!(s0[2] > 0.8, "confidence {}", s0[2]);
     assert!((s0[0] - 0.5).abs() < 0.05 && (s0[1] - 6.0 / N as f32).abs() < 0.06, "sun at ({}, {})", s0[0], s0[1]);

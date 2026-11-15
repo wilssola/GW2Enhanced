@@ -1,8 +1,9 @@
 //! Volumetric light as screen-space sun shafts (god rays), milestone M3. See `docs/shafts.md`.
 //!
 //! The engine's shadow matrices and sun direction are not known, so everything is estimated from the picture:
-//! the SKY (pixels with invalid linear depth) that is bright is the emitter, geometry is the occluder. At the
-//! light-adjust draw (`datapath::bind_current` calls `on_light_adjust`) four small draws run in this module's
+//! the SKY (pixels with invalid linear depth) that is bright is the emitter, geometry is the occluder, and only a
+//! compact core that clearly stands out from the rest of the sky is taken as the sun. At the
+//! light-adjust draw (`datapath::bind_current` calls `on_light_adjust`) a few small draws run in this module's
 //! own targets (the AO pattern, see `data-path.md`: nothing is drawn into the engine's targets):
 //!
 //! 0. depth statistics: 16x16 tiles of (max valid depth, invalid count), then the 1x1 frame maximum and invalid
@@ -11,11 +12,14 @@
 //!    frame's farthest depth (a finite far plane). The rule is off when many samples are invalid, because a flat
 //!    scene with an invalid-depth sky would otherwise classify its ground as sky,
 //! 1. emitter mask at 1/4 size (bright sky colour; the scene colour is the pixel shader SRV in slot 0),
-//! 2. reduction chain: 16x16 tile sums, then the 1x1 sun state (position, confidence, colour tint). The 1x1
+//! 2. reduction chain: 16x16 tile sums (with the tile peak), 16x16 tiles of the sun core (the pixels in the upper
+//!    half between the mean sky luminance and the frame's peak), then the 1x1 sun state (position = core
+//!    centroid, confidence, colour tint) and the 1x1 measurement (peak, sky background, emitter radius). The 1x1
 //!    state is blended with the previous one in a ping-pong pair of textures, entirely on the GPU: no CPU
 //!    read-back in the frame path, so no stall (the overlay's status line reads an old copy through a ring of
 //!    staging textures with `DO_NOT_WAIT`, which never blocks either),
-//! 3. radial blur of the emitter towards the sun with per-pixel jitter (GPU Gems 3, chapter 13).
+//! 3. radial blur towards the sun with per-pixel jitter (GPU Gems 3, chapter 13), in which only the emitter
+//!    within the emitter radius of the sun emits: the rest of the bright sky does not.
 //!
 //! The result (RGBA16F, rgb = shaft light in linear units, already tinted) is bound as `t9` of the light-adjust
 //! substitute, with `b8.x` = strength; the shader adds it in linear light, weaker on pixels that are already
@@ -38,6 +42,7 @@ pub const PS_DTILE: &str = "ps_dtile";
 pub const PS_DREDUCE: &str = "ps_dreduce";
 pub const PS_MASK: &str = "ps_mask";
 pub const PS_REDUCE_A: &str = "ps_reduce_a";
+pub const PS_CORE: &str = "ps_core";
 pub const PS_REDUCE_B: &str = "ps_reduce_b";
 pub const PS_SHAFTS: &str = "ps_shafts";
 
@@ -86,11 +91,12 @@ const SEEN_DRAW: u8 = 1;
 const SEEN_APPLIED: u8 = 2;
 const SEEN_NO_DEPTH: u8 = 4;
 const SEEN_BAD_SCENE: u8 = 8;
-/// Slots used besides t0: t10..t18 (cleared after every pass).
+/// Slots used besides t0: t10..t19 (cleared after every pass).
 const SLOT_FIRST: u32 = 10;
-const SLOT_COUNT: u32 = 9;
+const SLOT_COUNT: u32 = 10;
 const SLOT_DSTAT: u32 = 17;
 const SLOT_DTILE: u32 = 18;
+const SLOT_MEAS: u32 = 19;
 /// The last sun estimate read back from the GPU (a few frames old): u, v, confidence.
 static SUN_U: AtomicU32 = AtomicU32::new(0);
 static SUN_V: AtomicU32 = AtomicU32::new(0);
@@ -221,6 +227,7 @@ pub struct Blobs {
     pub dreduce: Vec<u8>,
     pub mask: Vec<u8>,
     pub reduce_a: Vec<u8>,
+    pub core: Vec<u8>,
     pub reduce_b: Vec<u8>,
     pub shafts: Vec<u8>,
 }
@@ -228,7 +235,7 @@ pub struct Blobs {
 /// Compiles the shaders (calls D3DCompile: never on the render thread).
 pub fn compile_blobs() -> Result<Blobs, String> {
     let c = |entry: &str, profile: &str| shaders::compile(HLSL, entry, profile).map_err(|e| format!("{entry}: {e}"));
-    Ok(Blobs { vs: c(VS_ENTRY, "vs_5_0")?, dtile: c(PS_DTILE, "ps_5_0")?, dreduce: c(PS_DREDUCE, "ps_5_0")?, mask: c(PS_MASK, "ps_5_0")?, reduce_a: c(PS_REDUCE_A, "ps_5_0")?, reduce_b: c(PS_REDUCE_B, "ps_5_0")?, shafts: c(PS_SHAFTS, "ps_5_0")? })
+    Ok(Blobs { vs: c(VS_ENTRY, "vs_5_0")?, dtile: c(PS_DTILE, "ps_5_0")?, dreduce: c(PS_DREDUCE, "ps_5_0")?, mask: c(PS_MASK, "ps_5_0")?, reduce_a: c(PS_REDUCE_A, "ps_5_0")?, core: c(PS_CORE, "ps_5_0")?, reduce_b: c(PS_REDUCE_B, "ps_5_0")?, shafts: c(PS_SHAFTS, "ps_5_0")? })
 }
 
 static BLOBS: OnceLock<Result<Blobs, String>> = OnceLock::new();
@@ -324,6 +331,7 @@ pub struct Shafts {
     ps_dreduce: Obj,
     ps_mask: Obj,
     ps_ra: Obj,
+    ps_core: Obj,
     ps_rb: Obj,
     ps_blur: Obj,
     cb: Obj,
@@ -335,10 +343,13 @@ pub struct Shafts {
     /// Depth statistics: 16x16 tiles, then the 1x1 frame values (max valid depth, invalid fraction).
     dtile: Target,
     dstat: Target,
+    /// 16x16 tiles: [0] colour sums (tint), [1] luminance sum, sky count, tile peak, [2] sun core sums.
     tiles: [Target; 3],
     /// The 1x1 sun state, two sets (ping-pong): [set][0] = (u, v, confidence, mean luminance), [set][1] = tint.
     sun: [[Target; 2]; 2],
     cur: usize,
+    /// This frame's sun measurement (1x1): peak luminance, mean sky luminance, emitter radius, core spread.
+    meas: Target,
     /// The finished shaft light (RGBA16F, quarter size).
     out: Target,
     /// Ring of 1x1 staging copies of the sun state, for the lazy read-back.
@@ -372,6 +383,7 @@ impl Shafts {
             ps_dreduce: nul,
             ps_mask: nul,
             ps_ra: nul,
+            ps_core: nul,
             ps_rb: nul,
             ps_blur: nul,
             cb: nul,
@@ -384,6 +396,7 @@ impl Shafts {
             tiles: [NO_TARGET; 3],
             sun: [[NO_TARGET; 2]; 2],
             cur: 0,
+            meas: NO_TARGET,
             out: NO_TARGET,
             stage: [nul; 3],
             stage1: [nul; 3],
@@ -401,6 +414,7 @@ impl Shafts {
                 && create_ps(device, b.dreduce.as_ptr(), b.dreduce.len(), nul, &mut s.ps_dreduce) >= 0
                 && create_ps(device, b.mask.as_ptr(), b.mask.len(), nul, &mut s.ps_mask) >= 0
                 && create_ps(device, b.reduce_a.as_ptr(), b.reduce_a.len(), nul, &mut s.ps_ra) >= 0
+                && create_ps(device, b.core.as_ptr(), b.core.len(), nul, &mut s.ps_core) >= 0
                 && create_ps(device, b.reduce_b.as_ptr(), b.reduce_b.len(), nul, &mut s.ps_rb) >= 0
                 && create_ps(device, b.shafts.as_ptr(), b.shafts.len(), nul, &mut s.ps_blur) >= 0;
             if !ok {
@@ -429,6 +443,7 @@ impl Shafts {
             self.emit.free();
             self.dtile.free();
             self.dstat.free();
+            self.meas.free();
             self.out.free();
             for t in self.tiles.iter_mut() {
                 t.free();
@@ -471,6 +486,10 @@ impl Shafts {
             }
             match make_target(dev, 1, 1, FMT_RGBA32F, false) {
                 Some(t) => self.dstat = t,
+                None => ok = false,
+            }
+            match make_target(dev, 1, 1, FMT_RGBA32F, true) {
+                Some(t) => self.meas = t,
                 None => ok = false,
             }
             for i in 0..3 {
@@ -533,7 +552,7 @@ impl Shafts {
         self.out.srv
     }
 
-    /// Runs the four draws from the scene colour `scene_srv` and the linear `depth`. All pipeline state touched is
+    /// Runs the draws from the scene colour `scene_srv` and the linear `depth`. All pipeline state touched is
     /// restored. False when something failed before the first draw.
     ///
     /// # Safety
@@ -575,7 +594,7 @@ impl Shafts {
             let set_smp: SetSlots = std::mem::transmute(vfn(ctx, CTX_PS_SET_SAMPLERS));
             let draw: unsafe extern "system" fn(Obj, u32, u32) = std::mem::transmute(vfn(ctx, vt::CTX_DRAW));
             let nul: Obj = std::ptr::null_mut();
-            // The slots this module uses besides t0: t10..t18.
+            // The slots this module uses besides t0: t10..t19.
             let clear = || set_srv(ctx, SLOT_FIRST, SLOT_COUNT, [nul; SLOT_COUNT as usize].as_ptr());
 
             set_rs(ctx, nul);
@@ -612,18 +631,25 @@ impl Shafts {
             set_srv(ctx, SLOT_FIRST, 1, &self.depth_srv);
             set_srv(ctx, SLOT_DSTAT, 1, &self.dstat.srv);
             draw(ctx, 3, 0);
-            // 2: emitter -> tile sums.
+            // 2a: emitter -> tile sums (colour, luminance, sky, tile peak).
             clear();
-            let rts = [self.tiles[0].rtv, self.tiles[1].rtv, self.tiles[2].rtv];
-            set_rt(ctx, 3, rts.as_ptr(), nul);
+            let rts = [self.tiles[0].rtv, self.tiles[1].rtv];
+            set_rt(ctx, 2, rts.as_ptr(), nul);
             set_vp(ctx, 1, &vp(TILES, TILES));
             set_ps(ctx, self.ps_ra, std::ptr::null(), 0);
             set_srv(ctx, 11, 1, &self.emit.srv);
             draw(ctx, 3, 0);
-            // 3: tile sums + previous state -> new 1x1 sun state.
+            // 2b: emitter + frame peak and mean sky luminance -> sun core tiles.
             clear();
-            let rts = [self.sun[new][0].rtv, self.sun[new][1].rtv];
-            set_rt(ctx, 2, rts.as_ptr(), nul);
+            set_rt(ctx, 1, &self.tiles[2].rtv, nul);
+            set_ps(ctx, self.ps_core, std::ptr::null(), 0);
+            set_srv(ctx, 11, 1, &self.emit.srv);
+            set_srv(ctx, 13, 1, &self.tiles[1].srv);
+            draw(ctx, 3, 0);
+            // 3: tile sums + previous state -> new 1x1 sun state and this frame's measurement.
+            clear();
+            let rts = [self.sun[new][0].rtv, self.sun[new][1].rtv, self.meas.rtv];
+            set_rt(ctx, 3, rts.as_ptr(), nul);
             set_vp(ctx, 1, &vp(1, 1));
             set_ps(ctx, self.ps_rb, std::ptr::null(), 0);
             set_srv(ctx, 12, 5, [self.tiles[0].srv, self.tiles[1].srv, self.tiles[2].srv, self.sun[self.cur][0].srv, self.sun[self.cur][1].srv].as_ptr());
@@ -637,6 +663,7 @@ impl Shafts {
             set_ps(ctx, self.ps_blur, std::ptr::null(), 0);
             set_srv(ctx, 11, 1, &self.emit.srv);
             set_srv(ctx, 15, 2, [self.sun[new][0].srv, self.sun[new][1].srv].as_ptr());
+            set_srv(ctx, SLOT_MEAS, 1, &self.meas.srv);
             draw(ctx, 3, 0);
             // Leave nothing of ours bound (the guard restores t0, t1 and b0).
             clear();
@@ -734,7 +761,7 @@ impl Drop for Shafts {
         // Objects of a device that is gone are children that keep it alive; releasing them is safe.
         unsafe {
             self.free_targets();
-            for o in [self.depth_srv, self.sampler, self.cb_hp, self.cb, self.ps_blur, self.ps_rb, self.ps_ra, self.ps_mask, self.ps_dreduce, self.ps_dtile, self.vs] {
+            for o in [self.depth_srv, self.sampler, self.cb_hp, self.cb, self.ps_blur, self.ps_rb, self.ps_core, self.ps_ra, self.ps_mask, self.ps_dreduce, self.ps_dtile, self.vs] {
                 release(o);
             }
         }

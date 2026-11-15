@@ -1,11 +1,12 @@
 # Sun shafts (M3): volumetric light as screen-space god rays
 
-Status: implemented, WARP tested (19 tests). Not yet seen in the real game.
+Status: implemented, WARP tested (21 tests). Not yet seen in the real game.
 
 ## What it does
 
-When bright sky is on the screen (the sun, or a bright cloud, seen through gaps in trees, structures or other
-geometry), light rays radiate from it across the scene and are added to the picture. Everything is estimated
+When the sun is on the screen (seen through gaps in trees, structures or other geometry), light rays radiate from
+it across the scene and are added to the picture. Only the sun emits: the rest of the sky, however bright, and bright
+clouds away from the sun give no rays, and an evenly bright sky (overcast, haze, no distinct sun) gives none at all. Everything is estimated
 from the picture: the engine's shadow cascades and sun direction are not known (the world shaders are not in the
 exe). It is a visual effect only; nothing is hidden or revealed.
 
@@ -13,7 +14,7 @@ exe). It is a visual effect only; nothing is hidden or revealed.
 
 Run once per frame at the light-adjust draw (`datapath::bind_current` calls `shafts::on_light_adjust`). Scene
 colour = pixel shader SRV in slot 0, depth = `ao::depth_resource()`. State is saved and restored with `StateGuard`;
-the module's own SRVs (t10..t18) and sampler (s15) are unbound afterwards.
+the module's own SRVs (t10..t19) and sampler (s15) are unbound afterwards.
 
 0. Depth statistics. `ps_dtile` (16x16 RGBA32F): per tile the maximum VALID depth, the count of invalid samples and the
    sample count (a 2-pixel stride is enough). `ps_dreduce` (1x1): the frame's max valid depth and the invalid fraction
@@ -24,18 +25,29 @@ the module's own SRVs (t10..t18) and sampler (s15) are unbound afterwards.
    invalid samples: a flat scene with an invalid-depth sky would otherwise turn its farthest ground into sky.
    Constants `FAR_RATIO`, `MAX_INVALID_FOR_FAR` (`shafts.rs`, cb c3). Emitter = sky colour (linear = encoded^2, capped at 8) times `smoothstep(0.25, 0.7, luminance)`:
    only bright sky emits, geometry is the occluder (black). Alpha = sky fraction.
-2. `ps_reduce_a` (16x16, three RGBA32F targets): per tile sums of the weight `w = lum^3` (the sun core dominates the
-   centroid): `w*uv`, `w`, `w*|uv|^2`, `w*rgb`, luminance, sky fraction.
-3. `ps_reduce_b` (1x1, two RGBA32F targets): the sun state. Position = weighted centroid; tint = weighted colour
-   at unit luminance; confidence = bright-sky amount x concentration (a uniform glow has none) x believable sky
-   share (all "sky" means the depth is unusable) x a small edge penalty. The state texture also keeps the sky fraction
-   (s0.w) and the frame's max depth (s1.w). The state is blended with the previous
+2. `ps_reduce_a` (16x16, two RGBA32F targets): per tile `w*rgb` and `w` with `w = lum^3` (for the tint), the sum
+   of the emitter luminance, the sky count and the tile's peak luminance.
+3. `ps_core` (16x16, RGBA32F): the sun core. Each tile first reduces the 256 tiles of pass 2 to the frame's peak
+   luminance `P` and the mean emitter luminance of the sky `M`. A pixel belongs to the core with the weight
+   `smoothstep(lerp(M, P, 0.5), P, lum)`: only the pixels in the upper half between the mean sky and the peak.
+   Sums of `c*q`, `c`, `c*|q|^2`, with `q` the position in screen-height units (x times the aspect ratio).
+4. `ps_reduce_b` (1x1, three RGBA32F targets): the sun state and this frame's measurement. Position = centroid of
+   the core; spread = RMS radius of the core (screen heights); tint = `lum^3`-weighted colour at unit luminance.
+   Confidence = bright-sky amount x contrast `smoothstep(1.3, 2.0, P / M)` (the peak must stand out from the mean
+   sky; an evenly bright sky has a ratio near 1) x compactness `1 - smoothstep(0.08, 0.16, spread)` (bright clouds
+   spread over the sky are not a sun) x believable sky share (all "sky" means the depth is unusable) x a small edge
+   penalty. The state texture also keeps the sky fraction (s0.w) and the frame's max depth (s1.w). The measurement
+   (t19 of the next pass, not blended) holds `P`, `M`, the emitter radius `R = clamp(3 x spread, 0.08, 0.16)` screen
+   heights and the spread. The state is blended with the previous
    one (ping-pong pair of 1x1 textures): confidence rises 20 % per frame, falls 10 % per frame, position and tint
    follow at 25 % per frame, and they snap to the measurement only when there was no sun before. All on the GPU,
    no CPU read-back in the frame path.
-4. `ps_shafts` (1/4 size, RGBA16F): radial blur from each pixel towards the sun (56 samples, decay 0.965 per
+5. `ps_shafts` (1/4 size, RGBA16F): radial blur from each pixel towards the sun (56 samples, decay 0.965 per
    sample, per-pixel interleaved-gradient jitter, linear clamp sampler), length = `shafts_length` x distance to the
-   sun. Output rgb = luminance x sun tint x confidence x 1.5, in linear units. Alpha = the sky share of the pixel (used by debug level 4 only).
+   sun. A sample emits only near the sun: its emitter luminance times `1 - smoothstep(R, 2R, distance to the sun)`
+   (distance in screen heights). The sun disc and its glow emit; the rest of the sky and clouds elsewhere do not, so
+   the shadows come from the geometry in front of the sun's glow. Output rgb = summed luminance x sun tint x
+   confidence x 1.5, in linear units. Alpha = the sky share of the pixel (used by debug level 4 only).
 
 `light_adjust_hdr.hlsl` (one block, after `lin = c.rgb*c.rgb`, i.e. after the AO factor and before the exposure remap):
 `lin += shafts(t9) * hp.x(b8) * (1 - smoothstep(0.35, 1.0, max channel of lin))`. Pixels that are already bright
@@ -72,28 +84,40 @@ Overlay line: `Sun shafts: sun found at (u, v), confidence c, sky p %, max depth
 ## Tuning (constants in `shafts.rs` / `shafts.hlsl`)
 
 * Emitter threshold: `smoothstep(0.25, 0.7, lum)` in `ps_mask`. Lower it for sunsets, raise it if grey cloud glows.
+* The sun rule (constants at the top of `shafts.hlsl`): `CORE_LEVEL` (0.5, where the core starts between the mean sky
+  and the peak), `CONTRAST` (1.3..2.0, peak over mean sky), `CORE_SPREAD` (0.08..0.16 screen heights),
+  `EMIT_SCALE` and `EMIT_RADIUS` (emitter radius = 3 x spread, clamped to 0.08..0.16 screen heights, fading out to
+  twice that). Rays too short around a large sun: raise the radius; a bright cloud near the sun emitting: lower it.
 * Rays too strong: lower `GAIN` (1.5) in the shader or the default strength. Too short/long: `shafts_length`, `DECAY`.
 * Sun jumps or lags: `CONF_RISE`, `CONF_FALL`, `FOLLOW`.
-* Confidence thresholds are in `ps_reduce_b` (`smoothstep(0.0005, 0.01, meanlum)`, spread 0.3..0.6, sky share 0.85..0.97).
+* Confidence thresholds are in `ps_reduce_b` (`smoothstep(0.0005, 0.01, meanlum)`, contrast, core spread, sky share 0.85..0.97).
 
 Logs: `shafts: configured`, `shafts: shaders compiled`, `shafts: first frame applied`, and one line for each reason it
 skips (still compiling, depth not available, scene colour not usable, targets could not be set up).
 
 ## Limits
 
-* The sun is the centroid of the bright sky that is ON screen. A sun just outside the picture is not seen (its sky
-  glow may be); a sun behind the camera gives nothing. There is no estimate of an off-screen position.
-* Several suns / very large bright clouds merge into one centroid.
+* The sun is the centroid of the brightest core of the sky that is ON screen. A sun just outside the picture is not
+  seen (its glow alone is usually not compact or contrasted enough); a sun behind the camera gives nothing. There is no
+  estimate of an off-screen position.
+* The sun is told apart by brightness only. A single compact cloud that is much brighter than the rest of the sky is
+  taken for the sun; when the sun is only slightly brighter than the sky around it (a clipped picture with a white
+  sky, or a gap that shows little more than the sun), the contrast is low and there are no or weak rays.
+* Two bright cores far apart (the sun and a bright cloud of about the same luminance) give a wide core and so a low
+  confidence.
 * Rays are added to everything, including the sky itself (sky is bright, so the bright-pixel falloff removes most of it).
 * The quarter-size result is sampled with the game's `s0` sampler in the light-adjust shader.
 
 ## Tested on WARP (`src/shafts_tests.rs`, `src/shafts.rs`, `src/config.rs`)
 
-Compile of all entries; rays between columns (the cone through the gap is about 2.5x the shadowed pixels, falls off
-with distance from the sun and to both sides); ray length parameter; no sky = nothing; dim sky = nothing; all-sky = no
-confidence; the 1x1 estimate lands on the blob (within 0.04) and glides when it moves (no step above 30 % of the
+Compile of all entries; rays between columns (at the same distance from the sun, the ray down the slit in which the
+sun is seen is about 2x the rays crossing a column in front of the glow; the light falls off with distance from the
+sun and to both sides); ray length parameter; no sky = nothing; dim sky = nothing; all-sky = no confidence; an
+evenly bright sky band (gradient and ripple, no distinct sun) = no confidence and no light; a distinct sun in a
+bright sky with a bright cloud elsewhere is found on the sun and rays come only from it (nothing through the cloud,
+nothing from the bright sky away from the sun); the 1x1 estimate lands on the blob (within 0.04) and glides when it moves (no step above 30 % of the
 jump); confidence fades without pops and reaches exactly 0; debug cross; state/refcounts/ignore flag restored and
-t10..t16/s15 left unbound, t9 untouched; resize recreates the targets (odd sizes round up); lazy read-back works; depth statistics (max, invalid fraction, garbage depth); finite far-plane sky gives shafts;
+t10..t19/s15 left unbound, t9 untouched; resize recreates the targets (odd sizes round up); lazy read-back works; depth statistics (max, invalid fraction, garbage depth); finite far-plane sky gives shafts;
 flat bright ground with an invalid-depth sky is not sky; sky fraction and max depth in the state; alpha = sky share;
 debug level 4 tints (cyan sky, yellow light, nothing when unbound); `resolve::debug_level` precedence; the depth
 diagnostic maths and its read-back on WARP (`src/depthstats.rs`);

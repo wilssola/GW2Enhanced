@@ -1,26 +1,31 @@
 // Screen-space sun shafts (god rays), see docs/shafts.md. Everything is estimated from the picture: the
 // engine's shadow matrices and sun direction are not known.
 //
-// Six draws (one triangle each, no input layout), all at about 1/4 of the scene size except the reductions:
+// Seven draws (one triangle each, no input layout), all at about 1/4 of the scene size except the reductions:
 //   ps_dtile     linear depth -> 16x16 tiles: max valid depth, count of invalid samples, count of samples
 //   ps_dreduce   tiles -> 1x1 frame depth statistics: x = max valid depth, y = fraction of invalid samples
 //   ps_mask      scene colour + linear depth + depth statistics -> emitter (bright SKY colour; geometry = occluder =
 //                black). A tap is sky when its depth is invalid, OR (when fewer than c3.y of the samples are invalid,
 //                i.e. the sky is not encoded as invalid depth) when depth >= c3.x * the frame's max depth: a finite
 //                far plane. rgb = emitted linear light, a = fraction of sky in the quarter pixel
-//   ps_reduce_a  emitter -> 16x16 tiles of weighted sums (3 render targets)
-//   ps_reduce_b  tiles -> the 1x1 sun state (2 render targets: position + confidence, colour tint), blended
-//                with the previous state (ping-pong) so the sun does not jump and appears/disappears smoothly
-//   ps_shafts    radial blur of the emitter towards the sun (GPU Gems 3 ch. 13), tinted by the sun colour
+//   ps_reduce_a  emitter -> 16x16 tiles of colour sums, luminance sum, sky count and tile peak (2 render targets)
+//   ps_core      emitter + those tiles -> 16x16 tiles of the SUN CORE: the pixels whose luminance is in the upper
+//                half between the mean sky luminance and the frame's peak (position sums, in screen-height units)
+//   ps_reduce_b  tiles -> the 1x1 sun state (position + confidence, colour tint), blended with the previous
+//                state (ping-pong) so the sun does not jump and appears/disappears smoothly, and the 1x1 sun
+//                measurement of this frame (peak, sky background, emitter radius) for ps_shafts
+//   ps_shafts    radial blur towards the sun (GPU Gems 3 ch. 13), tinted by the sun colour. Only the emitter
+//                within the emitter radius of the sun emits: the rest of the bright sky does not
 //
 // b0: c0 = emitter size (w, h, 1/w, 1/h)
 //     c1 = x ray length (fraction of the way to the sun), y decay per sample, z debug (> 0.5: cross at the sun)
 //     c2 = x number of emitter pixels, y confidence rise, z confidence fall, w position/colour follow rate
 //     c3 = x far-plane ratio (0.98), y largest invalid fraction for which the far-plane rule applies (0.02)
-// Slots: t0 scene colour (the engine's own SRV), t10 linear depth, t11 emitter, t12..t14 tile sums,
+// Slots: t0 scene colour (the engine's own SRV), t10 linear depth, t11 emitter, t12/t13 tile sums, t14 core tiles,
 //        t15/t16 sun state (previous for ps_reduce_b, current for ps_shafts), t17 depth statistics,
-//        t18 depth tiles, s15 linear clamp sampler.
+//        t18 depth tiles, t19 sun measurement, s15 linear clamp sampler.
 // Sun state: s0 = (u, v, confidence, sky fraction), s1 = (tint rgb, max valid depth of the frame).
+// Sun measurement (this frame only): (peak luminance, mean sky luminance, emitter radius in screen heights, core spread).
 // The shaft texture alpha is the sky share of the pixel (debug level 4 of the light-adjust shader colours it).
 
 cbuffer params : register(b0)
@@ -41,6 +46,7 @@ Texture2D<float4> t_sun0 : register(t15);
 Texture2D<float4> t_sun1 : register(t16);
 Texture2D<float4> t_dstat : register(t17);
 Texture2D<float4> t_dtile : register(t18);
+Texture2D<float4> t_meas : register(t19);
 SamplerState smp : register(s15);
 
 static const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
@@ -48,6 +54,16 @@ static const int TAPS = 4;       // 4x4 taps per quarter pixel in the mask pass
 static const int NS = 56;        // samples per ray
 static const float GAIN = 1.5;   // shaft light per unit of emitter light before the strength slider
 static const float MAX_EMIT = 8.0;
+// The sun rule (see docs/shafts.md). Core = luminance above lerp(mean sky, peak, CORE_LEVEL).
+static const float CORE_LEVEL = 0.5;
+// The peak must stand out from the mean sky by this ratio (an evenly bright sky has none) ...
+static const float2 CONTRAST = float2(1.3, 2.0);
+// ... and the core must be compact (RMS radius in screen heights; a sun disc with its bloom is well below 0.08).
+static const float2 CORE_SPREAD = float2(0.08, 0.16);
+// Emitter radius around the sun (screen heights): EMIT_SCALE x core spread, clamped; it fades out to twice that.
+// It holds the sun disc and its glow; the upper clamp keeps a bright cloud a little farther away out of it.
+static const float EMIT_SCALE = 3.0;
+static const float2 EMIT_RADIUS = float2(0.08, 0.16);
 
 struct VSOut
 {
@@ -141,9 +157,8 @@ float4 ps_mask(float4 sv : SV_POSITION) : SV_Target
 
 struct RA
 {
-    float4 a : SV_Target0; // sum w*u, w*v, w, w*(u^2+v^2)
-    float4 b : SV_Target1; // sum w*rgb, sum lum
-    float4 c : SV_Target2; // sum sky fraction
+    float4 a : SV_Target0; // sum w*rgb, w (w = lum^3: the colour of the brightest light, for the tint)
+    float4 b : SV_Target1; // sum lum, sum sky fraction, tile peak luminance
 };
 
 RA ps_reduce_a(float4 sv : SV_POSITION)
@@ -153,65 +168,124 @@ RA ps_reduce_a(float4 sv : SV_POSITION)
     uint2 tile = uint2(sv.xy);
     uint x0 = tile.x * ew / 16, x1 = (tile.x + 1) * ew / 16;
     uint y0 = tile.y * eh / 16, y1 = (tile.y + 1) * eh / 16;
-    float4 a = 0, b = 0, c = 0;
+    float4 a = 0, b = 0;
     [loop] for (uint y = y0; y < y1; y++)
     {
         [loop] for (uint x = x0; x < x1; x++)
         {
             float4 e = t_emit.Load(int3(x, y, 0));
-            float2 p = (float2(x, y) + 0.5) / float2(ew, eh);
             float lum = dot(e.rgb, LUMA);
-            float w = lum * lum * lum; // the sun core dominates the centroid
-            a += float4(w * p, w, w * dot(p, p));
-            b += float4(w * e.rgb, lum);
-            c.x += e.a;
+            float w = lum * lum * lum;
+            a += float4(w * e.rgb, w);
+            b.x += lum;
+            b.y += e.a;
+            b.z = max(b.z, lum);
         }
     }
     RA o;
     o.a = a;
     o.b = b;
-    o.c = c;
     return o;
+}
+
+// Frame peak and mean sky luminance of the emitter, from the 16x16 tiles of ps_reduce_a (t13).
+float2 peak_and_mean()
+{
+    float pk = 0.0, sum = 0.0, sky = 0.0;
+    [loop] for (int y = 0; y < 16; y++)
+    {
+        [loop] for (int x = 0; x < 16; x++)
+        {
+            float4 t = t_rb.Load(int3(x, y, 0));
+            sum += t.x;
+            sky += t.y;
+            pk = max(pk, t.z);
+        }
+    }
+    return float2(pk, sum / max(sky, 1e-3));
+}
+
+// Weight of a pixel of luminance `lum` in the sun core: 0 up to lerp(mean, peak, CORE_LEVEL), 1 at the peak.
+float core_weight(float lum, float2 pm)
+{
+    float lo = lerp(pm.y, pm.x, CORE_LEVEL);
+    return pm.x > 0.0 ? smoothstep(lo, max(pm.x, lo + 1e-4), lum) : 0.0;
+}
+
+// Sun core tiles: sums of c*q, c, c*|q|^2 with c = core weight and q = position in screen-height units
+// (x scaled by the aspect ratio, so the spread is round on a wide screen).
+float4 ps_core(float4 sv : SV_POSITION) : SV_Target
+{
+    uint ew, eh;
+    t_emit.GetDimensions(ew, eh);
+    uint2 tile = uint2(sv.xy);
+    uint x0 = tile.x * ew / 16, x1 = (tile.x + 1) * ew / 16;
+    uint y0 = tile.y * eh / 16, y1 = (tile.y + 1) * eh / 16;
+    float2 pm = peak_and_mean();
+    float4 k = 0;
+    [loop] for (uint y = y0; y < y1; y++)
+    {
+        [loop] for (uint x = x0; x < x1; x++)
+        {
+            float lum = dot(t_emit.Load(int3(x, y, 0)).rgb, LUMA);
+            float cw = core_weight(lum, pm);
+            float2 q = (float2(x, y) + 0.5) / float(eh);
+            k += float4(cw * q, cw, cw * dot(q, q));
+        }
+    }
+    return k;
 }
 
 struct RB
 {
     float4 s0 : SV_Target0; // u, v, confidence, sky fraction
     float4 s1 : SV_Target1; // tint rgb (unit luminance), max valid depth of the frame
+    float4 m : SV_Target2;  // this frame: peak luminance, mean sky luminance, emitter radius, core spread
 };
 
 RB ps_reduce_b(float4 sv : SV_POSITION)
 {
-    float4 a = 0, b = 0, c = 0;
+    float4 a = 0, k = 0;
+    float sum = 0.0, sky = 0.0, peak = 0.0;
     [loop] for (int y = 0; y < 16; y++)
     {
         [loop] for (int x = 0; x < 16; x++)
         {
             a += t_ra.Load(int3(x, y, 0));
-            b += t_rb.Load(int3(x, y, 0));
-            c += t_rc.Load(int3(x, y, 0));
+            float4 t = t_rb.Load(int3(x, y, 0));
+            sum += t.x;
+            sky += t.y;
+            peak = max(peak, t.z);
+            k += t_rc.Load(int3(x, y, 0));
         }
     }
     float npix = max(c2.x, 1.0);
-    float W = a.z;
+    float aspect = c0.x / max(c0.y, 1.0);
+    float W = a.w;
+    float K = k.z;
     float2 pos = float2(0.5, 0.5);
     float3 col = float3(1.0, 1.0, 1.0);
     float spread = 1.0;
     if (W > 1e-9)
+        col = a.rgb / W;
+    if (K > 1e-6)
     {
-        pos = a.xy / W;
-        col = b.rgb / W;
-        spread = sqrt(max(a.w / W - dot(pos, pos), 0.0));
+        float2 q = k.xy / K; // screen-height units
+        spread = sqrt(max(k.w / K - dot(q, q), 0.0));
+        pos = float2(q.x / aspect, q.y);
     }
-    float meanlum = b.w / npix;
-    float skyfrac = c.x / npix;
-    // Confidence of this frame's measurement: enough bright sky, concentrated rather than a uniform glow,
-    // a believable sky share (almost all "sky" means the depth is unusable), not stuck at the very edge
+    float meanlum = sum / npix;
+    float skyfrac = sky / npix;
+    float skymean = sum / max(sky, 1e-3);
+    float contrast = peak / max(skymean, 1e-4);
+    // Confidence of this frame's measurement: enough bright sky; a peak that stands out from the mean sky (an
+    // evenly bright or overcast sky has no sun); a compact core (bright clouds spread over the sky are not a
+    // sun); a believable sky share (almost all "sky" means the depth is unusable); not stuck at the very edge
     // (the real sun is then outside the picture and its direction is a guess).
-    float conf_t = smoothstep(0.0005, 0.01, meanlum) * (1.0 - smoothstep(0.3, 0.6, spread)) * (1.0 - smoothstep(0.85, 0.97, skyfrac));
+    float conf_t = smoothstep(0.0005, 0.01, meanlum) * smoothstep(CONTRAST.x, CONTRAST.y, contrast) * (1.0 - smoothstep(CORE_SPREAD.x, CORE_SPREAD.y, spread)) * (1.0 - smoothstep(0.85, 0.97, skyfrac));
     float edge = max(abs(pos.x * 2.0 - 1.0), abs(pos.y * 2.0 - 1.0));
     conf_t *= 1.0 - 0.5 * smoothstep(0.9, 1.0, edge);
-    if (W <= 1e-9)
+    if (W <= 1e-9 || K <= 1e-6)
         conf_t = 0.0;
 
     float4 p0 = t_sun0.Load(int3(0, 0, 0));
@@ -245,6 +319,7 @@ RB ps_reduce_b(float4 sv : SV_POSITION)
     RB o;
     o.s0 = float4(outpos, conf, skyfrac);
     o.s1 = float4(outtint, t_dstat.Load(int3(0, 0, 0)).x);
+    o.m = float4(peak, skymean, clamp(EMIT_SCALE * spread, EMIT_RADIUS.x, EMIT_RADIUS.y), spread);
     return o;
 }
 
@@ -262,6 +337,10 @@ float4 ps_shafts(float4 sv : SV_POSITION) : SV_Target
     float skyshare = t_emit.SampleLevel(smp, uv, 0).a; // alpha: sky share, for the debug view only
     if (conf < 0.002)
         return float4(0.0, 0.0, 0.0, skyshare);
+    // Only the sun emits: the emitter within the emitter radius of the sun (the sun disc and its glow), fading out
+    // to twice the radius. Bright sky and clouds elsewhere give nothing; an evenly bright sky has no confidence.
+    float4 m = t_meas.Load(int3(0, 0, 0));
+    float aspect = c0.x / max(c0.y, 1.0);
     float2 d = s0.xy - uv;
     float2 stepv = d * c1.x / NS;
     float2 p = uv + stepv * ign(sv.xy); // per-pixel jitter: no banding
@@ -270,7 +349,10 @@ float4 ps_shafts(float4 sv : SV_POSITION) : SV_Target
     [loop] for (int i = 0; i < NS; i++)
     {
         p += stepv;
-        acc += dot(t_emit.SampleLevel(smp, p, 0).rgb, LUMA) * illum;
+        float r = length((p - s0.xy) * float2(aspect, 1.0));
+        float near = 1.0 - smoothstep(m.z, 2.0 * m.z, r);
+        float e = dot(t_emit.SampleLevel(smp, p, 0).rgb, LUMA);
+        acc += e * near * illum;
         illum *= c1.y;
     }
     acc /= NS;
