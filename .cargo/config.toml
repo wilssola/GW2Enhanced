@@ -8,3 +8,16 @@ mod-all = "build --release -p gw2enhanced"
 mod-translation = "build --release -p gw2enhanced --no-default-features --features translation"
 mod-textures = "build --release -p gw2enhanced --no-default-features --features textures"
 mod-graphics = "build --release -p gw2enhanced --no-default-features --features graphics"
+
+# Static C/C++ runtime: CTranslate2 is built with /MT, so neither the DLL nor the translator depends on the
+# player's Visual C++ Redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+# Dear ImGui (imgui-sys) is built by cc without NDEBUG: its IM_ASSERTs would pop up an MSVC dialog inside the game.
+CXXFLAGS = "/DNDEBUG"
+CFLAGS = "/DNDEBUG"
+# The translator links the official CTranslate2 DLL (translated/scripts/fetch-ctranslate2.ps1); ct2rs' build script
+# looks for its import library here.
+LIBRARY_PATH = { value = "translated/translator/vendor/ctranslate2-4.8.4", relative = true }

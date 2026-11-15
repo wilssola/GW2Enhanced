@@ -244,11 +244,13 @@ impl Overlay {
         // Negative item width: the widget takes the window width minus the label room, so labels are never cut.
         let _iw = ui.push_item_width(furpick::item_width(ui.window_size()[0], scale));
         if section(ui, "General / HDR", true) {
-            // v17: the A/B master (runtime only, not saved): every effect off, the per-effect switches come back after
-            let mut all_off = crate::toggles::master_off();
-            if ui.checkbox("All effects off (A/B vs the engine)", &mut all_off) && crate::toggles::set_master_off(all_off) {
-                hdr_shaders::set_bloom_strength(self.cfg.bloom_strength);
+            // One switch for the whole graphics mod (saved as `enabled`): off stops the effects AND the float targets, HDR
+            // shaders and resolve, so it is also the A/B against the engine. The per-effect switches below are kept.
+            let mut on = self.cfg.enabled && !crate::toggles::master_off();
+            if ui.checkbox("Graphics on", &mut on) {
+                self.set_graphics_on(on);
             }
+            help(ui, "Off: the game's own look (next frame). With HDR output the final conversion stays on (plain SDR brightness); a full revert of HDR output needs a restart.");
             help(ui, &format!("Effects: {}", crate::toggles::status_text()));
             self.sec_general(ui);
         }
@@ -334,6 +336,19 @@ impl Overlay {
         }
     }
 
+    /// The single on / off switch of the graphics mod.
+    fn set_graphics_on(&mut self, on: bool) {
+        self.cfg.enabled = on;
+        gate::set_user_enabled(on);
+        if crate::toggles::set_master_off(!on) {
+            hdr_shaders::set_bloom_strength(self.cfg.bloom_strength);
+        }
+        // Off: with an scRGB swapchain (cannot be reverted live) the final pass shows plain SDR at the
+        // Windows SDR brightness; On: back to the configured paper white and peak.
+        output::apply_user_levels(on, self.cfg.paper_white_nits, self.cfg.peak_nits);
+        log!("overlay: graphics {}", if on { "on" } else { "off" });
+    }
+
     fn sec_general(&mut self, ui: &Ui) {
         // v18: the diagnostic A/B of the float render-target upgrade (applies at the next game start; Save writes it)
         let mut up = self.cfg.hdr_upgrade;
@@ -350,16 +365,6 @@ impl Overlay {
             crate::clampemu::set_enabled(cl);
         }
         help(ui, &format!("Clamp emulation: {}", crate::clampemu::status_text()));
-        let mut on = self.cfg.enabled;
-        if ui.checkbox("Enabled", &mut on) {
-            self.cfg.enabled = on;
-            gate::set_user_enabled(on);
-            // Off: with an scRGB swapchain (cannot be reverted live) the final pass shows plain SDR at the
-            // Windows SDR brightness; On: back to the configured paper white and peak.
-            output::apply_user_levels(on, self.cfg.paper_white_nits, self.cfg.peak_nits);
-            log!("overlay: enabled {}", yes(on));
-        }
-        help(ui, "Off: no new float targets, no HDR shaders, no resolve (next frame). Targets already float keep working. With HDR output the final conversion stays on; a full revert of HDR output needs a restart.");
         let mut idx = match self.cfg.hdr_output {
             HdrOutput::Auto => 0,
             HdrOutput::On => 1,

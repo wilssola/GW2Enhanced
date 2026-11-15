@@ -14,6 +14,11 @@ members = [
     "translated/translator",
     "translated/tools/gw2-dat-tool",
     "translated/tools/gw2-translate",
+    "remastered/tools/datscan",
+    "remastered/tools/gw2tex",
+    "remastered/tools/texhash",
+    "remastered/tools/texpack",
+    "remastered/tools/texrdo",
 ]
 default-members = ["core", "enhanced", "translated", "remastered/native/runtime", "graphics/runtime", "installer"]
 exclude = ["backend"]
