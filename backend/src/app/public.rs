@@ -365,7 +365,10 @@ pub async fn download(req: &mut Request, ctx: &Ctx) -> HResult {
         "https://github.com/wilssola/GW2Enhanced/releases/latest/download",
     );
     let target = format!("{}/{}", base.trim_end_matches('/'), installer_asset(os.as_deref(), &ua));
-    let mut r = Response::redirect_with_status(Url::parse(&target).map_err(Error::from)?, 302)?;
+    // Response::redirect has immutable headers in Workers (setting cache-control on it throws): build the 302 by hand.
+    let target = Url::parse(&target).map_err(Error::from)?;
+    let mut r = Response::empty()?.with_status(302);
+    r.headers_mut().set("location", target.as_str())?;
     r.headers_mut().set("cache-control", "no-store")?;
     apply_headers(&mut r, Kind::Asset)?;
     Ok(r)
