@@ -11,6 +11,9 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering::Relaxed};
 
+use gw2enhanced_core::i18n::tr;
+use gw2enhanced_core::trf;
+
 /// The pattern turns itself off after this long.
 pub const WATCHDOG_MS: u64 = 30_000;
 
@@ -106,7 +109,13 @@ pub fn label(p: u8, i: usize) -> Option<String> {
     match p {
         PEAK => PEAK_NITS.get(i).map(|n| format!("{n:.0}")),
         BLACK => BLACK_NITS.get(i).map(|n| format!("{n}")),
-        PAPER => ["white UI 100 %", "grey card 18 %", "dark grey 5 %"].get(i).map(|s| s.to_string()),
+        PAPER => [
+            tr("white UI 100 %", "interface branca 100 %"),
+            tr("grey card 18 %", "cartão cinza 18 %"),
+            tr("dark grey 5 %", "cinza escuro 5 %"),
+        ]
+        .get(i)
+        .map(|s| s.to_string()),
         _ => None,
     }
 }
@@ -122,14 +131,28 @@ pub fn peak_from_display(max_luminance: Option<f32>, range: (f32, f32)) -> Optio
     max_luminance.filter(|v| v.is_finite() && *v > 0.0).map(|v| v.clamp(range.0, range.1))
 }
 
-/// Black-level guidance: the patch index (0-based) the user says is the dimmest one they can see, to a sentence.
+/// Black-level guidance: the patch index (0-based) the user says is the dimmest one they can see, to a sentence (in the
+/// overlay language).
 pub fn black_guidance(dimmest_visible: Option<usize>) -> String {
     match dimmest_visible {
-        None => "Nothing is visible: the display (or room) hides everything up to 1 nit; OLED / local dimming normally shows 0.005 to 0.05.".to_string(),
+        None => tr(
+            "Nothing is visible: the display (or room) hides everything up to 1 nit; OLED / local dimming normally shows 0.005 to 0.05.",
+            "Nada está visível: a tela (ou o ambiente) esconde tudo até 1 nit; OLED / local dimming normalmente mostra de 0.005 a 0.05.",
+        )
+        .to_string(),
         Some(i) => match BLACK_NITS.get(i) {
-            Some(n) if *n <= 0.02 => format!("The {n} nit patch is visible: deep blacks, nothing to change."),
-            Some(n) if *n <= 0.2 => format!("The {n} nit patch is the dimmest you see: normal for an LCD with a bright room; nothing to change."),
-            Some(n) => format!("Only the {n} nit patch and above are visible: the black level of the display is lifted. Lower the room light or the display's black level / local dimming setting; the mod does not lift blacks."),
+            Some(n) if *n <= 0.02 => trf!(
+                "The {n} nit patch is visible: deep blacks, nothing to change.",
+                "A mancha de {n} nit está visível: pretos profundos, nada a mudar."
+            ),
+            Some(n) if *n <= 0.2 => trf!(
+                "The {n} nit patch is the dimmest you see: normal for an LCD with a bright room; nothing to change.",
+                "A mancha de {n} nit é a mais escura que você vê: normal para um LCD num ambiente claro; nada a mudar."
+            ),
+            Some(n) => trf!(
+                "Only the {n} nit patch and above are visible: the black level of the display is lifted. Lower the room light or the display's black level / local dimming setting; the mod does not lift blacks.",
+                "Só a mancha de {n} nit e as acima estão visíveis: o nível de preto da tela está elevado. Diminua a luz do ambiente ou o ajuste de nível de preto / local dimming da tela; o mod não clareia os pretos."
+            ),
             None => String::new(),
         },
     }
