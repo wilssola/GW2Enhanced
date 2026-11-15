@@ -40,7 +40,7 @@ pub fn run(args: &[String]) -> Option<i32> {
                 .ok()
                 .and_then(|p| p.parent().map(Path::to_path_buf))
                 .unwrap_or_default();
-            setup::install(&pkg, &game)?
+            setup::install(&pkg, &game, std::env::args().any(|a| a == "--replace-other-mod"))?
         };
         for line in log {
             println!("  {line}");

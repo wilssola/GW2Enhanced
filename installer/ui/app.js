@@ -330,7 +330,7 @@ function renderInstallPanel() {
   if (sel) {
     const s = sel.status;
     notes.push(s.installed ? "Instalado: " + (s.version ? "v" + s.version : "versão desconhecida") + (s.package ? " · " + pkgName(s.package) : "") + "." : "O mod não está instalado nesta pasta.");
-    if (s.foreign_dll) notes.push("Há um msimg32.dll de outro mod: ele será guardado e volta ao desinstalar.");
+    if (s.foreign_dll) notes.push("Já existe um msimg32.dll de outro mod nesta pasta: ao instalar, você escolhe se quer substituí-lo.");
   }
   if (o.game_running) notes.push("Feche o jogo antes de instalar.");
   $("install-state").textContent = notes.join(" ");
@@ -601,15 +601,30 @@ async function runInstall(fn, doneMsg) {
   }
 }
 
-function installRelease(rel) {
+// Another mod's msimg32.dll is only replaced when the player says so: null = cancelled, else the choice to send.
+async function foreignChoice() {
+  const sel = selectedInstall();
+  if (!sel || !sel.status.foreign_dll) return false;
+  const yes = await confirmDialog("Já existe um msimg32.dll de outro mod",
+    "Esta pasta já tem um msimg32.dll que não é do GW2 Enhanced (outro mod usa o mesmo nome). Substituir? O arquivo dele fica guardado como "
+    + "msimg32.dll.antes-do-gw2enhanced e volta ao desinstalar o GW2 Enhanced; enquanto isso, aquele mod não carrega.",
+    "Substituir");
+  return yes ? true : null;
+}
+
+async function installRelease(rel) {
   const sel = selectedInstall();
   if (!sel) return;
-  return runInstall(() => invoke("install_release", { tag: rel.tag, package: state.package }),
+  const replaceForeign = await foreignChoice();
+  if (replaceForeign === null) return;
+  return runInstall(() => invoke("install_release", { tag: rel.tag, package: state.package, replaceForeign }),
     `GW2 Enhanced v${rel.version} instalado`);
 }
 
-function installLocal() {
-  return runInstall(() => { progress("install", 0, 0); return invoke("install_local"); }, "Pacote local instalado");
+async function installLocal() {
+  const replaceForeign = await foreignChoice();
+  if (replaceForeign === null) return;
+  return runInstall(() => { progress("install", 0, 0); return invoke("install_local", { replaceForeign }); }, "Pacote local instalado");
 }
 
 async function uninstall() {

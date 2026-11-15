@@ -55,7 +55,8 @@ pub struct Status {
     pub legacy_remastered: bool,
     /// The old GW2 Translated `version.dll` (removed by an install).
     pub legacy_translated: bool,
-    /// Another mod's `msimg32.dll` is in place (an install backs it up).
+    /// Another mod's `msimg32.dll` is in place: the install only replaces it when the player chooses to (it is then kept
+    /// as a backup and put back on uninstall).
     pub foreign_dll: bool,
     /// A backup of another mod's `msimg32.dll` (put back on uninstall).
     pub backup: bool,
@@ -133,8 +134,18 @@ fn remove_legacy(game: &Path, log: &mut Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// Why an install stops when another mod's `msimg32.dll` is in the game folder.
+pub fn foreign_dll_message(game: &Path) -> String {
+    format!(
+        "já existe um {DLL} de outro mod em {}. O GW2 Enhanced só o substitui se você escolher: confirme a troca          (o arquivo dele fica guardado e volta ao desinstalar) ou remova esse mod antes",
+        game.display()
+    )
+}
+
 /// Installs the package in `pkg` into `game`; returns what was done, one line per step.
-pub fn install(pkg: &Path, game: &Path) -> Result<Vec<String>, String> {
+/// Another mod's `msimg32.dll` is replaced only with `replace_foreign` (the player's choice), after a backup; without it
+/// the install stops. Our own DLLs (and the old GW2 Translated `version.dll`) are replaced as before.
+pub fn install(pkg: &Path, game: &Path, replace_foreign: bool) -> Result<Vec<String>, String> {
     let mut log = Vec::new();
     let new_dll = pkg.join(DLL);
     if !new_dll.is_file() {
@@ -147,7 +158,11 @@ pub fn install(pkg: &Path, game: &Path) -> Result<Vec<String>, String> {
         return Ok(log);
     }
     let dll = game.join(DLL);
+    // Another mod's msimg32.dll is replaced only when the player chose to, and kept as a backup.
     if dll.is_file() && !is_ours(&dll) {
+        if !replace_foreign {
+            return Err(foreign_dll_message(game));
+        }
         let backup = game.join(BACKUP);
         if !backup.exists() {
             std::fs::copy(&dll, &backup).map_err(|e| format!("não consegui guardar o {DLL} atual: {e}"))?;
@@ -210,7 +225,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn install_keeps_player_files_and_backs_up_foreign_dll() {
+    fn install_keeps_player_files_and_never_touches_another_mods_dll() {
         let (pkg, game) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         std::fs::write(pkg.path().join(DLL), b"xx GW2ENHANCED-DLL-MARKER!! xx").unwrap();
         let lang = pkg.path().join("GW2Translated/languages/pt-BR");
@@ -230,8 +245,16 @@ mod tests {
         std::fs::write(data.join("languages/pt-BR/local.jsonl"), "{\"en\":\"Hi\",\"tr\":\"Oi\"}\n").unwrap();
         std::fs::write(data.join("languages/pt-BR/ids.jsonl"), "").unwrap();
 
+        // Another mod's msimg32.dll: the install stops, the file and the game folder stay as they were.
         assert!(status(game.path()).foreign_dll);
-        install(pkg.path(), game.path()).unwrap();
+        let err = install(pkg.path(), game.path(), false).unwrap_err();
+        assert!(err.contains(DLL) && err.contains("outro mod"), "{err}");
+        assert_eq!(std::fs::read(game.path().join(DLL)).unwrap(), b"outro mod");
+        assert!(!game.path().join(BACKUP).exists());
+        assert!(!data.join("languages/pt-BR/dictionary.jsonl").exists());
+
+        // The player chose to replace it: it is kept as a backup.
+        install(pkg.path(), game.path(), true).unwrap();
         assert!(is_ours(&game.path().join(DLL)));
         assert_eq!(std::fs::read(game.path().join(BACKUP)).unwrap(), b"outro mod");
         assert_eq!(std::fs::read_to_string(data.join("config.ini")).unwrap(), "translate=false");
@@ -247,7 +270,7 @@ mod tests {
         assert_eq!(s.data_dirs, vec!["GW2Translated".to_string(), "GW2Graphics".to_string()]);
 
         // Reinstalling does not overwrite the backup with our own DLL.
-        install(pkg.path(), game.path()).unwrap();
+        install(pkg.path(), game.path(), false).unwrap();
         assert_eq!(std::fs::read(game.path().join(BACKUP)).unwrap(), b"outro mod");
 
         uninstall(game.path()).unwrap();
@@ -268,14 +291,14 @@ mod tests {
         let s = status(game.path());
         assert!(s.legacy_remastered && s.legacy_translated && !s.installed);
 
-        install(pkg.path(), game.path()).unwrap();
+        install(pkg.path(), game.path(), false).unwrap();
         assert!(has_marker(&game.path().join(DLL), &[b"GW2ENHANCED-DLL-MARKER!!"]));
         assert!(!game.path().join(BACKUP).exists());
         assert_eq!(std::fs::read(game.path().join(LEGACY_DLL)).unwrap(), b"outro version.dll");
         assert!(!game.path().join(LEGACY_BACKUP).exists());
 
         // A version.dll that is not ours is left alone.
-        install(pkg.path(), game.path()).unwrap();
+        install(pkg.path(), game.path(), false).unwrap();
         assert_eq!(std::fs::read(game.path().join(LEGACY_DLL)).unwrap(), b"outro version.dll");
 
         uninstall(game.path()).unwrap();
@@ -286,7 +309,7 @@ mod tests {
     fn install_refuses_a_package_without_the_dll() {
         let (pkg, game) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         std::fs::write(game.path().join("Gw2-64.exe"), b"").unwrap();
-        assert!(install(pkg.path(), game.path()).unwrap_err().contains(DLL));
+        assert!(install(pkg.path(), game.path(), false).unwrap_err().contains(DLL));
     }
 
     #[test]
@@ -296,7 +319,7 @@ mod tests {
         std::fs::write(game.path().join(DLL), b"xx GW2ENHANCED-DLL-MARKER!! xx").unwrap();
         std::fs::create_dir_all(game.path().join("GW2Graphics/luts")).unwrap();
         std::fs::write(game.path().join("GW2Graphics/luts/warm.cube"), b"lut").unwrap();
-        install(game.path(), game.path()).unwrap();
+        install(game.path(), game.path(), false).unwrap();
         assert!(is_ours(&game.path().join(DLL)));
         assert!(game.path().join("GW2Graphics/luts/warm.cube").is_file());
         assert!(!game.path().join(BACKUP).exists());

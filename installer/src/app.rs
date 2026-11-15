@@ -264,7 +264,8 @@ fn ensure_closed(dir: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn install_release(app: tauri::AppHandle, tag: String, package: String) -> Result<Vec<String>, String> {
+async fn install_release(app: tauri::AppHandle, tag: String, package: String, replace_foreign: Option<bool>) -> Result<Vec<String>, String> {
+    let replace_foreign = replace_foreign.unwrap_or(false);
     blocking(move || {
         let state = app.state::<AppState>();
         let _busy = Busy::take(&state.busy)?;
@@ -287,7 +288,7 @@ async fn install_release(app: tauri::AppHandle, tag: String, package: String) ->
         let result = github::fetch_package(&release, &package, &stage, &mut progress).and_then(|files| {
             progress("install", 0, 0);
             ensure_closed(&game.path)?;
-            setup::install(&files, &game.path)
+            setup::install(&files, &game.path, replace_foreign)
         });
         let _ = std::fs::remove_dir_all(&stage);
         let mut log = result?;
@@ -301,14 +302,15 @@ async fn install_release(app: tauri::AppHandle, tag: String, package: String) ->
 }
 
 #[tauri::command]
-async fn install_local(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+async fn install_local(app: tauri::AppHandle, replace_foreign: Option<bool>) -> Result<Vec<String>, String> {
+    let replace_foreign = replace_foreign.unwrap_or(false);
     blocking(move || {
         let state = app.state::<AppState>();
         let _busy = Busy::take(&state.busy)?;
         let game = selected(&state).ok_or("escolha a pasta do jogo primeiro")?;
         let pkg = setup::local_package().ok_or("não há um pacote ao lado do instalador")?;
         ensure_closed(&game.path)?;
-        setup::install(&pkg, &game.path)
+        setup::install(&pkg, &game.path, replace_foreign)
     })
     .await
 }

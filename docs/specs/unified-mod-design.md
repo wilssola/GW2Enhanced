@@ -232,8 +232,9 @@ GW2Enhanced-Installer.exe --uninstall    uninstall and restore the previous msim
 
 - It finds the game through the Steam libraries (`libraryfolders.vdf`), the ArenaNet registry keys and the default
   install folders, or shows a folder picker. It refuses to run while `Gw2-64.exe` is running.
-- A `msimg32.dll` from another mod (no GW2 Enhanced or GW2 Remastered marker) is backed up as
-  `msimg32.dll.antes-do-gw2enhanced` and restored on uninstall.
+- A `msimg32.dll` from another mod (no GW2 Enhanced or GW2 Remastered marker) is never replaced silently: the install
+  stops with a warning, and the launcher asks the player. Only when they choose to replace it (CLI:
+  `--replace-other-mod`) is it backed up as `msimg32.dll.antes-do-gw2enhanced` and restored on uninstall.
 - The data folders in the package (`GW2Translated\`, `GW2Remastered\`, `GW2Graphics\`) are copied over the game's;
   only files the package carries are added or overwritten, so the player's settings, collection, translations and
   logs stay. Obsolete per-language files of older versions (`strings.jsonl`, `ids.jsonl`) are removed.
