@@ -295,6 +295,12 @@ struct KvValue {
 /// A SQL literal of a statement parameter (strings with quotes doubled, numbers as they are).
 fn sql_literal(v: &Value) -> String {
     match v {
+        // D1's file import cuts a statement at a raw line break inside a string, and a long `||` chain passes SQLite's
+        // expression depth limit: line breaks travel as private-use placeholders put back by one replace() each.
+        Value::String(s) if s.contains(['\n', '\r']) => format!(
+            "replace(replace('{}', char(57344), char(10)), char(57345), char(13))",
+            s.replace('\'', "''").replace('\n', "\u{E000}").replace('\r', "\u{E001}")
+        ),
         Value::String(s) => format!("'{}'", s.replace('\'', "''")),
         Value::Number(n) => n.to_string(),
         Value::Null => "NULL".into(),
