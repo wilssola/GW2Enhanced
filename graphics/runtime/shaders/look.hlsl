@@ -3,17 +3,21 @@
 // final_scrgb.hlsl): everything below works on LINEAR light, 1.0 = paper white, values above 1.0 are legal highlights.
 //
 // Passes (all full-screen triangles into mod-owned targets, only Load() so no sampler state is touched):
+//   ps_cover    full -> 1/16: share of the pixels above COVER_FRACTION x the threshold (every second pixel, encoded compare only)
+//   ps_area_h / ps_area_v     box mean of that share over a square of WINDOW_MULT x lens_max_size (cov16 -> tmp16 -> cov16)
 //   ps_down4    full -> 1/4: threshold (energy above the threshold, hue kept; alpha = energy above the ghost threshold),
-//               Karis weighted 2x2 groups (a single hot pixel does not flicker the picture)
-//   ps_down8    1/4 -> 1/8: Karis weighted 2x2
+//               the threshold raised for saturated cool colours; Karis weighted 2x2 groups (a single hot pixel does not flicker)
+//   ps_down8    1/4 -> 1/8: Karis weighted 2x2, times the point-source weight of the bright area around it (big bright
+//               areas such as a glowing creature are not sources)
 //   ps_glare_h / ps_glare_v   isotropic soft glare, 9 taps per direction (src8 -> ping -> glare)
 //   ps_streak0/1/2            horizontal streak: three 7-tap passes with the step growing x3 (dual-kawase style stretch),
 //                             exponential falloff (src8 -> ping -> pong -> ping)
 //   ps_composite              scene + lens (+ ghosts) -> slider grade -> LUT -> re-encode. A pixel nothing changes keeps its exact value.
 //
-// Slots: b0 constants, t10 scene colour, t11 1/4, t12 1/8 source, t13 ping, t14 glare, t15 pong, t16 3D LUT.
+// Slots: b0 constants, t10 scene colour, t11 1/4, t12 1/8 source, t13 ping, t14 glare, t15 pong, t16 3D LUT, t17 coverage /
+// area (1/16), t18 area temp (1/16).
 //
-// b0 (7 float4):
+// b0 (9 float4):
 //   g_full   = (w, h, 1/w, 1/h)                 of the picture
 //   g_sz     = (w4, h4, w8, h8)                 of the 1/4 and 1/8 targets
 //   g_lens   = (strength, ghost, threshold, streak step unit)   threshold: absolute linear (already x the highlight gain)
@@ -21,6 +25,9 @@
 //   g_gradeA = (saturation, contrast, vibrance, LUT strength)
 //   g_gains  = (r, g, b gain of temperature / tint, LUT size)
 //   g_gradeB = (shadows, highlights, flags, 0)  flags: 1 lens, 2 slider grade, 4 LUT
+//   g_lens3  = (cool gain x colour reject, encoded coverage threshold, area tap step in 1/16 texels (0 = no size test),
+//               area units per fill)
+//   g_sz16   = (w16, h16, 0, 0)                 of the 1/16 targets
 
 cbuffer C : register(b0)
 {
@@ -31,6 +38,8 @@ cbuffer C : register(b0)
     float4 g_gradeA;
     float4 g_gains;
     float4 g_gradeB;
+    float4 g_lens3;
+    float4 g_sz16;
 };
 
 Texture2D<float4> t_color : register(t10);
@@ -40,11 +49,20 @@ Texture2D<float4> t_ping : register(t13);
 Texture2D<float4> t_glare : register(t14);
 Texture2D<float4> t_pong : register(t15);
 Texture3D<float4> t_lut : register(t16);
+Texture2D<float4> t_cov : register(t17);
+Texture2D<float4> t_tmp : register(t18);
 
 static const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 static const float MAX_ADD = 0.6;
 static const float GLARE_WEIGHT = 0.35;
 static const float3 WARM_WHITE = float3(1.0, 0.92, 0.80);
+// Mirrors of lens.rs (CHROMA_RAMP, AREA_RAMP, AREA_TAPS, COVER_GRID).
+static const float CHROMA_LO = 0.25;
+static const float CHROMA_HI = 0.75;
+static const float AREA_LO = 1.0;
+static const float AREA_HI = 2.5;
+static const int AREA_TAPS = 16;
+static const int COVER_GRID = 8;
 
 struct VSOut { float4 pos : SV_Position; };
 
@@ -94,9 +112,69 @@ float4 bil(Texture2D<float4> t, float2 p, float2 dim)
     return lerp(lerp(v00, v10, f.x), lerp(v01, v11, f.x), f.y);
 }
 
+// ---- lens: which pixels are sources ----------------------------------------------------------------------------------------------
+
+// 0 for white, warm and unsaturated colours, up to 1 for saturated cool ones (blue, cyan, violet, green). lens.rs cool_penalty.
+float cool_penalty(float3 c)
+{
+    float mx = max(c.r, max(c.g, c.b));
+    if (!(mx > 0.0))
+        return 0.0;
+    float mn = max(min(c.r, min(c.g, c.b)), 0.0);
+    float chroma = smoothstep(CHROMA_LO, CHROMA_HI, (mx - mn) / mx);
+    float warm = saturate(2.0 * (c.r - c.b) / mx);
+    return chroma * (1.0 - warm);
+}
+
+// Share of the pixels of a 16x16 block that are bright (largest ENCODED channel above the encoded coverage threshold; the encoding
+// is monotonic, so no decode). Every second pixel on a staggered grid: a bright AREA is what is measured, not a single pixel.
+float4 ps_cover(float4 pos : SV_Position) : SV_Target
+{
+    int2 q = int2(pos.xy) * 16;
+    int2 mx = int2(g_full.xy) - 1;
+    float n = 0.0;
+    [loop] for (int j = 0; j < COVER_GRID; j++)
+    {
+        [unroll] for (int i = 0; i < COVER_GRID; i++)
+        {
+            int2 p = q + int2(2 * i + (j & 1), 2 * j);
+            if (all(p <= mx))
+            {
+                float3 enc = sane(t_color.Load(int3(p, 0)).rgb);
+                n += (max(enc.r, max(enc.g, enc.b)) > g_lens3.y) ? 1.0 : 0.0;
+            }
+        }
+    }
+    return float4(n / float(COVER_GRID * COVER_GRID), 0.0, 0.0, 0.0);
+}
+
+// Box mean over AREA_TAPS taps spaced g_lens3.z (1/16 texels) along `dir`: the two passes give the bright share of a square of
+// WINDOW_MULT x lens_max_size around the texel.
+float4 area_pass(Texture2D<float4> t, float2 pos, float2 dir)
+{
+    float acc = 0.0;
+    [unroll] for (int i = 0; i < AREA_TAPS; i++)
+        acc += bil(t, pos + dir * ((float(i) - 0.5 * float(AREA_TAPS - 1)) * g_lens3.z), g_sz16.xy).r;
+    return float4(acc / float(AREA_TAPS), 0.0, 0.0, 0.0);
+}
+
+float4 ps_area_h(float4 pos : SV_Position) : SV_Target { return area_pass(t_cov, pos.xy, float2(1.0, 0.0)); }
+float4 ps_area_v(float4 pos : SV_Position) : SV_Target { return area_pass(t_tmp, pos.xy, float2(0.0, 1.0)); }
+
+// Point-source weight of a 1/8 texel: 1 when the bright area around it is at most about one lens_max_size square, 0 when it is
+// 2.5 of them or more (a glowing body, a bright wall, the edges and limbs of both). lens.rs area_weight.
+float point_weight(float2 pos8)
+{
+    if (g_lens3.z <= 0.0)
+        return 1.0;
+    float fill = saturate(bil(t_cov, pos8 * 0.5, g_sz16.xy).r);
+    return 1.0 - smoothstep(AREA_LO, AREA_HI, fill * g_lens3.w);
+}
+
 // ---- lens: source, downsample --------------------------------------------------------------------------------------------------
 
-// Threshold of one full-resolution pixel: rgb = the energy above the streak threshold (hue kept), a = the energy above the ghost threshold.
+// Threshold of one full-resolution pixel: rgb = the energy above the streak threshold (hue kept), a = the energy above the ghost
+// threshold. The threshold is raised for saturated cool colours (lens.rs source_threshold); the early out uses the plain one.
 float4 lens_src(int2 p)
 {
     int2 mx = int2(g_full.xy) - 1;
@@ -106,8 +184,9 @@ float4 lens_src(int2 p)
         return float4(0.0, 0.0, 0.0, 0.0);
     float3 lin = srgb_decode(enc);
     float m = max(lin.r, max(lin.g, lin.b));
-    float e = max(m - g_lens.z, 0.0);
-    float eg = max(m - g_lens.z * 2.0, 0.0);
+    float t = g_lens.z * (1.0 + g_lens3.x * cool_penalty(lin));
+    float e = max(m - t, 0.0);
+    float eg = max(m - t * 2.0, 0.0);
     return float4(lin * (e / max(m, 1.0e-6)), eg);
 }
 
@@ -149,7 +228,7 @@ float4 ps_down8(float4 pos : SV_Position) : SV_Target
         acc += a * w;
         ws += w;
     }
-    return acc / ws;
+    return acc / ws * point_weight(pos.xy);
 }
 
 // ---- glare, streak ---------------------------------------------------------------------------------------------------------------

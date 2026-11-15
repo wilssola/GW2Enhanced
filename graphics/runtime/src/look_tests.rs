@@ -111,8 +111,11 @@ fn new_look(g: &Gpu) -> Look {
     unsafe { Look::new(g.dev.as_raw(), blobs()) }.expect("Look::new")
 }
 
+/// The test picture is 128 px high: a max source size of 0.15 (19 px) keeps the 7 to 9 px test sources "compact".
+const TEST_MAX_SIZE: f32 = 0.15;
+
 fn lens(strength: f32, ghost: f32) -> LensParams {
-    LensParams { strength, threshold: 2.5, ghost, length: 1.0, gain: GAIN }
+    LensParams { strength, threshold: 2.5, ghost, length: 1.0, gain: GAIN, max_size: TEST_MAX_SIZE, color_reject: crate::lens::DEFAULT_COLOR_REJECT }
 }
 
 fn lens_only(strength: f32, ghost: f32) -> LookInput<'static> {
@@ -159,6 +162,9 @@ fn the_shaders_compile_and_the_constants_have_the_documented_layout() {
     assert_eq!(c[4][3], 0.5);
     assert_eq!(c[5][3], 17.0);
     assert_eq!(c[6][2], 7.0, "lens + grade + lut");
+    assert_eq!(c[7][0], crate::lens::COOL_GAIN * 0.5);
+    assert!(c[7][2] > 0.0 && c[7][3] == 16.0, "size test on: {:?}", c[7]);
+    assert_eq!(c[8], [215.0, 90.0, 0.0, 0.0], "1/16 level");
     let none = LookInput { lens: None, grade: Some(grading::NEUTRAL), lut: Some((1, &cube, 0.0)) };
     assert!(none.is_noop());
     assert_eq!(cb_values((100, 100), &none)[6][2], 0.0);
@@ -319,6 +325,95 @@ fn ghosts_appear_only_for_very_bright_sources_and_never_blue() {
     assert!(max_ch(at(&o0, sx + 20, sy)) > 0.0, "but it does make a streak");
 }
 
+fn lens_with(max_size: f32, color_reject: f32) -> LookInput<'static> {
+    LookInput { lens: Some(LensParams { max_size, color_reject, ..lens(1.0, 0.3) }), grade: None, lut: None }
+}
+
+/// Every pixel outside the square (cx, cy, r) is exactly black (nothing was added there).
+fn black_outside(o: &[[f32; 3]], cx: usize, cy: usize, r: usize) -> bool {
+    (0..H).all(|y| (0..W).all(|x| (x.abs_diff(cx) <= r && y.abs_diff(cy) <= r) || at(o, x, y) == [0.0; 3]))
+}
+
+#[test]
+fn a_big_glowing_body_gets_no_flare_a_compact_lamp_still_does() {
+    let Some(g) = gpu() else { return };
+    let mut l = new_look(&g);
+    // A glowing creature: 61x61 px (half the picture height) at 8x paper white, warm orange (no colour penalty: only the size
+    // can reject it). Before the size test it made a long streak.
+    let body = blob(90, 64, 30, [GAIN * 8.0, GAIN * 4.0, GAIN * 1.0]);
+    let old = run(&g, &mut l, &body, &lens_with(0.0, 0.5)).unwrap();
+    assert!(max_ch(at(&old, 140, 64)) > 0.02, "without the size test the body streaks: {:?}", at(&old, 140, 64));
+    let new = run(&g, &mut l, &body, &lens_with(TEST_MAX_SIZE, 0.5)).unwrap();
+    assert!(black_outside(&new, 90, 64, 30), "the body still adds light around it");
+    // The same body with a hot rim (2 px at 3x the threshold) around a dimmer interior (0.7x the threshold, above the coverage
+    // share): the interior counts as bright area, so the rim is not a row of point sources either.
+    let rim = |x: usize, y: usize| {
+        let (dx, dy) = (x.abs_diff(90), y.abs_diff(64));
+        if dx.max(dy) > 30 {
+            [0.0; 3]
+        } else if dx.max(dy) >= 29 {
+            [GAIN * 7.5, GAIN * 4.0, GAIN * 1.0]
+        } else {
+            [GAIN * 1.75, GAIN * 1.0, GAIN * 0.3]
+        }
+    };
+    let old = run(&g, &mut l, rim, &lens_with(0.0, 0.5)).unwrap();
+    assert!(max_ch(at(&old, 140, 64)) > 0.005, "without the size test the rim streaks");
+    let new = run(&g, &mut l, rim, &lens_with(TEST_MAX_SIZE, 0.5)).unwrap();
+    assert!(black_outside(&new, 90, 64, 30), "the rim of the body still adds light");
+    // A lamp (7x7 px) far from the body keeps its streak with the body in the picture, the same as alone.
+    let lamp = blob(220, 64, 3, [GAIN * 8.0, GAIN * 6.0, GAIN * 3.0]);
+    let both = |x: usize, y: usize| if x >= 200 { lamp(x, y) } else { body(x, y) };
+    let with_body = run(&g, &mut l, both, &lens_with(TEST_MAX_SIZE, 0.5)).unwrap();
+    let alone = run(&g, &mut l, &lamp, &lens_with(TEST_MAX_SIZE, 0.5)).unwrap();
+    let (a, b) = (at(&with_body, 236, 64), at(&alone, 236, 64));
+    assert!(max_ch(b) > 0.02, "the lamp streaks: {b:?}");
+    assert!((max_ch(a) - max_ch(b)).abs() < 0.1 * max_ch(b), "the body does not change the lamp: {a:?} vs {b:?}");
+}
+
+#[test]
+fn compact_sources_and_a_sun_disc_are_untouched_by_the_size_test() {
+    let Some(g) = gpu() else { return };
+    let mut l = new_look(&g);
+    // A torch-sized source and a sun disc of about the max size (17 px; the max size is 19 px here): bit-identical with and without the test.
+    for f in [blob(128, 64, 3, [GAIN * 9.0; 3]), blob(128, 64, 8, [GAIN * 20.0, GAIN * 19.0, GAIN * 17.0])] {
+        let off = run(&g, &mut l, &f, &lens_with(0.0, 0.5)).unwrap();
+        let on = run(&g, &mut l, &f, &lens_with(TEST_MAX_SIZE, 0.5)).unwrap();
+        assert!(max_ch(at(&on, 160, 64)) > 0.02);
+        assert_eq!(off, on);
+    }
+}
+
+#[test]
+fn a_saturated_blue_glow_needs_more_light_white_and_warm_lights_do_not() {
+    let Some(g) = gpu() else { return };
+    let mut l = new_look(&g);
+    // 2.8x the threshold: a source for white and warm colours; under the 3x a saturated cool colour needs at the default reject.
+    let m = GAIN * 7.0;
+    let probe = (150, 64);
+    for (what, c, expect) in [
+        ("blue", [m * 0.07, m * 0.3, m], false),
+        ("cyan", [m * 0.1, m, m * 0.95], false),
+        ("white", [m; 3], true),
+        ("cool white", [m * 0.85, m * 0.92, m], true),
+        ("orange", [m, m * 0.5, m * 0.1], true),
+    ] {
+        let f = blob(128, 64, 3, c);
+        let o = run(&g, &mut l, &f, &lens_with(TEST_MAX_SIZE, 0.5)).unwrap();
+        let p = max_ch(at(&o, probe.0, probe.1));
+        assert_eq!(p > 0.0, expect, "{what}: {p}");
+        if !expect {
+            assert!(black_outside(&o, 128, 64, 3), "{what} adds light");
+            // With the colour test off it is a source like any other.
+            let o = run(&g, &mut l, &f, &lens_with(TEST_MAX_SIZE, 0.0)).unwrap();
+            assert!(max_ch(at(&o, probe.0, probe.1)) > 0.01, "{what} without the colour test");
+        }
+    }
+    // Much brighter blue (3x more) is a source again: blue is not banned.
+    let o = run(&g, &mut l, blob(128, 64, 3, [m * 0.2, m * 0.9, m * 3.0]), &lens_with(TEST_MAX_SIZE, 0.5)).unwrap();
+    assert!(max_ch(at(&o, probe.0, probe.1)) > 0.01, "a very bright blue light");
+}
+
 #[test]
 fn bad_pixels_do_not_spread_and_identical_input_gives_identical_output() {
     let Some(g) = gpu() else { return };
@@ -361,7 +456,7 @@ fn the_pipeline_is_restored_and_our_slots_are_left_empty() {
         let mut got = [None];
         g.ctx.PSGetShaderResources(0, Some(&mut got));
         assert_eq!(got[0].as_ref().map(|s| s.as_raw()), Some(mark.as_raw()), "t0 restored");
-        let mut mine: [Option<ID3D11ShaderResourceView>; 7] = Default::default();
+        let mut mine: [Option<ID3D11ShaderResourceView>; SLOT_COUNT as usize] = Default::default();
         g.ctx.PSGetShaderResources(SLOT_FIRST, Some(&mut mine));
         assert!(mine.iter().all(|s| s.is_none()), "our slots are left empty");
     }

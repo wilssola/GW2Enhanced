@@ -30,7 +30,7 @@ pub const VS_ENTRY: &str = "vs_main";
 pub const COPY_HASH: u32 = 0xc0ad1686;
 
 const SLOT_FIRST: u32 = 10;
-const SLOT_COUNT: u32 = 7;
+const SLOT_COUNT: u32 = 9;
 const SLOT_COLOR: u32 = 10;
 const SLOT_D4: u32 = 11;
 const SLOT_SRC8: u32 = 12;
@@ -38,6 +38,8 @@ const SLOT_PING: u32 = 13;
 const SLOT_GLARE: u32 = 14;
 const SLOT_PONG: u32 = 15;
 const SLOT_LUT: u32 = 16;
+const SLOT_COV: u32 = 17;
+const SLOT_TMP: u32 = 18;
 
 const FMT_RGBA16F: u32 = 10;
 
@@ -69,16 +71,20 @@ impl LookInput<'_> {
     }
 }
 
-/// The seven constant vectors of `look.hlsl` (see its header).
-pub fn cb_values(size: (u32, u32), inp: &LookInput) -> [[f32; 4]; 7] {
+/// Constant vectors of `look.hlsl` (see its header).
+pub const CB_VECTORS: usize = 9;
+
+/// The constant vectors of `look.hlsl` (see its header).
+pub fn cb_values(size: (u32, u32), inp: &LookInput) -> [[f32; 4]; CB_VECTORS] {
     let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
     let lv = crate::exposure::level_sizes(size.0, size.1);
     let (l4, l8) = (lv[0], lv[1]);
     let mut flags = 0.0;
-    let (mut lens_a, mut lens_b) = ([0.0; 4], [0.0; 4]);
+    let (mut lens_a, mut lens_b, mut lens_c, mut sz16) = ([0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4]);
     if let Some(p) = &inp.lens {
         flags += FLAG_LENS;
         (lens_a, lens_b) = lens::cb_lens(p, l8.0);
+        (lens_c, sz16) = lens::cb_sources(p, size.1, lv[2]);
     }
     let g = inp.grade.unwrap_or_default().clamped();
     let gp = GradeParams::from_grade(&g);
@@ -104,6 +110,8 @@ pub fn cb_values(size: (u32, u32), inp: &LookInput) -> [[f32; 4]; 7] {
         [sat, con, vib, lut_strength],
         [gains[0], gains[1], gains[2], lut_size],
         [sh, hi, flags, 0.0],
+        lens_c,
+        sz16,
     ]
 }
 
@@ -111,6 +119,9 @@ pub fn cb_values(size: (u32, u32), inp: &LookInput) -> [[f32; 4]; 7] {
 
 pub struct Blobs {
     pub vs: Vec<u8>,
+    pub cover: Vec<u8>,
+    pub area_h: Vec<u8>,
+    pub area_v: Vec<u8>,
     pub down4: Vec<u8>,
     pub down8: Vec<u8>,
     pub glare_h: Vec<u8>,
@@ -124,6 +135,9 @@ pub fn compile_blobs() -> Result<Blobs, String> {
     let c = |entry: &str, profile: &str| shaders::compile(HLSL, entry, profile).map_err(|e| format!("{entry}: {e}"));
     Ok(Blobs {
         vs: c(VS_ENTRY, "vs_5_0")?,
+        cover: c("ps_cover", "ps_5_0")?,
+        area_h: c("ps_area_h", "ps_5_0")?,
+        area_v: c("ps_area_v", "ps_5_0")?,
         down4: c("ps_down4", "ps_5_0")?,
         down8: c("ps_down8", "ps_5_0")?,
         glare_h: c("ps_glare_h", "ps_5_0")?,
@@ -163,6 +177,9 @@ struct SubresourceData {
 pub struct Look {
     device: usize,
     vs: Obj,
+    ps_cover: Obj,
+    ps_area_h: Obj,
+    ps_area_v: Obj,
     ps_down4: Obj,
     ps_down8: Obj,
     ps_glare_h: Obj,
@@ -176,6 +193,8 @@ pub struct Look {
     ping: Target,
     pong: Target,
     glare: Target,
+    cov16: Target,
+    tmp16: Target,
     out: Target,
     lut_tex: Obj,
     lut_srv: Obj,
@@ -194,6 +213,9 @@ impl Look {
         let mut l = Look {
             device: device as usize,
             vs: nul,
+            ps_cover: nul,
+            ps_area_h: nul,
+            ps_area_v: nul,
             ps_down4: nul,
             ps_down8: nul,
             ps_glare_h: nul,
@@ -207,6 +229,8 @@ impl Look {
             ping: NO_TARGET,
             pong: NO_TARGET,
             glare: NO_TARGET,
+            cov16: NO_TARGET,
+            tmp16: NO_TARGET,
             out: NO_TARGET,
             lut_tex: nul,
             lut_srv: nul,
@@ -216,6 +240,9 @@ impl Look {
             let create_vs: CreateShaderFn = std::mem::transmute(vfn(device, vt::DEV_CREATE_VERTEX_SHADER));
             let create_ps: CreateShaderFn = std::mem::transmute(vfn(device, vt::DEV_CREATE_PIXEL_SHADER));
             let ok = create_vs(device, b.vs.as_ptr(), b.vs.len(), nul, &mut l.vs) >= 0
+                && create_ps(device, b.cover.as_ptr(), b.cover.len(), nul, &mut l.ps_cover) >= 0
+                && create_ps(device, b.area_h.as_ptr(), b.area_h.len(), nul, &mut l.ps_area_h) >= 0
+                && create_ps(device, b.area_v.as_ptr(), b.area_v.len(), nul, &mut l.ps_area_v) >= 0
                 && create_ps(device, b.down4.as_ptr(), b.down4.len(), nul, &mut l.ps_down4) >= 0
                 && create_ps(device, b.down8.as_ptr(), b.down8.len(), nul, &mut l.ps_down8) >= 0
                 && create_ps(device, b.glare_h.as_ptr(), b.glare_h.len(), nul, &mut l.ps_glare_h) >= 0
@@ -228,7 +255,7 @@ impl Look {
             }
             // D3D11_BUFFER_DESC { ByteWidth, Usage = DYNAMIC, BindFlags = CONSTANT_BUFFER, CPUAccessFlags = WRITE, MiscFlags, StructureByteStride }
             let create_buffer: unsafe extern "system" fn(Obj, *const [u32; 6], *const c_void, *mut Obj) -> i32 = std::mem::transmute(vfn(device, vt::DEV_CREATE_BUFFER));
-            if create_buffer(device, &[112, 2, 4, 0x10000, 0, 0], std::ptr::null(), &mut l.cb) < 0 || l.cb.is_null() {
+            if create_buffer(device, &[(CB_VECTORS * 16) as u32, 2, 4, 0x10000, 0, 0], std::ptr::null(), &mut l.cb) < 0 || l.cb.is_null() {
                 log!("look: could not create the constant buffer");
                 return None;
             }
@@ -243,6 +270,8 @@ impl Look {
             self.ping.free();
             self.pong.free();
             self.glare.free();
+            self.cov16.free();
+            self.tmp16.free();
         }
     }
 
@@ -276,6 +305,8 @@ impl Look {
                 need(&mut self.ping, lv[1]);
                 need(&mut self.pong, lv[1]);
                 need(&mut self.glare, lv[1]);
+                need(&mut self.cov16, lv[2]);
+                need(&mut self.tmp16, lv[2]);
             }
             if !ok {
                 self.free_targets();
@@ -364,7 +395,7 @@ impl Look {
             if map(ctx, self.cb, 0, 4 /* WRITE_DISCARD */, 0, &mut mapped) < 0 || mapped[0] == 0 {
                 return None;
             }
-            *(mapped[0] as *mut [[f32; 4]; 7]) = cb_values(size, &inp2);
+            *(mapped[0] as *mut [[f32; 4]; CB_VECTORS]) = cb_values(size, &inp2);
             unmap(ctx, self.cb, 0);
 
             let _state = StateGuard::save(ctx);
@@ -411,8 +442,16 @@ impl Look {
 
             let lv = crate::exposure::level_sizes(size.0, size.1);
             if do_lens {
+                // The size test (lens_max_size 0 = off): the bright share of the neighbourhood, cov16 -> tmp16 -> cov16.
+                let sized = inp2.lens.is_some_and(|p| lens::area_step(p.max_size, size.1) > 0.0);
+                if sized {
+                    pass(self.ps_cover, &self.cov16, lv[2], &[(SLOT_COLOR, color_srv)]);
+                    pass(self.ps_area_h, &self.tmp16, lv[2], &[(SLOT_COV, self.cov16.srv)]);
+                    pass(self.ps_area_v, &self.cov16, lv[2], &[(SLOT_TMP, self.tmp16.srv)]);
+                }
                 pass(self.ps_down4, &self.l4, lv[0], &[(SLOT_COLOR, color_srv)]);
-                pass(self.ps_down8, &self.l8, lv[1], &[(SLOT_D4, self.l4.srv)]);
+                let d8_inputs: &[(u32, Obj)] = if sized { &[(SLOT_D4, self.l4.srv), (SLOT_COV, self.cov16.srv)] } else { &[(SLOT_D4, self.l4.srv)] };
+                pass(self.ps_down8, &self.l8, lv[1], d8_inputs);
                 pass(self.ps_glare_h, &self.ping, lv[1], &[(SLOT_SRC8, self.l8.srv)]);
                 pass(self.ps_glare_v, &self.glare, lv[1], &[(SLOT_PING, self.ping.srv)]);
                 pass(self.ps_streak[0], &self.ping, lv[1], &[(SLOT_SRC8, self.l8.srv)]);
@@ -441,7 +480,7 @@ impl Drop for Look {
             self.free_targets();
             release(self.lut_srv);
             release(self.lut_tex);
-            for o in [self.cb, self.ps_composite, self.ps_streak[2], self.ps_streak[1], self.ps_streak[0], self.ps_glare_v, self.ps_glare_h, self.ps_down8, self.ps_down4, self.vs] {
+            for o in [self.cb, self.ps_composite, self.ps_streak[2], self.ps_streak[1], self.ps_streak[0], self.ps_glare_v, self.ps_glare_h, self.ps_down8, self.ps_down4, self.ps_area_v, self.ps_area_h, self.ps_cover, self.vs] {
                 release(o);
             }
         }
@@ -531,7 +570,15 @@ pub fn draw_guard(ctx: Obj) -> LookGuard {
 /// The settings of this frame (the lens needs HDR output: in SDR nothing is above paper white).
 fn frame_input<'a>(cube: &'a Option<std::sync::Arc<Cube>>, generation: u64) -> LookInput<'a> {
     let p = crate::datapath::current_params(false, false);
-    let lens = (lens::on() && !p.sdr_clamp).then(|| LensParams { strength: lens::strength(), threshold: lens::threshold(), ghost: lens::ghost(), length: lens::streak_length(), gain: p.boost });
+    let lens = (lens::on() && !p.sdr_clamp).then(|| LensParams {
+        strength: lens::strength(),
+        threshold: lens::threshold(),
+        ghost: lens::ghost(),
+        length: lens::streak_length(),
+        gain: p.boost,
+        max_size: lens::max_size(),
+        color_reject: lens::color_reject(),
+    });
     let g = grading::get();
     let s = grading::lut_strength();
     LookInput { lens, grade: (!g.is_neutral()).then_some(g), lut: cube.as_deref().filter(|_| s > 0.0).map(|c| (generation, c, s)) }
@@ -659,7 +706,15 @@ pub fn status_lens() -> String {
     if !crate::gate::user_enabled() {
         return "off (mod disabled)".to_string();
     }
-    let what = format!("strength {:.2}, threshold {:.1}x, ghost {:.2}, streak length {:.2}", lens::strength(), lens::threshold(), lens::ghost(), lens::streak_length());
+    let what = format!(
+        "strength {:.2}, threshold {:.1}x, ghost {:.2}, streak length {:.2}, max source size {:.3}, colour reject {:.2}",
+        lens::strength(),
+        lens::threshold(),
+        lens::ghost(),
+        lens::streak_length(),
+        lens::max_size(),
+        lens::color_reject()
+    );
     if FAILED.load(Relaxed) {
         return format!("{what}: failed (see log), off");
     }
