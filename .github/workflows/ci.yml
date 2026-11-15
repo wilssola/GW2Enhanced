@@ -4,6 +4,7 @@
 #   build           the default workspace (`cargo build --release`: msimg32.dll with the three mods + the installer)
 #                   and the three single-mod DLLs (aliases in .cargo/config.toml)
 #   test            tests of core, translation, textures and the installer
+#   installer-linux the installer and launcher's tests on Linux
 #   translator      the local translator (its CTranslate2 and DirectML runtimes come from translated/scripts)
 #   test-graphics   the graphics tests: ~30 min, their shaders run on WARP (no GPU on the runners)
 #   release-scripts the release-notes / SHA256SUMS.txt generator used by release.yml
@@ -65,7 +66,28 @@ jobs:
       # --release: in the debug profile gw2remastered's tests do not link (intel_tex_2's ISPC/C++ object asks for
       # the dynamic CRT's __imp__wassert, which +crt-static does not provide).
       - name: Tests
-        run: cargo test --release --locked -p gw2enhanced-core -p gw2translated -p gw2remastered -p gw2translated-installer
+        run: cargo test --release --locked -p gw2enhanced-core -p gw2translated -p gw2remastered -p gw2enhanced-installer
+
+  # The installer and launcher on Linux (Steam with Proton, Wine, Lutris). Its .deb and AppImage are built by
+  # release.yml.
+  installer-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Tauri system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev libssl-dev build-essential file
+      - name: Tests
+        run: cargo test --release --locked -p gw2enhanced-core -p gw2enhanced-installer
 
   translator:
     runs-on: windows-latest

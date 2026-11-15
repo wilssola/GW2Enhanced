@@ -28,7 +28,12 @@
     }
   },
   "bundle": {
-    "active": false,
-    "icon": ["icons/icon.ico", "icons/icon.png"]
+    "active": true,
+    "targets": ["deb", "appimage"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "category": "Game",
+    "shortDescription": "Instalador e launcher do GW2 Enhanced",
+    "longDescription": "Instala, atualiza e abre o GW2 Enhanced (tradução, texturas HD e gráficos) para o Guild Wars 2, na Steam (Proton), na Epic Games ou no cliente da ArenaNet.",
+    "copyright": "MIT"
   }
 }

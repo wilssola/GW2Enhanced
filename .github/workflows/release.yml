@@ -3,6 +3,8 @@
 #                                         Translation-DirectML, Textures, Graphics (built by scripts/package.ps1)
 #   SHA256SUMS.txt                        `sha256sum` format; the in-game updater checks its download against it
 #   SHA256SUMS.txt.sig                    ed25519 signature of SHA256SUMS.txt; the updater refuses a release without it
+#   GW2Enhanced-Installer-<version>-linux-amd64.deb / .AppImage
+#                                         the installer and launcher for Linux (the Windows one is in every zip)
 # plus a build provenance attestation for every zip (`gh attestation verify <zip> --repo <owner>/<repo>`).
 #
 # Needs the repository secret UPDATE_SIGNING_KEY: base64 of the 32-byte ed25519 seed whose public key the updater
@@ -168,11 +170,84 @@ jobs:
             --title "GW2 Enhanced $TAG" --notes-file dist/notes.md \
             dist/GW2Enhanced-*.zip dist/SHA256SUMS.txt
 
+  # The installer and launcher for Linux (.deb and AppImage), built in parallel with the packages. Small (tens of
+  # MB), so it travels to the upload job as an artifact. The Tauri CLI is pinned and built from crates.io with
+  # --locked; the AppImage step downloads linuxdeploy from its GitHub releases (Tauri's bundler does that itself).
+  linux-installer:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write # build provenance (Sigstore)
+      attestations: write # build provenance
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - name: Tauri system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev libssl-dev build-essential file
+      - name: Tests
+        run: cargo test --release --locked -p gw2enhanced-installer
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version 2.12.4 --locked
+      # The version of the release, not the one in tauri.conf.json.
+      - name: Build the .deb and the AppImage
+        working-directory: installer
+        run: cargo tauri build --bundles deb,appimage --config "{\"version\":\"$VERSION\"}" -- --locked
+      - name: Collect
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          bundle=target/release/bundle
+          cp "$(ls $bundle/deb/*.deb | head -1)" "dist/GW2Enhanced-Installer-$VERSION-linux-amd64.deb"
+          cp "$(ls $bundle/appimage/*.AppImage | head -1)" "dist/GW2Enhanced-Installer-$VERSION-linux-amd64.AppImage"
+          ls -l dist
+      - name: Build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: dist/GW2Enhanced-Installer-*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-installer
+          path: dist/GW2Enhanced-Installer-*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Adds the Linux installer to the draft once both builds are done.
+  linux-upload:
+    needs: [version, release, linux-installer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # release assets
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linux-installer
+          path: dist
+      - name: Upload (draft)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/GW2Enhanced-Installer-*
+
   # Signs SHA256SUMS.txt (the in-game updater refuses a release without SHA256SUMS.txt.sig) and publishes the draft.
   # Its own job, so UPDATE_SIGNING_KEY never shares a machine with the package build, uv or the model downloads:
   # here only gw2enhanced-core and its locked dependencies are compiled.
   sign:
-    needs: [version, release]
+    needs: [version, release, linux-upload]
     runs-on: windows-latest
     timeout-minutes: 30
     permissions:
