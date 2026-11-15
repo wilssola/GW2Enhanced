@@ -584,16 +584,36 @@
   const voted = (() => {
     try { const v = JSON.parse(localStorage.getItem(VOTED_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (_) { return {}; }
   })();
-  function rememberVote(id, value) {
+  // The counts a vote answered with: list pages are cached at the edge for a few minutes, so a reload can bring counts
+  // from before the vote; the larger of the two is shown.
+  const COUNTS_KEY = "gw2e-vote-counts";
+  const votedCounts = (() => {
+    try { const v = JSON.parse(localStorage.getItem(COUNTS_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (_) { return {}; }
+  })();
+  function rememberVote(id, value, counts) {
     voted[id] = value;
-    try { localStorage.setItem(VOTED_KEY, JSON.stringify(voted)); } catch (_) { /* storage unavailable */ }
+    if (counts) votedCounts[id] = counts;
+    try {
+      localStorage.setItem(VOTED_KEY, JSON.stringify(voted));
+      localStorage.setItem(COUNTS_KEY, JSON.stringify(votedCounts));
+    } catch (_) { /* storage unavailable */ }
+  }
+  // Counts to show for a translation: never fewer than this browser's own vote, nor than the vote's answer.
+  function shownCounts(tr) {
+    let up = tr.up || 0, down = tr.down || 0;
+    const c = votedCounts[tr.id];
+    if (c) { up = Math.max(up, c.up || 0); down = Math.max(down, c.down || 0); }
+    if (voted[tr.id] === 1) up = Math.max(up, 1);
+    if (voted[tr.id] === -1) down = Math.max(down, 1);
+    return { up, down };
   }
 
   // Vote buttons. A vote updates its counts in place from the answer and marks the chosen button; nothing else is
   // redrawn, so the list stays where it is.
   function voteButtons(tr) {
-    const upN = text("span", "up", "▲ " + num(tr.up));
-    const downN = text("span", "down", "▼ " + num(tr.down));
+    const shown = shownCounts(tr);
+    const upN = text("span", "up", "▲ " + num(shown.up));
+    const downN = text("span", "down", "▼ " + num(shown.down));
     const up = el("button", { class: "gbtn vote", type: "button", "aria-label": t("vote.up"), title: t("vote.upTitle") }, upN);
     const down = el("button", { class: "gbtn vote", type: "button", "aria-label": t("vote.down"), title: t("vote.downTitle") }, downN);
     const mark = (value) => {
@@ -604,9 +624,11 @@
       }
     };
     const done = (r, value) => {
-      if (r && typeof r.up === "number") upN.textContent = "▲ " + num(r.up);
-      if (r && typeof r.down === "number") downN.textContent = "▼ " + num(r.down);
-      rememberVote(tr.id, value);
+      const counts = r && typeof r.up === "number" && typeof r.down === "number" ? { up: r.up, down: r.down } : null;
+      rememberVote(tr.id, value, counts);
+      const s = shownCounts(tr);
+      upN.textContent = "▲ " + num(s.up);
+      downN.textContent = "▼ " + num(s.down);
       mark(value);
     };
     up.onclick = () => vote(tr.id, 1, done);
