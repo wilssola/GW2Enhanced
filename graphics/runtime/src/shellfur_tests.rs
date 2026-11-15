@@ -1312,7 +1312,7 @@ fn the_vertex_shader_dump_disassembles_character_layouts_only() {
 }
 
 #[test]
-fn shell_keys_apply_live_and_the_dev_capture_reports_them() {
+fn shell_keys_apply_live_and_the_debug_capture_reports_them() {
     let _g = crate::testlock::lock();
     let old = crate::config::Config::default();
     let new = crate::config::Config::parse("fur_shells=12\nshell_length=3\nshell_counts=-5214");
