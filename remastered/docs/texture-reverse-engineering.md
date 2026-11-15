@@ -533,7 +533,7 @@ code, **M** = strong inference, **B** = hypothesis.
 
 ### Short answer
 
-The engine **already separates** a character's model textures. The local
+The engine **already separates** the local player's model textures. The local
 player's composite (`b1c & 1`) creates the model with flag `0x200000`. That flag reaches
 `ModelFile` as `flags 0x10`, and the material textures are created with
 `GR_TEXTURE 0x10` (ignore Texture Detail). That flag changes the loader key (bit `8`),

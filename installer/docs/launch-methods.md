@@ -67,7 +67,7 @@ Sources: [Steam store page](https://store.steampowered.com/app/1284210/Guild_War
 | Channel | What we run | Why |
 |---|---|---|
 | ArenaNet | `Gw2-64.exe <args>` with the game folder as working directory | it patches itself, then shows the login |
-| Steam, no arguments | `steam://rungameid/1284210` | Steam starts the game with a character's own Steam launch options and logs the Steam account in |
+| Steam, no arguments | `steam://rungameid/1284210` | Steam starts the game with the launch options set in Steam and logs the Steam account in |
 | Steam, with arguments | `steam.exe -applaunch 1284210 <args>` (fallback `steam://run/1284210//<args>/`) | passes the arguments; Steam may ask the player to confirm a launch with arguments |
 | Epic | `com.epicgames.launcher://apps/<namespace>%3A<catalogItemId>%3A<appName>?action=launch&silent=true` (or `.../apps/<appName>?...` when the ids are missing) | Epic logs the Epic account in; `silent=true` keeps the launcher window hidden |
 
