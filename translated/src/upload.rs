@@ -23,7 +23,6 @@ use crate::config::Contribute;
 use crate::live::LOCAL_SOURCE;
 use crate::{log, net, runtime};
 
-const HOST: &str = "app.gw2enhanced.workers.dev";
 const PATH: &str = "/v1/contributions";
 /// Limits of one request (the server refuses more).
 const MAX_ITEMS: usize = 500;
@@ -179,7 +178,7 @@ fn cycle(setup: &Setup, state: &mut HashMap<String, u64>, sent: &mut usize) -> O
                     });
                     let Ok(body) = body else { return Outcome::Backoff };
                     requests += 1;
-                    match net::post_json(HOST, PATH, &body) {
+                    match net::post_json(net::HOST, PATH, &body) {
                         // Only our server's answer counts: a network that answers every
                         // request itself (hotel Wi-Fi, proxy) must not mark data as sent.
                         Ok((200..=299, response)) if accepted(&response) => *sent += items.len(),
