@@ -1,4 +1,4 @@
-# Nexus Mods page: GW2 Enhanced HD Textures
+# Nexus Mods page: GW2 Remastered
 
 Text and file list for the mod page. The files are made by `tools/package_nexus.py` (see its docstring).
 
@@ -12,39 +12,67 @@ Text and file list for the mod page. The files are made by `tools/package_nexus.
 
 Upload `SHA256SUMS.txt` too (or paste it in the description), so players can check the downloads.
 
-## Description
+## Description (BBCode, paste as is)
 
-**GW2 Enhanced HD Textures** replaces Guild Wars 2's textures with AI-upscaled versions (2x for the world, armor,
-weapons and creatures; 4x for your character with the optional packs), while you play. The game's files are
-never modified: the HD versions are served from this pack by the GW2 Enhanced mod, and removing the mod restores the
-original game.
+```
+[size=5][b]GW2 Remastered — HD textures for Guild Wars 2[/b][/size]
 
-**The game's art style is kept**: no recolouring, no restyle, no new materials. Every HD texture is the original one,
-enlarged with a super-resolution upscaler (4x-UltraSharp, run locally; no generative AI, no prompts). Normal maps and
-masks are resized without any model. Guild Wars 2 looks like itself, only sharper up close.
+[size=4][b]Description[/b][/size]
+GW2 Remastered replaces Guild Wars 2's textures with upscaled HD versions while you play: 2x for the world, armor, weapons and creatures, and 4x for your character with the optional packs. The game's files are never modified. The HD textures are served from a separate pack, and removing the mod gives you back the original game.
 
-4x-UltraSharp by Kim2091 (CC BY-NC-SA 4.0): this pack is free and non-commercial.
+The art style is kept: no recolouring, no restyle, no new materials. Every HD texture is the original texture, enlarged with a super-resolution upscaler (4x-UltraSharp, run locally, no generative AI). Normal maps and masks are resized without any model. Guild Wars 2 still looks like Guild Wars 2, only sharper up close.
 
-### Requirements
+[size=4][b]Installation instructions[/b][/size]
+[list=1]
+[*]Download GW2 Remastered (the "Textures" package, or "All" for every GW2 Enhanced feature) from [url=https://github.com/wilssola/GW2Enhanced/releases]GitHub Releases[/url] and extract it into the game folder (the one with Gw2-64.exe). The installer can do this step for you.
+[*]Download [b]every part[/b] of the main HD pack from the Files tab and extract them all into the [b]game folder[/b]. You get GW2Remastered\pack\ next to Gw2-64.exe.
+[*]Optional: extract the 4x packs the same way (Composite4x: both parts; Character4x).
+[*]Start the game and press [b]Shift+Home[/b]. The Textures tab shows how many HD textures were found.
+[/list]
+To keep the pack on another drive, extract it anywhere and pick that folder in the Textures tab (or set pack_dir= in GW2Remastered\config.ini).
+To uninstall, delete msimg32.dll and the GW2Remastered folder from the game folder.
 
-- The **GW2 Enhanced** mod (`msimg32.dll`), "All" or "Textures" package, from
-  https://github.com/wilssola/GW2Enhanced/releases
-- About 65 GB free for the main pack (+29 GB and +2 GB for the optional 4x packs). An SSD is recommended.
+[size=4][b]Main features[/b][/size]
+[list]
+[*]HD textures for the world, armor, weapons, creatures and NPCs (2x)
+[*]Optional 4x armor, skin, face and hair for your character
+[*]Live on/off switch in the overlay (Shift+Home): turn it off to see the original textures and compare
+[*]Pack on any drive, read from a few large archive files (fast, no thousands of small files)
+[*]RAM cache and prefetch of the textures used last session, with a memory guard that frees the cache when the system runs low
+[*]Nothing is written to the game's files; the game updates normally
+[*]Client-side only: no gameplay change, nothing sent to the game's servers
+[/list]
 
-### Installation
+[size=4][b]Requirements[/b][/size]
+[list]
+[*]Guild Wars 2 (64-bit, DirectX 11)
+[*]GW2 Remastered / GW2 Enhanced msimg32.dll ("Textures" or "All" package) from [url=https://github.com/wilssola/GW2Enhanced/releases]GitHub Releases[/url]
+[*]About 65 GB free for the main pack (+29 GB and +2 GB for the optional 4x packs). An SSD is recommended.
+[*]16 GB of RAM or more is recommended
+[/list]
 
-1. Install GW2 Enhanced (extract it into the game folder, the one with `Gw2-64.exe`).
-2. Extract **every part** of the pack into the **game folder**. You get `GW2Remastered\pack\` next to `Gw2-64.exe`.
-   Extract the optional 4x packs the same way (they go into `GW2Remastered\pack\composite_4x` and `character_4x`).
-3. Start the game. The Textures tab of the overlay (**Shift+Home**) shows how many HD textures were found.
+[size=4][b]Shout outs[/b][/size]
+[list]
+[*][b]Kim2091[/b], for the 4x-UltraSharp upscaling model (CC BY-NC-SA 4.0). This pack is free and non-commercial because of it.
+[*][b]hecomi[/b], whose UnityFurURP inspired the shell fur of the GW2 Enhanced graphics feature
+[*]The authors of [b]hudhook[/b] and [b]Dear ImGui[/b], used for the in-game overlay
+[*]ArenaNet, for Guild Wars 2
+[/list]
 
-To keep the pack on another drive, extract it anywhere and pick that folder in the Textures tab (or set
-`pack_dir=` in `GW2Remastered\config.ini`).
+[size=2]Unofficial fan project. Not affiliated with or endorsed by ArenaNet or NCSOFT. Third-party programs that hook the game client are used at your own risk; read ArenaNet's policy on third-party programs before using it. Guild Wars 2 © ArenaNet, LLC. All rights reserved. The textures are derived from the game's own textures and are distributed only as a mod for owners of the game.[/size]
+```
 
-### Notes
+## Generative AI usage
 
-- The first minutes in a new map can stream textures a bit slower while the pack is read from disk.
-- Turning the HD textures off in the overlay goes back to the original textures.
-- Unofficial fan project, not affiliated with or endorsed by ArenaNet or NCSOFT. Client-side only; use at your own risk.
-  Guild Wars 2 © ArenaNet, LLC. All rights reserved. The textures are derived from the game's own and are distributed
-  only as a mod for owners of the game.
+Tags: **Mod content: AI Assisted** (AI texture upscaling); **Media: AI-Generated** (logo and page text).
+
+Describe how AI assisted you:
+
+> The HD textures are the game's original textures upscaled with the 4x-UltraSharp super-resolution model (by Kim2091),
+> run locally. It only enlarges existing textures: nothing new is painted or generated, and the art style is unchanged.
+> Normal maps and masks are resized without any model.
+
+## Images
+
+`images/remastered-card.png` (16:9, page header and thumbnail) and `images/remastered-banner.png` (1280x400,
+transparent background).
