@@ -255,6 +255,66 @@ struct Overlay {
     select: Option<hotkeys::Target>,
     /// The feature tab showing in the last frame (None: Version / Health).
     tab: Option<hotkeys::Target>,
+    /// When the start-up notice appeared (None: not yet / already gone).
+    toast_from: Option<Instant>,
+    toast_done: bool,
+}
+
+/// How long the start-up notice stays (the last second fades out).
+const TOAST_FOR: Duration = Duration::from_secs(12);
+
+impl Overlay {
+    /// A small notice at the top left for TOAST_FOR after the overlay starts: version, hotkey and every feature's
+    /// state (from the Health registry, so an error shows here too). No inputs, no focus, no mouse: the game keeps them.
+    fn toast(&mut self, ui: &Ui) {
+        if self.toast_done || host_shown() {
+            // Opening the window replaces the notice.
+            self.toast_done |= self.toast_from.is_some();
+            return;
+        }
+        let from = *self.toast_from.get_or_insert_with(Instant::now);
+        let age = from.elapsed();
+        if age >= TOAST_FOR {
+            self.toast_done = true;
+            return;
+        }
+        let alpha = (TOAST_FOR - age).as_secs_f32().min(1.0) * 0.92;
+        let _a = ui.push_style_var(hudhook::imgui::StyleVar::Alpha(alpha));
+        let key = hotkeys::text(hotkeys::get(if full_build() { hotkeys::Target::Global } else { hotkey_targets()[0] }));
+        ui.window("##gw2enhanced-toast")
+            .position([16.0, 16.0], Condition::Always)
+            .flags(
+                WindowFlags::NO_DECORATION
+                    | WindowFlags::NO_INPUTS
+                    | WindowFlags::NO_NAV
+                    | WindowFlags::NO_MOVE
+                    | WindowFlags::NO_SAVED_SETTINGS
+                    | WindowFlags::NO_FOCUS_ON_APPEARING
+                    | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS
+                    | WindowFlags::ALWAYS_AUTO_RESIZE,
+            )
+            .build(|| {
+                ui.text(format!("GW2 Enhanced {}", gw2enhanced_core::release::label()));
+                ui.text_disabled(gw2enhanced_core::trf!("{key} opens the overlay", "{key} abre o painel"));
+                ui.separator();
+                for (f, name) in log_features().into_iter().skip(1) {
+                    let (color, state) = match registry::feature_state(f.key().trim_start_matches("log_")) {
+                        None => ([0.7, 0.7, 0.7, 1.0], tr("starting...", "iniciando...").to_string()),
+                        Some(State::Ok) => ([0.4, 1.0, 0.4, 1.0], tr("working", "funcionando").to_string()),
+                        Some(State::Degraded(t)) => ([1.0, 0.85, 0.3, 1.0], format!("{}: {t}", tr("partial", "parcial"))),
+                        Some(State::Off(t)) => ([1.0, 0.4, 0.4, 1.0], format!("{}: {t}", tr("off", "desligado"))),
+                    };
+                    ui.text_colored(color, format!("{name}: {state}"));
+                }
+                let problems = registry::snapshot().iter().filter(|e| !e.state.is_ok()).count();
+                if problems > 0 {
+                    ui.text_colored(
+                        [1.0, 0.7, 0.3, 1.0],
+                        gw2enhanced_core::trf!("See the Health tab ({problems} item(s))", "Veja a aba Situação ({problems} item(ns))"),
+                    );
+                }
+            });
+    }
 }
 
 impl ImguiRenderLoop for Overlay {
@@ -322,6 +382,10 @@ impl ImguiRenderLoop for Overlay {
         // The update prompt is a window of its own, shown with the main panel closed too.
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| update::draw(ui))).is_err() {
             registry::report("update", "overlay", State::Off("update window panicked".into()));
+        }
+        // The start-up notice (like ReShade's): the mod is loaded, its hotkey, each feature's state. Never takes input.
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.toast(ui))).is_err() {
+            self.toast_from = None;
         }
         if !shown {
             return;
@@ -609,6 +673,8 @@ fn install_overlay(module: usize) {
         keys: hotkeys::Poller::new(),
         select: None,
         tab: None,
+        toast_from: None,
+        toast_done: false,
     };
     while start.elapsed() < Duration::from_secs(40) {
         let mut all = true;
