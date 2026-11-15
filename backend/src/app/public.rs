@@ -349,11 +349,13 @@ pub fn installer_asset(os: Option<&str>, user_agent: &str) -> &'static str {
 /// `GET /v1/download[?os=windows|linux|deb]`: counts (at most a few per IP per day), then redirects to the installer
 /// of the latest release.
 pub async fn download(req: &mut Request, ctx: &Ctx) -> HResult {
-    if let Ok(who) = ctx.client(req) {
-        let d = db::rate(ctx, &ratelimit::DOWNLOADS, &who.ip, 1.0).await?;
-        if d.allowed {
-            ctx.q(q::counter_increment("downloads"))?.run().await?;
-        }
+    // The count is best effort: a database error (e.g. the daily write limit) never blocks the download.
+    if let Ok(who) = ctx.client(req)
+        && let Ok(d) = db::rate(ctx, &ratelimit::DOWNLOADS, &who.ip, 1.0).await
+        && d.allowed
+        && let Ok(stmt) = ctx.q(q::counter_increment("downloads"))
+    {
+        let _ = stmt.run().await;
     }
     let url = req.url()?;
     let os = url.query_pairs().find(|(k, _)| k == "os").map(|(_, v)| v.into_owned());
