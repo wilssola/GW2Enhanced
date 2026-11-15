@@ -1,7 +1,7 @@
 //! In-game overlay (Dear ImGui via `hudhook`, same stack as GW2 Translated).
 //!
-//! - **Shift+Home** (configurable, `overlay_key`) opens/closes it; GW2 Translated uses Insert.
-//! - "Remaster ativo" toggles serving the HD pack. It applies to textures the
+//! - The window and its hotkeys belong to the GW2 Enhanced host (`enhanced/src/hotkeys.rs`).
+//! - "Textures on" toggles serving the HD pack. It applies to textures the
 //!   game loads from then on; armor composites keep their 2048 layout either way
 //!   (when off, composite pieces get a plain 2x of the original, which looks the
 //!   same as the original), so toggling never breaks the composite.
@@ -14,9 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use hudhook::imgui::{Condition, Context, Io, Ui};
 use hudhook::{ImguiRenderLoop, MessageFilter, RenderContext};
-use windows_sys::Win32::System::Threading::GetCurrentProcessId;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
-use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 use crate::log;
 use gw2enhanced_core::i18n::tr;
@@ -67,8 +65,6 @@ static KEY: AtomicU32 = AtomicU32::new(VK_HOME as u32);
 static MODS: AtomicU32 = AtomicU32::new(MOD_SHIFT);
 /// Folder with the HD pack (`pack_dir` in config.ini); empty = `GW2Remastered\pack`.
 static PACK_DIR: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
-/// The overlay is waiting for the new hotkey.
-static CAPTURING: AtomicBool = AtomicBool::new(false);
 
 /// No HD pack was found at start: the game keeps its original textures (set by `diag::start`).
 pub static NO_PACK: AtomicBool = AtomicBool::new(false);
@@ -378,14 +374,7 @@ fn colored(ui: &Ui, color: [f32; 4], text: impl AsRef<str>) {
     ui.text_wrapped(text);
 }
 
-fn game_has_focus() -> bool {
-    let mut pid = 0;
-    unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut pid) };
-    pid == unsafe { GetCurrentProcessId() }
-}
-
 pub struct Overlay {
-    key_down: bool,
     /// Text box with the pack folder (filled from the config on first use).
     path: String,
     path_ready: bool,
@@ -429,46 +418,12 @@ impl Note {
 impl Overlay {
     /// Once per frame: the hotkey, and the first-run prompt (opens the panel once when there is no pack).
     pub fn tick(&mut self) {
-        self.poll_key();
         if !self.welcomed && NO_PACK.load(Ordering::Relaxed) && !SETUP_DONE.load(Ordering::Relaxed) {
             self.welcomed = true;
             VISIBLE.store(true, Ordering::Relaxed);
         }
     }
 
-    fn poll_key(&mut self) {
-        let held = |vk: i32| unsafe { GetAsyncKeyState(vk) } as u16 & 0x8000 != 0;
-        if CAPTURING.load(Ordering::Relaxed) {
-            if !game_has_focus() {
-                return;
-            }
-            if held(0x1B) {
-                CAPTURING.store(false, Ordering::Relaxed);
-                self.key_down = true;
-                return;
-            }
-            // Anything but mouse buttons, modifiers, Esc and the Windows keys.
-            let key = (0x08..=0xFEu32).find(|&vk| !matches!(vk, 0x10..=0x12 | 0x1B | 0x5B | 0x5C | 0xA0..=0xA5) && held(vk as i32));
-            if let Some(vk) = key {
-                let m = (if held(0x10) { MOD_SHIFT } else { 0 }) | (if held(0x11) { MOD_CTRL } else { 0 }) | (if held(0x12) { MOD_ALT } else { 0 });
-                KEY.store(vk, Ordering::Relaxed);
-                MODS.store(m, Ordering::Relaxed);
-                CAPTURING.store(false, Ordering::Relaxed);
-                self.key_down = true; // the same press must not close the overlay
-                save_settings();
-                log!("overlay: hotkey set to {}", hotkey_text());
-            }
-            return;
-        }
-        let m = MODS.load(Ordering::Relaxed);
-        // modifiers must match exactly, so plain Home (game binding) never opens the overlay
-        let mods_ok = held(0x10) == (m & MOD_SHIFT != 0) && held(0x11) == (m & MOD_CTRL != 0) && held(0x12) == (m & MOD_ALT != 0);
-        let down = held(KEY.load(Ordering::Relaxed) as i32) && mods_ok;
-        if down && !self.key_down && game_has_focus() {
-            VISIBLE.fetch_xor(true, Ordering::Relaxed);
-        }
-        self.key_down = down;
-    }
 
     /// Pack folder section: text box, Browse, Apply. Also the first-run prompt.
     fn folder_section(&mut self, ui: &Ui) {
@@ -680,16 +635,6 @@ impl Overlay {
             "RAM do mod: {heap} (cache {cache}, {files} arquivos)"
         ));
         ui.separator();
-        if CAPTURING.load(Ordering::Relaxed) {
-            ui.text(tr("Press the new hotkey (Esc cancels)", "Aperte a nova tecla de atalho (Esc cancela)"));
-        } else {
-            let key = hotkey_text();
-            ui.text(trf!("Hotkey: {key}", "Tecla de atalho: {key}"));
-            ui.same_line();
-            if ui.button(tr("Change###hotkey", "Alterar###hotkey")) {
-                CAPTURING.store(true, Ordering::Relaxed);
-            }
-        }
     }
 
     fn window(&mut self, ui: &mut Ui) {
@@ -735,7 +680,7 @@ impl ImguiRenderLoop for Overlay {
 
 /// The panel, ready to be drawn by a render loop (the unified mod draws it next to the other features').
 pub fn panel() -> Overlay {
-    Overlay { key_down: false, path: String::new(), path_ready: false, welcomed: false, note: None }
+    Overlay { path: String::new(), path_ready: false, welcomed: false, note: None }
 }
 
 /// Panel waiting for the unified overlay to pick it up (when the DLL is not standalone).

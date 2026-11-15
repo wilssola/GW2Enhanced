@@ -7,6 +7,7 @@
 //! panic guard, so one that fails never stops the others. The features' panels share one overlay (one hook
 //! on `Present`; the game cannot have several).
 
+mod hotkeys;
 mod proxy;
 mod update;
 
@@ -69,6 +70,7 @@ fn guarded(name: &'static str, f: impl FnOnce() + std::panic::UnwindSafe) {
 fn init(module: usize) {
     // Before any panel exists: they all draw in the overlay language.
     i18n::init();
+    hotkeys::load(&gw2enhanced_core::settings::read());
     // Off unless log_host=1 (the features open their own logs the same way).
     if let Some(dir) = gw2enhanced_core::settings::path().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
         logs::HOST.init(&dir.join("gw2enhanced_log.txt"));
@@ -133,26 +135,75 @@ fn init(module: usize) {
     }
 }
 
-// The window's open / closed state and its hotkey belong to one feature: textures (Shift+Home, changeable in its
-// panel) when it is built in, else translation, else graphics.
+// The window's open / closed state belongs to one feature (textures when built in, else translation, else graphics);
+// the hotkeys are the host's (hotkeys.rs): a global one in the full build and one per feature.
 
-/// Reads the hotkey (and the first-run prompts) of the feature that owns the window.
+/// The hotkeys of this build: one per feature, plus the global one when there are several features.
+fn hotkey_targets() -> Vec<hotkeys::Target> {
+    let mut v = Vec::new();
+    if full_build() {
+        v.push(hotkeys::Target::Global);
+    }
+    if cfg!(feature = "translation") {
+        v.push(hotkeys::Target::Translation);
+    }
+    if cfg!(feature = "textures") {
+        v.push(hotkeys::Target::Textures);
+    }
+    if cfg!(feature = "graphics") {
+        v.push(hotkeys::Target::Graphics);
+    }
+    v
+}
+
+fn full_build() -> bool {
+    cfg!(feature = "translation") as u8 + cfg!(feature = "textures") as u8 + cfg!(feature = "graphics") as u8 > 1
+}
+
+/// The hotkeys, and the first-run prompt of the textures (opens the panel once when there is no pack).
 fn host_tick(o: &mut Overlay) {
     #[cfg(feature = "textures")]
     if let Some(p) = o.textures.as_mut() {
         p.tick();
-        return;
     }
-    #[cfg(feature = "translation")]
-    if let Some(p) = o.translated.as_mut() {
-        p.poll_key();
-        return;
+    match o.keys.poll(&hotkey_targets(), full_build()) {
+        Some(hotkeys::Action::Toggle) => host_set_visible(!host_shown()),
+        Some(hotkeys::Action::Tab(t)) => {
+            if host_shown() && o.tab == Some(t) {
+                host_set_visible(false);
+            } else {
+                host_set_visible(true);
+                o.select = Some(t);
+            }
+        }
+        None => {}
     }
-    #[cfg(feature = "graphics")]
-    if let Some(p) = o.graphics.as_mut() {
-        p.poll_key();
+}
+
+fn host_set_visible(on: bool) {
+    #[cfg(feature = "textures")]
+    gw2remastered::overlay::set_visible(on);
+    #[cfg(all(not(feature = "textures"), feature = "translation"))]
+    gw2translated::overlay::set_visible(on);
+    #[cfg(all(not(feature = "textures"), not(feature = "translation"), feature = "graphics"))]
+    gw2graphics::overlay::set_visible(on);
+    let _ = on;
+}
+
+/// A feature tab, selected for this frame when its hotkey asked for it; remembers which tab is showing.
+fn feature_tab<'a>(
+    ui: &'a Ui,
+    label: &str,
+    me: hotkeys::Target,
+    select: Option<hotkeys::Target>,
+    tab: &mut Option<hotkeys::Target>,
+) -> Option<hudhook::imgui::TabItemToken<'a>> {
+    let flags = if select == Some(me) { hudhook::imgui::TabItemFlags::SET_SELECTED } else { hudhook::imgui::TabItemFlags::empty() };
+    let t = ui.tab_item_with_flags(label, None, flags);
+    if t.is_some() {
+        *tab = Some(me);
     }
-    let _ = o;
+    t
 }
 
 fn host_shown() -> bool {
@@ -199,6 +250,11 @@ struct Overlay {
     textures: Option<gw2remastered::overlay::Overlay>,
     #[cfg(feature = "graphics")]
     graphics: Option<gw2graphics::overlay::Overlay>,
+    keys: hotkeys::Poller,
+    /// The tab a feature hotkey asked for (selected on the next frame the window is drawn).
+    select: Option<hotkeys::Target>,
+    /// The feature tab showing in the last frame (None: Version / Health).
+    tab: Option<hotkeys::Target>,
 }
 
 impl ImguiRenderLoop for Overlay {
@@ -281,30 +337,33 @@ impl ImguiRenderLoop for Overlay {
             .flags(WindowFlags::NO_COLLAPSE)
             .build(|| {
                 language_picker(ui);
+                let select = self.select.take();
+                self.tab = None;
+                let tab = &mut self.tab;
                 if let Some(_bar) = ui.tab_bar("gw2enhanced-tabs") {
                     #[cfg(feature = "translation")]
                     if let Some(o) = self.translated.as_mut()
-                        && let Some(_t) = ui.tab_item(tr("Translation###tab-translation", "Tradução###tab-translation"))
+                        && let Some(_t) = feature_tab(ui, tr("Translation###tab-translation", "Tradução###tab-translation"), hotkeys::Target::Translation, select, tab)
                         && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.body(ui))).is_err()
                     {
                         registry::report("translation", "overlay", State::Off("panel panicked".into()));
                     }
                     #[cfg(feature = "textures")]
                     if let Some(o) = self.textures.as_mut()
-                        && let Some(_t) = ui.tab_item(tr("Textures###tab-textures", "Texturas###tab-textures"))
+                        && let Some(_t) = feature_tab(ui, tr("Textures###tab-textures", "Texturas###tab-textures"), hotkeys::Target::Textures, select, tab)
                         && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.body(ui))).is_err()
                     {
                         registry::report("textures", "overlay", State::Off("panel panicked".into()));
                     }
                     #[cfg(feature = "graphics")]
                     if let Some(o) = self.graphics.as_mut()
-                        && let Some(_t) = ui.tab_item(tr("Graphics###tab-graphics", "Gráficos###tab-graphics"))
+                        && let Some(_t) = feature_tab(ui, tr("Graphics###tab-graphics", "Gráficos###tab-graphics"), hotkeys::Target::Graphics, select, tab)
                         && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.body(ui))).is_err()
                     {
                         registry::report("graphics", "overlay", State::Off("panel panicked".into()));
                     }
                     if let Some(_t) = ui.tab_item(tr("Version###tab-version", "Versão###tab-version")) {
-                        version_tab(ui);
+                        version_tab(ui, &mut self.keys);
                     }
                     if let Some(_t) = ui.tab_item(tr("Health###tab-health", "Situação###tab-health")) {
                         health(ui);
@@ -414,7 +473,7 @@ fn health(ui: &Ui) {
 
 /// Version tab: what this DLL is, its update state, the manual check and the changelog of the newest release. One page
 /// for the whole build: the full build updates GW2 Enhanced as a whole, a single-feature build only that feature.
-fn version_tab(ui: &Ui) {
+fn version_tab(ui: &Ui, keys: &mut hotkeys::Poller) {
     ui.text(gw2enhanced_core::trf!("{}: version {}", "{}: versão {}", update_target(), update::current_version()));
     let names: Vec<&str> = log_features().into_iter().skip(1).map(|(_, n)| n).collect();
     if names.len() > 1 {
@@ -427,11 +486,41 @@ fn version_tab(ui: &Ui) {
     {
         update::check_now();
     }
+    ui.separator();
+    hotkey_rows(ui, keys);
     let (version, notes) = update::release_notes();
     if !notes.is_empty() {
         ui.separator();
         ui.text(gw2enhanced_core::trf!("Changelog of {version}", "Novidades da {version}"));
         ui.child_window("##version-notes").size([0.0, 260.0]).border(true).build(|| ui.text_wrapped(&notes));
+    }
+}
+
+/// One row per hotkey of this build: the key and a Change button (then press the new combination; Esc cancels).
+fn hotkey_rows(ui: &Ui, keys: &mut hotkeys::Poller) {
+    ui.text(tr("Hotkeys", "Teclas de atalho"));
+    for t in hotkey_targets() {
+        let name = match t {
+            hotkeys::Target::Global => tr("GW2 Enhanced (window)", "GW2 Enhanced (janela)"),
+            hotkeys::Target::Translation => tr("Translation", "Tradução"),
+            hotkeys::Target::Textures => tr("Textures", "Texturas"),
+            hotkeys::Target::Graphics => tr("Graphics", "Gráficos"),
+        };
+        if keys.capturing() == Some(t) {
+            ui.text(gw2enhanced_core::trf!("{name}: press the new key (Esc cancels)", "{name}: aperte a nova tecla (Esc cancela)"));
+        } else {
+            ui.text(format!("{name}: {}", hotkeys::text(hotkeys::get(t))));
+            ui.same_line();
+            if ui.button(format!("{}###hotkey-{}", tr("Change", "Alterar"), t.ini_key())) {
+                keys.start_capture(t);
+            }
+        }
+    }
+    if full_build() {
+        dim_text(ui, tr(
+            "A feature's key opens the window on its tab; a key equal to the window's key just opens the window.",
+            "A tecla de uma função abre a janela na aba dela; uma tecla igual à da janela só abre a janela.",
+        ));
     }
 }
 
@@ -517,6 +606,9 @@ fn install_overlay(module: usize) {
         textures: None,
         #[cfg(feature = "graphics")]
         graphics: None,
+        keys: hotkeys::Poller::new(),
+        select: None,
+        tab: None,
     };
     while start.elapsed() < Duration::from_secs(40) {
         let mut all = true;

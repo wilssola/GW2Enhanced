@@ -1544,7 +1544,6 @@ impl Overlay {
             ui.same_line();
             ui.text_wrapped(&self.note);
         }
-        help(ui, &trf!("Hotkey: {}", "Tecla de atalho: {}", self.cfg.overlay_key));
     }
 }
 
