@@ -6,7 +6,12 @@
 //! ```text
 //! jobs release [--force]   build every language in LANGS (skips unchanged and pinned ones)
 //! jobs backup              export every table to backups/<timestamp>/
+//! jobs seed <dictionary.jsonl> [lang]   load the shipped dictionary into D1, a daily slice at a time
 //! ```
+//! The seed stays under the D1 Free plan's 100k rows written per day (`SEED_BUDGET`, default 75k, leaving room for the
+//! site's own writes): every index of a table counts as one more written row. Progress is kept in `kv`
+//! (`seed:{lang}` = next line, or `done`), so each run continues where the last stopped; while it is not `done`, the
+//! release build of that language waits (the mod already ships the full dictionary).
 //! Env: `CLOUDFLARE_API_TOKEN` (D1 edit + R2 edit), `CLOUDFLARE_ACCOUNT_ID`, `RELEASE_SIGNING_KEY` (release only);
 //! optional `D1_DATABASE_ID`, `R2_BUCKET`, `LANGS` (defaults: the values in wrangler.toml).
 
@@ -15,7 +20,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use gw2translated_backend::chunk::gzip;
 use gw2translated_backend::queries::{self as q, BackupTable, Q};
 use gw2translated_backend::release::{self, Builder, DictRecord, parse_ids, release_src};
-use gw2translated_backend::{manifest, time, validate};
+use gw2translated_backend::{hash, manifest, time, validate};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -243,6 +248,96 @@ fn build_release(cf: &Cf, key: &ed25519_dalek::SigningKey, lang: &str, force: bo
 }
 
 /// Same as `jobs::backup` in the Worker: every table to `backups/{timestamp}/{table}-NNN.jsonl.gz`, then `done.json`.
+/// D1 rows written by seeding one record: texts (+1 index), translations (+2), current (+2), and per game id an
+/// id_pairs row (+1).
+fn seed_cost(ids: usize) -> u64 {
+    2 + 3 + 3 + 2 * ids as u64
+}
+
+/// Records per D1 request (each is 3 statements plus one for its ids).
+const SEED_CHUNK: usize = 100;
+
+#[derive(Deserialize)]
+struct SeedLine {
+    en: String,
+    tr: String,
+    #[serde(default)]
+    ids: Vec<u32>,
+}
+
+/// The statements that insert one dictionary record as trusted and current (source `ai`, already reviewed).
+fn seed_statements(lang: &str, r: &SeedLine, now: &str) -> Vec<Value> {
+    let key = hash::text_key(&r.en);
+    let id = hash::translation_id(&key, lang, &r.tr);
+    let mut s = vec![
+        json!({"sql": "INSERT INTO texts (key, en, state, reporters, created_at, reviewed_at) VALUES (?, ?, 'trusted', 0, ?, ?)                        ON CONFLICT(key) DO UPDATE SET state = 'trusted', reviewed_at = excluded.reviewed_at WHERE state = 'pending'",
+               "params": [key, r.en, now, now]}),
+        json!({"sql": "INSERT OR IGNORE INTO translations (id, text_key, lang, tr, source, review, created_at, passed_at)                        VALUES (?, ?, ?, ?, 'ai', 'passed', ?, ?)",
+               "params": [id, key, lang, r.tr, now, now]}),
+        json!({"sql": "INSERT OR IGNORE INTO current (text_key, lang, translation_id, score, up, down, updated_at) VALUES (?, ?, ?, 0, 0, 0, ?)",
+               "params": [key, lang, id, now]}),
+    ];
+    // D1 binds at most 100 parameters per statement: 4 per pair.
+    for ids in r.ids.chunks(24) {
+        let rows = vec!["(?, ?, 'trusted', 0, ?, ?)"; ids.len()].join(", ");
+        let params: Vec<Value> = ids.iter().flat_map(|g| [json!(g), json!(key), json!(now), json!(now)]).collect();
+        s.push(json!({"sql": format!("INSERT OR IGNORE INTO id_pairs (game_id, text_key, state, reporters, created_at, reviewed_at) VALUES {rows}"),
+                      "params": params}));
+    }
+    s
+}
+
+#[derive(Deserialize)]
+struct KvValue {
+    value: String,
+}
+
+fn seed_pending(cf: &Cf, lang: &str) -> Res<bool> {
+    Ok(cf.first::<KvValue>(q::kv_get(&format!("seed:{lang}")))?.is_some_and(|v| v.value != "done"))
+}
+
+fn seed(cf: &Cf, path: &str, lang: &str, budget: u64) -> Res<String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let kv_key = format!("seed:{lang}");
+    let start = match cf.first::<KvValue>(q::kv_get(&kv_key))? {
+        Some(v) if v.value == "done" => return Ok(format!("{lang}: seed already done")),
+        Some(v) => v.value.parse::<usize>().map_err(|_| format!("bad {kv_key} value {:?}", v.value))?,
+        None => 0,
+    };
+    let now = time::rfc3339(now_ms());
+    let (mut i, mut spent, mut loaded) = (start, 0u64, 0usize);
+    while i < lines.len() {
+        let mut stmts = Vec::new();
+        let mut next = i;
+        while next < lines.len() && next - i < SEED_CHUNK {
+            let r: SeedLine = serde_json::from_str(lines[next]).map_err(|e| format!("{path}:{}: {e}", next + 1))?;
+            let cost = seed_cost(r.ids.len());
+            if spent + cost > budget {
+                break;
+            }
+            if !validate::unusable(&r.en, &r.tr) {
+                stmts.extend(seed_statements(lang, &r, &now));
+                spent += cost;
+                loaded += 1;
+            }
+            next += 1;
+        }
+        if next == i {
+            break;
+        }
+        if !stmts.is_empty() {
+            cf.d1(&json!({ "batch": stmts }))?;
+        }
+        i = next;
+        // Saved after every request, so a failed run resumes without redoing (or double counting) anything.
+        let value = if i >= lines.len() { "done".to_string() } else { i.to_string() };
+        cf.batch(vec![q::kv_put(&kv_key, &value, &now)])?;
+    }
+    let left = lines.len() - i;
+    Ok(format!("{lang}: seeded {loaded} records (lines {start}..{i} of {}, ~{spent} rows written), {left} lines left", lines.len()))
+}
+
 fn backup(cf: &Cf) -> Res<String> {
     let prefix = format!("backups/{}", time::compact(now_ms()));
     let (mut total_rows, mut total_files) = (0usize, 0usize);
@@ -288,11 +383,21 @@ fn run() -> Res<()> {
             let key = manifest::signing_key(&env("RELEASE_SIGNING_KEY", None)?)?;
             let langs = env("LANGS", Some(DEFAULT_LANGS))?;
             for lang in langs.split(',').map(str::trim).filter(|l| !l.is_empty()) {
+                if seed_pending(&cf, lang)? {
+                    println!("{lang}: waiting for the dictionary seed to finish");
+                    continue;
+                }
                 println!("{}", build_release(&cf, &key, lang, force)?);
             }
         }
         Some("backup") => println!("{}", backup(&cf)?),
-        _ => return Err("usage: jobs release [--force] | jobs backup".into()),
+        Some("seed") => {
+            let path = args.get(1).ok_or("usage: jobs seed <dictionary.jsonl> [lang]")?;
+            let lang = args.get(2).map(String::as_str).unwrap_or(DEFAULT_LANGS);
+            let budget = env("SEED_BUDGET", Some("75000"))?.parse::<u64>().map_err(|e| format!("SEED_BUDGET: {e}"))?;
+            println!("{}", seed(&cf, path, lang, budget)?);
+        }
+        _ => return Err("usage: jobs release [--force] | jobs backup | jobs seed <dictionary.jsonl> [lang]".into()),
     }
     Ok(())
 }
@@ -312,6 +417,24 @@ mod tests {
     fn object_keys_keep_slashes_and_escape_the_rest() {
         assert_eq!(object_path("releases/pt-BR/3/dictionary-000.jsonl.gz"), "releases/pt-BR/3/dictionary-000.jsonl.gz");
         assert_eq!(object_path("a b/ç?"), "a%20b/%C3%A7%3F");
+    }
+
+    #[test]
+    fn seed_statements_insert_text_translation_current_and_ids() {
+        let r = SeedLine { en: "Hello".into(), tr: "Olá".into(), ids: (1..=30).collect() };
+        let s = seed_statements("pt-BR", &r, "2026-11-15T00:00:00Z");
+        // texts, translations, current, then the 30 ids in two statements (24 + 6).
+        assert_eq!(s.len(), 5);
+        let key = hash::text_key("Hello");
+        assert_eq!(s[0]["params"][0], json!(key));
+        assert_eq!(s[1]["params"][0], json!(hash::translation_id(&key, "pt-BR", "Olá")));
+        assert_eq!(s[3]["params"].as_array().unwrap().len(), 96);
+        assert_eq!(s[4]["params"].as_array().unwrap().len(), 24);
+        for st in &s {
+            let sql = st["sql"].as_str().unwrap();
+            assert_eq!(sql.matches('?').count(), st["params"].as_array().unwrap().len(), "{sql}");
+        }
+        assert_eq!(seed_cost(30), 68);
     }
 
     #[test]

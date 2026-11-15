@@ -1,4 +1,5 @@
-# Daily backend jobs: dictionary release build, then the D1 -> R2 backup (backend/src/bin/jobs.rs).
+# Daily backend jobs: the gradual dictionary seed (until done), the dictionary release build, then the D1 -> R2 backup
+# (backend/src/bin/jobs.rs).
 # They run here instead of in the Worker because they need more CPU than a Worker gets on the Free plan.
 #
 # Secrets (environment "production"):
@@ -15,8 +16,8 @@ on:
       job:
         description: Which job to run
         type: choice
-        options: [both, release, backup]
-        default: both
+        options: [all, seed, release, backup]
+        default: all
       force:
         description: Build a release even when the content is unchanged
         type: boolean
@@ -47,12 +48,16 @@ jobs:
       # No build cache: this job holds the Cloudflare token and the signing key.
       - name: Build
         run: cargo build --locked --release --features jobs --bin jobs
+      # D1 Free allows 100k rows written per day: the shipped dictionary goes in a daily slice (SEED_BUDGET rows).
+      - name: Dictionary seed
+        if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'seed'
+        run: ./target/release/jobs seed ../translated/data/languages/pt-BR/dictionary.jsonl pt-BR
       - name: Dictionary release
-        if: github.event_name == 'schedule' || inputs.job != 'backup'
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'release') }}
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           FORCE: ${{ inputs.force && '--force' || '' }}
         run: ./target/release/jobs release $FORCE
       - name: Backup
-        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.job != 'release') }}
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'backup') }}
         run: ./target/release/jobs backup
