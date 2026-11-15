@@ -218,6 +218,7 @@ async fn route(req: &mut Request, ctx: &Ctx) -> HResult {
         (Method::Get | Method::Head, ["app.js"]) => public::asset(public::Asset::Js),
         (Method::Get | Method::Head, ["app.css"]) => public::asset(public::Asset::Css),
         (Method::Get | Method::Head, ["fonts", name]) => public::font(name),
+        (Method::Get | Method::Head, ["img", name]) => public::image(name),
         (Method::Get, ["favicon.ico"]) => Ok(Response::empty()?.with_status(204)),
         (Method::Post, ["v1", "contributions"]) => public::contributions(req, ctx).await,
         (Method::Get, ["v1", "texts"]) => public::texts(req, ctx).await,

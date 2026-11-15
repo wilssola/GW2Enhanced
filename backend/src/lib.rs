@@ -8,6 +8,7 @@ pub mod api;
 pub mod chunk;
 pub mod hash;
 pub mod headers;
+pub mod images;
 pub mod manifest;
 pub mod queries;
 pub mod ratelimit;

@@ -89,6 +89,16 @@ pub fn font(name: &str) -> HResult {
     Ok(r)
 }
 
+/// `GET /img/{name}` (see [`crate::images`]).
+pub fn image(name: &str) -> HResult {
+    let (bytes, ctype) = crate::images::image(name).ok_or_else(|| api_err(404, "not_found"))?;
+    let mut r = Response::from_bytes(bytes.to_vec())?;
+    r.headers_mut().set("content-type", ctype)?;
+    r.headers_mut().set("cache-control", "public, max-age=86400")?;
+    apply_headers(&mut r, Kind::Asset)?;
+    Ok(r)
+}
+
 /// `POST /v1/contributions`
 pub async fn contributions(req: &mut Request, ctx: &Ctx) -> HResult {
     let who = ctx.client(req)?;

@@ -7,7 +7,8 @@
 //! even if a bug slipped through.
 
 /// The site's Content Security Policy. No `'unsafe-inline'`: the JS and CSS are
-/// served as `/app.js` and `/app.css`, fonts are self-hosted under `/fonts/`.
+/// served as `/app.js` and `/app.css`, fonts and images are self-hosted under
+/// `/fonts/` and `/img/`.
 /// Turnstile needs `challenges.cloudflare.com` in `script-src` and `frame-src`
 /// (Cloudflare's Turnstile CSP reference) and `connect-src 'self'`.
 pub const CSP: &str = "default-src 'self'; \
@@ -40,7 +41,7 @@ pub enum Kind {
     Html,
     /// API JSON.
     Json,
-    /// Static file (`/app.js`, `/app.css`, fonts, release files).
+    /// Static file (`/app.js`, `/app.css`, fonts, images, release files).
     Asset,
 }
 
