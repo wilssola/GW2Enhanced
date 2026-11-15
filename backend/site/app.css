@@ -438,6 +438,10 @@ main { max-width: calc(var(--wrap) + 32px); margin: 0 auto; padding: 0 16px 64px
 .cmp:hover .cmp-knob, .cmp.dragging .cmp-knob, .cmp-wrap:focus-within .cmp-knob { transform: scale(1.12); }
 .cmp-wrap:focus-within .cmp { outline: 2px solid var(--focus); outline-offset: 3px; }
 .cmp-range { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* a single screenshot (installer): no slider, the image fills the frame */
+.cmp.plain { cursor: default; aspect-ratio: 16 / 10; }
+.cmp.plain img { width: 100%; object-fit: contain; }
+.cmp.plain .cmp-hd, .cmp.plain .cmp-line, .cmp.plain .badge { display: none; }
 .badge {
   position: absolute; top: 10px; padding: 5px 9px; color: #fff; line-height: 1; pointer-events: none;
   font: 600 .8rem/1 var(--label); letter-spacing: .14em; text-transform: uppercase;

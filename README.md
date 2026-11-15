@@ -102,6 +102,13 @@ The installer (`GW2Enhanced-Installer.exe`) is also a small launcher: it finds t
 ArenaNet client, lists the releases with their notes, downloads and installs a package with the same signature
 check as the in-game updater, and starts the game through the right store.
 
+| | |
+|---|---|
+| ![Installer home: mod status, update notice, latest release notes and the Play button](docs/images/installer-home.webp) | ![Installer packages: the seven packages with their size, the full package selected](docs/images/installer-packages.webp) |
+| ![Installer downloading and installing a new version, with the progress bar](docs/images/installer-install.webp) | ![Installer settings: game folder, update checks and launch options](docs/images/installer-settings.webp) |
+
+<sub>The installer (in Portuguese), shown with sample data.</sub>
+
 On Linux, use `GW2Enhanced-Installer-linux-amd64.AppImage` (or the `.deb`) from the release. Wine and
 Proton load their own `msimg32.dll` unless told otherwise, so the game needs the launch option
 `WINEDLLOVERRIDES="msimg32=n,b" %command%` in Steam; the installer can add it for you (with Steam closed). See

@@ -371,6 +371,13 @@
       <li class="paper reveal"><b data-i18n="inst.s2.title">Abra o jogo</b><span data-i18n="inst.s2.text">O mod começa junto com o jogo. <kbd>Shift</kbd>+<kbd>Home</kbd> abre o painel, com uma aba para cada recurso.</span></li>
       <li class="paper reveal"><b data-i18n="inst.s3.title">Escolha o que usar</b><span data-i18n="inst.s3.text">Ligue e desligue cada recurso quando quiser. Para as texturas HD, baixe também o <a href="https://www.nexusmods.com/guildwars2/mods/10" rel="noopener" data-i18n="inst.s3.link">pacote no Nexus Mods</a>.</span></li>
     </ol>
+    <div class="sub" aria-labelledby="t-inst-shots">
+      <header class="sub-head reveal">
+        <p class="kicker" data-i18n="inst.shots.kicker">O instalador</p>
+        <h3 id="t-inst-shots" data-i18n="inst.shots.title">Instala, atualiza e abre o jogo</h3>
+      </header>
+      <div class="gallery" id="gallery-instalador" data-gallery="instalador"></div>
+    </div>
     <div class="duo reveal-group">
       <div class="paper prose reveal">
         <h3 data-i18n="inst.upd.title">Atualizações automáticas</h3>
@@ -385,7 +392,7 @@
       <summary><span data-i18n="tech">Detalhes técnicos</span></summary>
       <div class="tech-body">
         <ul>
-          <li data-i18n="inst.tech.1">O mod é um único arquivo, <code>msimg32.dll</code>, colocado ao lado do <code>Gw2-64.exe</code>. Se outro mod já usa esse nome, o instalador o guarda antes. Apagar o arquivo devolve o jogo original.</li>
+          <li data-i18n="inst.tech.1">O mod é um único arquivo, <code>msimg32.dll</code>, colocado ao lado do <code>Gw2-64.exe</code>. Se outro mod já usa esse nome, o instalador avisa e pergunta antes de substituir (e guarda o arquivo dele, que volta ao desinstalar). Apagar o arquivo devolve o jogo original.</li>
           <li data-i18n="inst.tech.2">Também há pacotes avulsos: só a tradução (com o tradutor no processador, em placas NVIDIA ou em qualquer placa DirectX 12), só as texturas, só os gráficos, ou tudo junto.</li>
           <li data-i18n="inst.tech.3">Cada versão no GitHub traz a soma SHA-256 de todos os arquivos e um atestado de origem. As atualizações automáticas só são instaladas se o arquivo baixado conferir com a soma.</li>
         </ul>

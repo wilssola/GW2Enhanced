@@ -27,6 +27,10 @@ pub const IMAGES: &[(&str, &[u8])] = &[
     img!("hd-crystal-blade.jpg"),
     img!("hd-engraving.jpg"),
     img!("hd-blade.jpg"),
+    img!("installer-home.webp"),
+    img!("installer-packages.webp"),
+    img!("installer-install.webp"),
+    img!("installer-settings.webp"),
 ];
 
 /// The bytes and content type of `/img/{name}`, if it exists.

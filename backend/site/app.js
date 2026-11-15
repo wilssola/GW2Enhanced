@@ -122,6 +122,14 @@
       "img.engraving.alt": "Gravura de arma: original à esquerda, HD à direita",
       "img.blade": "Lâmina e cabo",
       "img.blade.alt": "Lâmina e cabo: original à esquerda, HD à direita",
+      "img.instHome": "Início: situação do mod, aviso de nova versão e o botão Jogar",
+      "img.instHome.alt": "Tela inicial do instalador do GW2 Enhanced, com dados de exemplo",
+      "img.instPackages": "Escolha o pacote: completo, só tradução, texturas HD ou gráficos",
+      "img.instPackages.alt": "Escolha de pacote no instalador do GW2 Enhanced",
+      "img.instInstall": "Baixa e instala, conferindo que o arquivo é oficial",
+      "img.instInstall.alt": "Instalador do GW2 Enhanced baixando uma versão",
+      "img.instSettings": "Configurações: pasta do jogo, atualizações e opções de inicialização",
+      "img.instSettings.alt": "Configurações do instalador do GW2 Enhanced",
     },
     en: {
       "err.already_voted": "You have already voted on this translation.",
@@ -216,6 +224,14 @@
       "img.engraving.alt": "Weapon engraving: original on the left, HD on the right",
       "img.blade": "Blade and hilt",
       "img.blade.alt": "Blade and hilt: original on the left, HD on the right",
+      "img.instHome": "Home: mod status, update notice and the Play button",
+      "img.instHome.alt": "GW2 Enhanced installer home screen, with sample data",
+      "img.instPackages": "Pick a package: full, translation only, HD textures or graphics",
+      "img.instPackages.alt": "Package choice in the GW2 Enhanced installer",
+      "img.instInstall": "Downloads and installs, checking the file is official",
+      "img.instInstall.alt": "GW2 Enhanced installer downloading a release",
+      "img.instSettings": "Settings: game folder, updates and launch options",
+      "img.instSettings.alt": "GW2 Enhanced installer settings",
 
       // index.html (data-i18n / data-i18n-attr)
       "meta.title": "GW2 Enhanced — Guild Wars 2 in Brazilian Portuguese, in HD and with better graphics",
@@ -367,7 +383,9 @@
       "inst.uninst.title": "Uninstall",
       "inst.uninst.text": "Open the installer and choose {0}. The game goes back to exactly the original.",
       "inst.uninst.word": "Uninstall",
-      "inst.tech.1": "The mod is a single file, {0}, placed next to {1}. If another mod already uses that name, the installer backs it up first. Deleting the file restores the original game.",
+      "inst.shots.kicker": "The installer",
+      "inst.shots.title": "Installs, updates and starts the game",
+      "inst.tech.1": "The mod is a single file, {0}, placed next to {1}. If another mod already uses that name, the installer warns and asks before replacing it (and keeps it, to put back on uninstall). Deleting the file restores the original game.",
       "inst.tech.2": "There are also standalone packages: only the translation (with the translator on the processor, on NVIDIA cards or on any DirectX 12 card), only the textures, only the graphics, or everything together.",
       "inst.tech.3": "Every version on GitHub comes with the SHA-256 checksum of all files and a provenance attestation. Automatic updates are only installed if the downloaded file matches the checksum.",
       "band.title": "Ready to play in Portuguese?",
@@ -476,7 +494,7 @@
   // text ("img.<key>", "img.<key>.alt") to STR in both languages. `gallery`
   // picks the section ("texturas" or "graficos"). Optional `before`/`after`
   // (STR keys) put labels on the left and right halves of a side-by-side
-  // image that has none.
+  // image that has none. `plain` shows a single screenshot, with no before/after slider.
   const GALLERY = [
     { gallery: "texturas", src: "/img/hd-wall.jpg", key: "wall" },
     { gallery: "texturas", src: "/img/hd-weapon.jpg", key: "weapon" },
@@ -492,6 +510,10 @@
     { gallery: "texturas", src: "/img/hd-crystal-blade.jpg", key: "crystalBlade" },
     { gallery: "texturas", src: "/img/hd-engraving.jpg", key: "engraving" },
     { gallery: "texturas", src: "/img/hd-blade.jpg", key: "blade" },
+    { gallery: "instalador", src: "/img/installer-home.webp", key: "instHome", plain: true },
+    { gallery: "instalador", src: "/img/installer-packages.webp", key: "instPackages", plain: true },
+    { gallery: "instalador", src: "/img/installer-install.webp", key: "instInstall", plain: true },
+    { gallery: "instalador", src: "/img/installer-settings.webp", key: "instSettings", plain: true },
   ];
   const caption = (g) => t("img." + g.key);
   const altText = (g) => t("img." + g.key + ".alt");
@@ -929,6 +951,7 @@
     // The two halves are separated by a 4 px gap: scale the image so one half fills the frame, and shift the HD copy
     // past the gap.
     base.addEventListener("load", () => {
+      if (current && current.plain) { base.style.width = ""; return; }
       const half = (base.naturalWidth - 4) / 2;
       if (half <= 0) return;
       base.style.width = hd.style.width = (base.naturalWidth / half) * 100 + "%";
@@ -975,6 +998,8 @@
     const show = (g, animate) => {
       current = g;
       base.src = g.src; hd.src = g.src;
+      cmp.classList.toggle("plain", !!g.plain);
+      range.disabled = !!g.plain;
       labels();
       for (const b of thumbs.children) b.setAttribute("aria-pressed", String(b.dataset.src === g.src));
       if (animate && !REDUCE) { cmp.classList.remove("cmp-swap"); void cmp.offsetWidth; cmp.classList.add("cmp-swap"); }
