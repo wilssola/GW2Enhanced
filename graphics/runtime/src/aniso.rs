@@ -35,6 +35,15 @@ pub const LEVEL_RANGE: (u32, u32) = (0, 16);
 pub const DEFAULT_LEVEL: u32 = 16;
 pub const BIAS_RANGE: (f32, f32) = (-1.0, 0.5);
 pub const DEFAULT_BIAS: f32 = 0.0;
+/// Trilinear samplers that tile (wrap / mirror) on U or V.
+pub const FILTER_TRILINEAR: u32 = 1;
+pub const FILTER_MIP_POINT: u32 = 2;
+pub const FILTER_ANISO: u32 = 4;
+/// Trilinear samplers that clamp on both U and V (only W tiles: for a 2D texture that is a clamped atlas).
+pub const FILTER_TRILINEAR_CLAMPED: u32 = 8;
+/// Trilinear samplers are left alone by default: forcing anisotropy on them drew dashed dark lines along the mesh edges of
+/// floors, walls and characters (A/B in the game: they appear with `aniso_filters=1` and not with `2`).
+pub const DEFAULT_FILTERS: u32 = FILTER_MIP_POINT | FILTER_ANISO;
 
 const FILTER_MIN_MAG_MIP_LINEAR: u32 = 0x15;
 const FILTER_MIN_MAG_LINEAR_MIP_POINT: u32 = 0x14;
@@ -60,6 +69,11 @@ static SKIP_NOMIP: AtomicU32 = AtomicU32::new(0);
 static SKIP_CLAMP: AtomicU32 = AtomicU32::new(0);
 static SKIP_KIND: AtomicU32 = AtomicU32::new(0);
 static FAILED: AtomicU32 = AtomicU32::new(0);
+/// Which engine filters may be changed (`aniso_filters`): 1 = trilinear, 2 = bilinear with point mips, 4 = anisotropic already.
+static FILTERS: AtomicU32 = AtomicU32::new(DEFAULT_FILTERS);
+/// Changed samplers logged so far (the log gets at most `MAX_LOGGED` desc lines).
+static LOGGED: AtomicU32 = AtomicU32::new(0);
+const MAX_LOGGED: u32 = 64;
 
 /// Clamps to the range (0 and 1 both mean off).
 pub fn clamp_level(v: u32) -> u32 {
@@ -86,6 +100,31 @@ pub fn set_level(v: u32) -> u32 {
     v
 }
 
+/// Sets the filter classes that may be changed (bits of `FILTER_*`, 0..15).
+pub fn set_filters(v: u32) -> u32 {
+    let v = v & 15;
+    if FILTERS.swap(v, Relaxed) != v {
+        GEN.fetch_add(1, Relaxed);
+        reset_counters();
+    }
+    v
+}
+
+pub fn filters() -> u32 {
+    FILTERS.load(Relaxed)
+}
+
+/// The `FILTER_*` class bit of an engine sampler (0 = not a world filter).
+pub fn filter_class(d: &Desc) -> u32 {
+    match d.filter {
+        FILTER_MIN_MAG_MIP_LINEAR if !tiles(d.u) && !tiles(d.v) => FILTER_TRILINEAR_CLAMPED,
+        FILTER_MIN_MAG_MIP_LINEAR => FILTER_TRILINEAR,
+        FILTER_MIN_MAG_LINEAR_MIP_POINT => FILTER_MIP_POINT,
+        FILTER_ANISOTROPIC => FILTER_ANISO,
+        _ => 0,
+    }
+}
+
 pub fn level() -> u32 {
     LEVEL.load(Relaxed)
 }
@@ -104,10 +143,11 @@ pub fn bias() -> f32 {
 }
 
 /// Applies the config at start.
-pub fn init(level: u32, bias: f32) {
+pub fn init(level: u32, bias: f32, filters: u32) {
     set_level(level);
+    set_filters(filters);
     set_bias(bias);
-    log!("aniso: configured (level {}, mip bias {})", self::level(), self::bias());
+    log!("aniso: configured (level {}, mip bias {}, filters {})", self::level(), self::bias(), self::filters());
 }
 
 /// True when anything would be substituted right now (a setting is on and the mod is not switched off).
@@ -270,7 +310,19 @@ unsafe fn evaluate(smp: Obj, level: u32, bias: f32) -> Obj {
     unsafe {
         SEEN.fetch_add(1, Relaxed);
         let d = get_desc(smp);
-        match plan(&d, level, bias) {
+        let verdict = match plan(&d, level, bias) {
+            Verdict::Change(_) if filter_class(&d) & filters() == 0 => Verdict::Same,
+            v => v,
+        };
+        if let Verdict::Change(n) = verdict
+            && LOGGED.fetch_add(1, Relaxed) < MAX_LOGGED
+        {
+            log!(
+                "aniso: sampler {:p} filter {:#x} address {}/{}/{} lod {}..{} bias {} aniso {} -> filter {:#x} aniso {} bias {}",
+                smp, d.filter, d.u, d.v, d.w, d.min_lod, d.max_lod, d.bias, d.max_aniso, n.filter, n.max_aniso, n.bias
+            );
+        }
+        match verdict {
             Verdict::Change(n) => {
                 let m = create_like(smp, &n);
                 if m.is_null() {

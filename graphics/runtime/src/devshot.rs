@@ -538,7 +538,7 @@ pub fn diff(old: &Config, new: &Config) -> Diff {
     macro_rules! live {
         ($($f:ident),*) => { $( if old.$f != new.$f { d.live.push(stringify!($f)); } )* };
     }
-    live!(enabled, paper_white_nits, peak_nits, sdr_gamma, bloom_strength, highlight_boost, ao_strength, ao_radius, halo_strength, halo_radius, ssr_strength, ssr_range, ssr_classes, ssr_smart, ssr_hue_filter, ssr_flatness, ssr_water_boost, water_depth_look, ssr_matte_cut, shafts_strength, shafts_length, contact_strength, contact_length, contact_sun, aerial_strength, aerial_distance, depth_unit, aniso_level, mip_bias, smaa, smaa_threshold, sharpen_strength, autoexp_strength, autoexp_target, autoexp_range, adapt_up, adapt_down, localtone_strength, lens_strength, lens_threshold, lens_ghost, lens_streak_length, grade_preset, grade_saturation, grade_contrast, grade_temperature, grade_tint, grade_vibrance, grade_shadows, grade_highlights, grade_lut, grade_lut_strength, fur_strength, fur_ps, fur_vs, fur_min_vcb, fur_debug, fur_uv, fur_occlusion, fur_amp, fur_scale, fur_length, fur_detail, fur_rim, fur_sss, fur_view, rim_strength, rim_width, subsurface_strength, rim_ps, rim_min_vcb, rim_debug, dev_capture_seconds, dev_compare, dev_hot_reload, debug_view, photo_hide_ui, calibration_pattern);
+    live!(enabled, paper_white_nits, peak_nits, sdr_gamma, bloom_strength, highlight_boost, ao_strength, ao_radius, halo_strength, halo_radius, ssr_strength, ssr_range, ssr_classes, ssr_smart, ssr_hue_filter, ssr_flatness, ssr_water_boost, water_depth_look, ssr_matte_cut, shafts_strength, shafts_length, contact_strength, contact_length, contact_sun, aerial_strength, aerial_distance, depth_unit, aniso_level, aniso_filters, mip_bias, smaa, smaa_threshold, sharpen_strength, autoexp_strength, autoexp_target, autoexp_range, adapt_up, adapt_down, localtone_strength, lens_strength, lens_threshold, lens_ghost, lens_streak_length, grade_preset, grade_saturation, grade_contrast, grade_temperature, grade_tint, grade_vibrance, grade_shadows, grade_highlights, grade_lut, grade_lut_strength, fur_strength, fur_ps, fur_vs, fur_min_vcb, fur_debug, fur_uv, fur_occlusion, fur_amp, fur_scale, fur_length, fur_detail, fur_rim, fur_sss, fur_view, rim_strength, rim_width, subsurface_strength, rim_ps, rim_min_vcb, rim_debug, dev_capture_seconds, dev_compare, dev_hot_reload, debug_view, photo_hide_ui, calibration_pattern);
     d.live.extend(crate::shellfur::ShellCfg::changed(&old.shell, &new.shell));
     d.live.extend(crate::toggles::Toggles::changed(&old.toggles, &new.toggles));
     if old.hdr_output != new.hdr_output {
@@ -591,6 +591,7 @@ pub fn merge(cur: &Config, old: &Config, new: &Config) -> (Config, Diff) {
             "aerial_distance" => c.aerial_distance = new.aerial_distance,
             "depth_unit" => c.depth_unit = new.depth_unit,
             "aniso_level" => c.aniso_level = new.aniso_level,
+            "aniso_filters" => c.aniso_filters = new.aniso_filters,
             "mip_bias" => c.mip_bias = new.mip_bias,
             "smaa" => c.smaa = new.smaa,
             "smaa_threshold" => c.smaa_threshold = new.smaa_threshold,
@@ -736,6 +737,9 @@ pub fn apply_live(keys: &[&str], cfg: &Config) {
     }
     if has("aniso_level") {
         crate::aniso::set_level(cfg.aniso_level);
+    }
+    if has("aniso_filters") {
+        crate::aniso::set_filters(cfg.aniso_filters);
     }
     if has("mip_bias") {
         crate::aniso::set_bias(cfg.mip_bias);
@@ -1424,6 +1428,7 @@ pub fn settings_text(label: &str, frame: u64, screen: (u32, u32), fmt: u32) -> S
     kv("aerial_distance", format!("{}", crate::aerial::distance()));
     kv("depth_unit", format!("{}", crate::aerial::unit()));
     kv("aniso_level", format!("{}", crate::aniso::level()));
+    kv("aniso_filters", format!("{}", crate::aniso::filters()));
     kv("mip_bias", format!("{}", crate::aniso::bias()));
     kv("smaa", format!("{}", crate::aa::smaa() as u8));
     kv("smaa_threshold", format!("{}", crate::aa::threshold()));

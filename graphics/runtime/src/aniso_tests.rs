@@ -156,7 +156,8 @@ fn translate_swaps_only_world_samplers_on_warp() {
     let shadow_s = sampler(&dev, D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_COMPARISON_LESS_EQUAL, f32::MAX, 1);
     let ui_s = sampler(&dev, D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_COMPARISON_ALWAYS, 0.0, 1);
 
-    let (keep_l, keep_b) = (level(), bias());
+    let (keep_l, keep_b, keep_f) = (level(), bias(), filters());
+    set_filters(DEFAULT_FILTERS | FILTER_TRILINEAR);
     set_level(16);
     set_bias(-0.3);
     let input = [world_s.as_raw(), post_s.as_raw(), point_s.as_raw(), shadow_s.as_raw(), ui_s.as_raw(), std::ptr::null_mut()];
@@ -199,6 +200,7 @@ fn translate_swaps_only_world_samplers_on_warp() {
     assert!(!unsafe { translate(input.as_ptr(), 17, &mut none) });
     assert!(!status_text().is_empty());
     set_level(keep_l);
+    set_filters(keep_f);
     set_bias(keep_b);
 }
 
@@ -207,7 +209,8 @@ fn translate_is_stable_and_bound_samplers_can_be_read_back_on_warp() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let Some((dev, ctx)) = warp() else { return };
     let w = sampler(&dev, D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_TEXTURE_ADDRESS_MIRROR, D3D11_COMPARISON_NEVER, f32::MAX, 1);
-    let (keep_l, keep_b) = (level(), bias());
+    let (keep_l, keep_b, keep_f) = (level(), bias(), filters());
+    set_filters(DEFAULT_FILTERS | FILTER_TRILINEAR);
     set_level(8);
     set_bias(0.0);
     let input = [w.as_raw()];
@@ -229,5 +232,19 @@ fn translate_is_stable_and_bound_samplers_can_be_read_back_on_warp() {
         assert_eq!((d.Filter, d.MaxAnisotropy), (D3D11_FILTER_ANISOTROPIC, 8));
     }
     set_level(keep_l);
+    set_filters(keep_f);
     set_bias(keep_b);
+}
+
+#[test]
+fn trilinear_samplers_are_left_alone_by_default() {
+    // Forced anisotropy on the engine's trilinear samplers drew dashed lines along mesh edges in the game.
+    let tri_wrap = Desc { filter: 0x15, u: 1, v: 1, w: 1, bias: 0.0, max_aniso: 0, cmp: 0, border: [0.0; 4], min_lod: 0.0, max_lod: f32::MAX };
+    let tri_clamped = Desc { u: 3, v: 3, ..tri_wrap };
+    let mip_point = Desc { filter: 0x14, ..tri_wrap };
+    assert_eq!(filter_class(&tri_wrap), FILTER_TRILINEAR);
+    assert_eq!(filter_class(&tri_clamped), FILTER_TRILINEAR_CLAMPED);
+    assert_eq!(filter_class(&mip_point), FILTER_MIP_POINT);
+    assert_eq!(DEFAULT_FILTERS & (FILTER_TRILINEAR | FILTER_TRILINEAR_CLAMPED), 0);
+    assert_ne!(DEFAULT_FILTERS & FILTER_MIP_POINT, 0);
 }

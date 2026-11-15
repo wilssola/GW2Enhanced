@@ -8,14 +8,14 @@ fn params() -> LensParams {
 
 #[test]
 fn defaults_ranges_and_nan() {
-    assert_eq!((DEFAULT_STRENGTH, DEFAULT_THRESHOLD, DEFAULT_GHOST, DEFAULT_LENGTH), (0.35, 2.5, 0.15, 1.0));
-    assert_eq!((clamp_strength(-1.0), clamp_strength(9.0), clamp_strength(f32::NAN)), (0.0, 1.0, 0.35));
-    assert_eq!((clamp_threshold(0.0), clamp_threshold(99.0), clamp_threshold(f32::NAN)), (1.2, 8.0, 2.5));
-    assert_eq!((clamp_ghost(-1.0), clamp_ghost(9.0), clamp_ghost(f32::NAN)), (0.0, 0.5, 0.15));
-    assert_eq!((clamp_length(0.0), clamp_length(9.0), clamp_length(f32::NAN)), (0.25, 2.0, 1.0));
-    assert_eq!(f32::from_bits(0x3eb3_3333), DEFAULT_STRENGTH);
-    assert_eq!(f32::from_bits(0x4020_0000), DEFAULT_THRESHOLD);
-    assert_eq!(f32::from_bits(0x3e19_999a), DEFAULT_GHOST);
+    assert_eq!((DEFAULT_STRENGTH, DEFAULT_THRESHOLD, DEFAULT_GHOST, DEFAULT_LENGTH), (0.15, 4.0, 0.05, 0.6));
+    assert_eq!((clamp_strength(-1.0), clamp_strength(9.0), clamp_strength(f32::NAN)), (0.0, 1.0, 0.15));
+    assert_eq!((clamp_threshold(0.0), clamp_threshold(99.0), clamp_threshold(f32::NAN)), (1.2, 8.0, 4.0));
+    assert_eq!((clamp_ghost(-1.0), clamp_ghost(9.0), clamp_ghost(f32::NAN)), (0.0, 0.5, 0.05));
+    assert_eq!((clamp_length(0.0), clamp_length(9.0), clamp_length(f32::NAN)), (0.25, 2.0, 0.6));
+    assert_eq!(f32::from_bits(0x3e19_999a), DEFAULT_STRENGTH);
+    assert_eq!(f32::from_bits(0x4080_0000), DEFAULT_THRESHOLD);
+    assert_eq!(f32::from_bits(0x3d4c_cccd), DEFAULT_GHOST);
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn settings_setters_clamp_and_report() {
     assert!(!on(), "strength 0 = the lens is off");
     assert_eq!(set_threshold(0.1), 1.2);
     assert_eq!(set_ghost(0.2), 0.2);
-    assert_eq!(set_streak_length(f32::NAN), 1.0);
+    assert_eq!(set_streak_length(f32::NAN), 0.6);
     set_strength(saved.0);
     set_threshold(saved.1);
     set_ghost(saved.2);

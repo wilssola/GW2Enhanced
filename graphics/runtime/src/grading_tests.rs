@@ -212,7 +212,7 @@ fn config_applies_the_preset_first_and_individual_keys_override() {
     // Defaults are neutral and the ini round trip keeps everything.
     assert!(Config::default().grade().is_neutral());
     let t = Config { grade_preset: "Soft".into(), grade_saturation: 0.9, grade_lut: "luts/a.cube".into(), grade_lut_strength: 0.5, lens_strength: 0.2, lens_ghost: 0.1, ..Config::default() }.to_ini();
-    for k in ["grade_preset=Soft", "grade_saturation=0.9", "grade_lut=luts/a.cube", "grade_lut_strength=0.5", "lens_strength=0.2", "lens_ghost=0.1", "lens_threshold=2.5", "lens_streak_length=1", "grade_contrast=1\n"] {
+    for k in ["grade_preset=Soft", "grade_saturation=0.9", "grade_lut=luts/a.cube", "grade_lut_strength=0.5", "lens_strength=0.2", "lens_ghost=0.1", "lens_threshold=4", "lens_streak_length=0.6", "grade_contrast=1\n"] {
         assert!(t.contains(k), "missing {k} in\n{t}");
     }
     let back = Config::parse(&t);
@@ -222,7 +222,7 @@ fn config_applies_the_preset_first_and_individual_keys_override() {
     assert_eq!((c.grade_saturation, c.grade_contrast, c.grade_temperature, c.grade_tint, c.grade_vibrance, c.grade_shadows, c.grade_highlights, c.grade_lut_strength), (2.0, 0.5, -1.0, 1.0, 0.0, 0.5, -0.5, 1.0));
     assert_eq!((c.lens_strength, c.lens_threshold, c.lens_ghost, c.lens_streak_length), (1.0, 1.2, 0.5, 0.25));
     let c = Config::parse("grade_saturation=nan\nlens_strength=abc\nlens_threshold=inf\ngrade_lut=a\u{7}b.cube");
-    assert_eq!((c.grade_saturation, c.lens_strength, c.lens_threshold, c.grade_lut.as_str()), (1.0, 0.35, 2.5, "ab.cube"));
+    assert_eq!((c.grade_saturation, c.lens_strength, c.lens_threshold, c.grade_lut.as_str()), (1.0, 0.15, 4.0, "ab.cube"));
     // Defaults agree with the modules.
     let d = Config::default();
     assert_eq!((d.lens_strength, d.lens_threshold, d.lens_ghost, d.lens_streak_length), (crate::lens::DEFAULT_STRENGTH, crate::lens::DEFAULT_THRESHOLD, crate::lens::DEFAULT_GHOST, crate::lens::DEFAULT_LENGTH));

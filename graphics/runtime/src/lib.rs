@@ -121,7 +121,7 @@ pub fn init() {
     ssr::set_depth_look(cfg.water_depth_look);
     ssr::set_matte_cut(cfg.ssr_matte_cut);
     shafts::init(cfg.shafts_strength, cfg.shafts_length);
-    aniso::init(cfg.aniso_level, cfg.mip_bias);
+    aniso::init(cfg.aniso_level, cfg.mip_bias, cfg.aniso_filters);
     aa::init(cfg.smaa, cfg.smaa_threshold, cfg.sharpen_strength);
     lens::set_strength(cfg.lens_strength);
     lens::set_threshold(cfg.lens_threshold);

@@ -78,6 +78,8 @@ pub struct Config {
     pub depth_unit: f32,
     /// Forced anisotropic filtering of world texture samplers: 0 or 1 = off (the engine's own samplers), 2..16 = max anisotropy (`docs/aa-aniso.md`).
     pub aniso_level: u32,
+    /// Which engine sampler filters the forced anisotropy may change (bits: 1 trilinear, 2 bilinear + point mips, 4 anisotropic already).
+    pub aniso_filters: u32,
     /// Mip LOD bias added to the same samplers (-1 sharper .. 0.5 softer; 0 = none).
     pub mip_bias: f32,
     /// Mod-owned SMAA 1x (medium, HDR-aware edges) on the 3D scene before the UI.
@@ -100,7 +102,7 @@ pub struct Config {
     pub localtone_strength: f32,
     /// Lens effects (docs/lens.md): streak / glare strength, 0 = off (bit-identical, no passes) .. 1.
     pub lens_strength: f32,
-    /// Source energy above which the lens triggers, in units of paper white of the scene BEFORE the highlight boost (2.5 = default).
+    /// Source energy above which the lens triggers, in units of paper white of the scene BEFORE the highlight boost (4 = default).
     pub lens_threshold: f32,
     /// Ghost flares of VERY bright point sources only: 0 = off .. 0.5.
     pub lens_ghost: f32,
@@ -197,11 +199,11 @@ impl Default for Config {
             paper_white_nits: 203.0,
             peak_nits: 1000.0,
             sdr_gamma: crate::output::SDR_GAMMA_DEFAULT,
-            bloom_strength: 1.0,
-            highlight_boost: 2.5,
+            bloom_strength: 0.5,
+            highlight_boost: 1.3,
             ao_strength: 1.0,
             ao_radius: 1.0,
-            halo_strength: 1.0,
+            halo_strength: crate::halo::DEFAULT_STRENGTH,
             halo_radius: 1.0,
             ssr_strength: 0.5,
             ssr_range: 1.0,
@@ -221,6 +223,7 @@ impl Default for Config {
             aerial_distance: 400.0,
             depth_unit: crate::aerial::DEFAULT_UNIT,
             aniso_level: 16,
+            aniso_filters: crate::aniso::DEFAULT_FILTERS,
             mip_bias: 0.0,
             smaa: true,
             smaa_threshold: 0.1,
@@ -231,10 +234,10 @@ impl Default for Config {
             adapt_up: 0.6,
             adapt_down: 1.8,
             localtone_strength: 0.2,
-            lens_strength: 0.35,
-            lens_threshold: 2.5,
-            lens_ghost: 0.15,
-            lens_streak_length: 1.0,
+            lens_strength: crate::lens::DEFAULT_STRENGTH,
+            lens_threshold: crate::lens::DEFAULT_THRESHOLD,
+            lens_ghost: crate::lens::DEFAULT_GHOST,
+            lens_streak_length: crate::lens::DEFAULT_LENGTH,
             grade_preset: String::new(),
             grade_saturation: 1.0,
             grade_contrast: 1.0,
@@ -400,6 +403,7 @@ impl Config {
                 "aerial_distance" => c.aerial_distance = num(v, 50.0, 5000.0, d.aerial_distance),
                 "depth_unit" => c.depth_unit = crate::aerial::clamp_unit(v.parse::<f32>().unwrap_or(f32::NAN)),
                 "aniso_level" => c.aniso_level = num(v, 0.0, 16.0, d.aniso_level as f32).round() as u32,
+                "aniso_filters" => c.aniso_filters = num(v, 0.0, 15.0, d.aniso_filters as f32).round() as u32,
                 "mip_bias" => c.mip_bias = num(v, -1.0, 0.5, d.mip_bias),
                 "smaa" => c.smaa = flag(v, d.smaa),
                 "smaa_threshold" => c.smaa_threshold = num(v, 0.02, 0.5, d.smaa_threshold),
@@ -526,7 +530,7 @@ impl Config {
                 "# Bloom strength, 1 = as the game (0..2).\n",
                 "bloom_strength={}\n",
                 "\n",
-                "# HDR highlight boost: extra intensity for light sources and bright effects above SDR white, HDR output only (1 = none, 2.5 = default, 4 = max).\n",
+                "# HDR highlight boost: extra intensity for light sources and bright effects above SDR white, HDR output only (1 = none, 1.3 = default, 4 = max).\n",
                 "highlight_boost={}\n",
                 "\n",
                 "# Ambient occlusion: strength 0..2 (1 = default, subtle; 0 turns the pass off) and radius 0.25..4 (1 = default; relative to depth).
@@ -654,8 +658,9 @@ impl Config {
 ",
                 "
 ",
-                "# Texture filtering (docs/aa-aniso.md): aniso_level 0..16 forces anisotropic filtering on the game's trilinear world samplers (16 = default, 0 or 1 = off, the game's own); mip_bias -1..0.5 is added to their mip level (0 = none, -0.3 = a little sharper). UI and post-process samplers are never touched.\n",
+                "# Texture filtering (docs/aa-aniso.md): aniso_level 0..16 forces anisotropic filtering on the game's world samplers (16 = default, 0 or 1 = off, the game's own); aniso_filters picks which ones by their engine filter (bits: 1 trilinear tiling, 2 bilinear with point mips, 4 already anisotropic, 8 trilinear clamped; 6 = default: trilinear ones drew dashed lines along mesh edges); mip_bias -1..0.5 is added to their mip level (0 = none, -0.3 = a little sharper). UI and post-process samplers are never touched.\n",
                 "aniso_level={}\n",
+                "aniso_filters={}\n",
                 "mip_bias={}\n",
                 "\n",
                 "# Anti-aliasing (docs/aa-aniso.md), on the 3D scene before the UI: smaa=1 adds an HDR-aware SMAA 1x pass (medium quality, no temporal), smaa_threshold 0.02..0.5 (0.1 = default, lower = more edges), sharpen_strength 0..1 (0.3 = default, 0 = off) is a contrast adaptive sharpen after it.\n",
@@ -676,7 +681,7 @@ impl Config {
                 "\n",
                 "# Lens effects (docs/lens.md), on the 3D scene before the UI, HDR output only: horizontal streaks and a soft glare from HDR highlights, and\n",
                 "# subtle ghost flares for VERY bright point sources only. lens_strength 0..1 (0.35 = default, 0 = off, bit-identical, no passes),\n",
-                "# lens_threshold 1.2..8 (2.5 = default: energy above this many times paper white of the scene before the highlight boost; white sand never\n",
+                "# lens_threshold 1.2..8 (4 = default: energy above this many times paper white of the scene before the highlight boost; white sand never\n",
                 "# triggers), lens_ghost 0..0.5 (0.15 = default, 0 = no ghosts), lens_streak_length 0.25..2 (1 = default). Never saturated blue, adds at most 0.6 of paper white.\n",
                 "lens_strength={}\n",
                 "lens_threshold={}\n",
@@ -718,7 +723,7 @@ impl Config {
                 "photo_key={}\n",
                 "photo_hide_ui={}\n",
             ),
-            self.enabled, hdr, fmt, self.paper_white_nits, self.peak_nits, self.bloom_strength, self.highlight_boost, self.ao_strength, self.ao_radius, self.halo_strength, self.halo_radius, self.ssr_strength, self.ssr_range, self.ssr_classes, self.ssr_smart, self.ssr_hue_filter, self.ssr_flatness, self.ssr_water_boost, self.water_depth_look, self.ssr_matte_cut, self.shafts_strength, self.shafts_length, self.contact_strength, self.contact_length, self.contact_sun, self.aerial_strength, self.aerial_distance, self.depth_unit, self.fur_strength, self.fur_ps, self.fur_vs, self.fur_min_vcb, self.fur_debug as u8, self.fur_uv, self.fur_occlusion, self.fur_amp, self.fur_scale, self.fur_length, self.fur_detail, self.fur_rim, self.fur_sss, self.rim_strength, self.rim_width, self.subsurface_strength, self.rim_ps, self.rim_min_vcb, self.rim_debug as u8, self.aniso_level, self.mip_bias, self.smaa as u8, self.smaa_threshold, self.sharpen_strength, self.autoexp_strength, self.autoexp_target, self.autoexp_range, self.adapt_up, self.adapt_down, self.localtone_strength, self.lens_strength, self.lens_threshold, self.lens_ghost, self.lens_streak_length, self.grade_preset, self.grade_saturation, self.grade_contrast, self.grade_temperature, self.grade_tint, self.grade_vibrance, self.grade_shadows, self.grade_highlights, self.grade_lut, self.grade_lut_strength, self.overlay_key, self.dev_capture_seconds, self.dev_compare as u8, self.dev_hot_reload as u8, self.photo_key, self.photo_hide_ui as u8
+            self.enabled, hdr, fmt, self.paper_white_nits, self.peak_nits, self.bloom_strength, self.highlight_boost, self.ao_strength, self.ao_radius, self.halo_strength, self.halo_radius, self.ssr_strength, self.ssr_range, self.ssr_classes, self.ssr_smart, self.ssr_hue_filter, self.ssr_flatness, self.ssr_water_boost, self.water_depth_look, self.ssr_matte_cut, self.shafts_strength, self.shafts_length, self.contact_strength, self.contact_length, self.contact_sun, self.aerial_strength, self.aerial_distance, self.depth_unit, self.fur_strength, self.fur_ps, self.fur_vs, self.fur_min_vcb, self.fur_debug as u8, self.fur_uv, self.fur_occlusion, self.fur_amp, self.fur_scale, self.fur_length, self.fur_detail, self.fur_rim, self.fur_sss, self.rim_strength, self.rim_width, self.subsurface_strength, self.rim_ps, self.rim_min_vcb, self.rim_debug as u8, self.aniso_level, self.aniso_filters, self.mip_bias, self.smaa as u8, self.smaa_threshold, self.sharpen_strength, self.autoexp_strength, self.autoexp_target, self.autoexp_range, self.adapt_up, self.adapt_down, self.localtone_strength, self.lens_strength, self.lens_threshold, self.lens_ghost, self.lens_streak_length, self.grade_preset, self.grade_saturation, self.grade_contrast, self.grade_temperature, self.grade_tint, self.grade_vibrance, self.grade_shadows, self.grade_highlights, self.grade_lut, self.grade_lut_strength, self.overlay_key, self.dev_capture_seconds, self.dev_compare as u8, self.dev_hot_reload as u8, self.photo_key, self.photo_hide_ui as u8
         )
     }
 
@@ -749,7 +754,7 @@ mod tests {
         assert_eq!(c.hdr_output, HdrOutput::Auto);
         assert_eq!(c.paper_white_nits, 203.0);
         assert_eq!(c.peak_nits, 1000.0);
-        assert_eq!(c.bloom_strength, 1.0);
+        assert_eq!(c.bloom_strength, 0.5);
         assert_eq!(c.overlay_key, "Shift+End");
     }
 
@@ -797,7 +802,7 @@ mod tests {
 
     #[test]
     fn highlight_boost_defaults_and_clamps() {
-        assert_eq!(Config::default().highlight_boost, 2.5);
+        assert_eq!(Config::default().highlight_boost, 1.3);
         assert_eq!(Config::parse("highlight_boost=9").highlight_boost, 4.0);
         assert_eq!(Config::parse("highlight_boost=0").highlight_boost, 1.0);
     }
@@ -923,8 +928,8 @@ ssr_range=nan");
     #[test]
     fn halo_defaults_parse_and_clamp() {
         let d = Config::default();
-        assert_eq!((d.halo_strength, d.halo_radius), (1.0, 1.0));
-        assert_eq!(Config::parse("").halo_strength, 1.0);
+        assert_eq!((d.halo_strength, d.halo_radius), (0.2, 1.0));
+        assert_eq!(Config::parse("").halo_strength, crate::halo::DEFAULT_STRENGTH);
         let c = Config::parse("halo_strength=1.5
 halo_radius=1.75");
         assert_eq!((c.halo_strength, c.halo_radius), (1.5, 1.75));
@@ -936,7 +941,7 @@ halo_radius=99");
         assert_eq!((c.halo_strength, c.halo_radius), (0.0, 2.0));
         let c = Config::parse("halo_strength=abc
 halo_radius=nan");
-        assert_eq!((c.halo_strength, c.halo_radius), (1.0, 1.0));
+        assert_eq!((c.halo_strength, c.halo_radius), (0.2, 1.0));
         assert_eq!(Config::parse("Halo_Strength = 0").halo_strength, 0.0);
     }
 
@@ -1206,6 +1211,7 @@ subsurface_strength=nan");
             aerial_distance: 900.0,
             depth_unit: 2500.0, // (was 1.0: an old inch-based value now reads back as the default)
             aniso_level: 8,
+            aniso_filters: 3,
             mip_bias: -0.3,
             smaa: false,
             smaa_threshold: 0.2,
@@ -1316,7 +1322,7 @@ subsurface_strength=nan");
         let p = dir.join("config.ini");
         Config::default().save(&p).unwrap();
         let text = std::fs::read_to_string(&p).unwrap();
-        for k in ["enabled=", "hdr_output=auto", "paper_white_nits=", "peak_nits=", "bloom_strength=", "ao_strength=1", "ao_radius=1", "halo_strength=1", "halo_radius=1", "ssr_strength=0.5", "ssr_range=1", "ssr_classes=7", "ssr_smart=1", "ssr_hue_filter=1", "ssr_flatness=1", "shafts_strength=0.6", "shafts_length=0.7", "contact_strength=0.5", "contact_length=1", "contact_sun=auto", "aerial_strength=0.35", "aerial_distance=400", "depth_unit=1000", "fur_strength=0", "ssr_water_boost=0.6", "rim_strength=0.4", "overlay_key=Shift+End"] {
+        for k in ["enabled=", "hdr_output=auto", "paper_white_nits=", "peak_nits=", "bloom_strength=", "ao_strength=1", "ao_radius=1", "halo_strength=0.2", "halo_radius=1", "ssr_strength=0.5", "ssr_range=1", "ssr_classes=7", "ssr_smart=1", "ssr_hue_filter=1", "ssr_flatness=1", "shafts_strength=0.6", "shafts_length=0.7", "contact_strength=0.5", "contact_length=1", "contact_sun=auto", "aerial_strength=0.35", "aerial_distance=400", "depth_unit=1000", "fur_strength=0", "ssr_water_boost=0.6", "rim_strength=0.4", "overlay_key=Shift+End"] {
             assert!(text.contains(k), "missing {k} in:\n{text}");
         }
         assert!(text.starts_with('#'));

@@ -33,7 +33,7 @@ pub const PS_UP_FINAL: &str = "ps_up_final";
 
 pub const STRENGTH_RANGE: (f32, f32) = (0.0, 2.0);
 pub const RADIUS_RANGE: (f32, f32) = (0.5, 2.0);
-pub const DEFAULT_STRENGTH: f32 = 1.0;
+pub const DEFAULT_STRENGTH: f32 = 0.2;
 pub const DEFAULT_RADIUS: f32 = 1.0;
 
 /// Weight of each upsample step at radius 1 (level 1 into 0, 2 into 1, 3 into 2). The radius multiplies them.
@@ -48,7 +48,7 @@ const R16_FLOAT: u32 = 54;
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static FAILED: AtomicBool = AtomicBool::new(false);
 static DONE: AtomicBool = AtomicBool::new(false);
-static STRENGTH: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0f32
+static STRENGTH: AtomicU32 = AtomicU32::new(0x3e4c_cccd); // 0.2f32
 static RADIUS: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0f32
 /// What happened this frame / last frame (bit flags below).
 static CUR: AtomicU8 = AtomicU8::new(0);
@@ -615,7 +615,7 @@ mod tests {
     fn clamps_and_defaults() {
         assert_eq!(clamp_strength(9.0), 2.0);
         assert_eq!(clamp_strength(-1.0), 0.0);
-        assert_eq!(clamp_strength(f32::NAN), 1.0);
+        assert_eq!(clamp_strength(f32::NAN), 0.2);
         assert_eq!(clamp_radius(0.0), 0.5);
         assert_eq!(clamp_radius(100.0), 2.0);
         assert_eq!(clamp_radius(f32::NAN), 1.0);

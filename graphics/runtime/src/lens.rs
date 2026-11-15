@@ -10,10 +10,10 @@ pub const STRENGTH_RANGE: (f32, f32) = (0.0, 1.0);
 pub const THRESHOLD_RANGE: (f32, f32) = (1.2, 8.0);
 pub const GHOST_RANGE: (f32, f32) = (0.0, 0.5);
 pub const LENGTH_RANGE: (f32, f32) = (0.25, 2.0);
-pub const DEFAULT_STRENGTH: f32 = 0.35;
-pub const DEFAULT_THRESHOLD: f32 = 2.5;
-pub const DEFAULT_GHOST: f32 = 0.15;
-pub const DEFAULT_LENGTH: f32 = 1.0;
+pub const DEFAULT_STRENGTH: f32 = 0.15;
+pub const DEFAULT_THRESHOLD: f32 = 4.0;
+pub const DEFAULT_GHOST: f32 = 0.05;
+pub const DEFAULT_LENGTH: f32 = 0.6;
 
 /// The most energy (largest linear channel, 1 = paper white) the whole lens effect adds to any pixel (asymptotically).
 pub const MAX_ADD: f32 = 0.6;
@@ -33,10 +33,10 @@ pub const TINT_TO_WARM: f32 = 0.65;
 /// A blue channel is never above this share of the largest of the other two.
 pub const BLUE_CAP: f32 = 0.85;
 
-static STRENGTH: AtomicU32 = AtomicU32::new(0x3eb3_3333); // 0.35
-static THRESHOLD: AtomicU32 = AtomicU32::new(0x4020_0000); // 2.5
-static GHOST: AtomicU32 = AtomicU32::new(0x3e19_999a); // 0.15
-static LENGTH: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0
+static STRENGTH: AtomicU32 = AtomicU32::new(0x3e19_999a); // 0.15
+static THRESHOLD: AtomicU32 = AtomicU32::new(0x4080_0000); // 4.0
+static GHOST: AtomicU32 = AtomicU32::new(0x3d4c_cccd); // 0.05
+static LENGTH: AtomicU32 = AtomicU32::new(0x3f19_999a); // 0.6
 
 fn clamp_to(v: f32, r: (f32, f32), default: f32) -> f32 {
     if v.is_nan() { default } else { v.clamp(r.0, r.1) }
