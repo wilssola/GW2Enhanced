@@ -67,8 +67,8 @@ The comparison with GW2Hook, d912pxy and the usual ReShade presets is in the
 2. Start the game. `GW2Graphics\config.ini` is created, and `GW2Graphics\gw2graphics_log.txt` when the log is on
    (`log_graphics=1` in `GW2Enhanced\config.ini`, or **Logs** in the overlay's Health tab; off by default). The
    graphics feature started if the log starts with a `GW2 Enhanced Graphics ...` line.
-3. Open the overlay and its **Graphics** tab: `Shift+Home` in the full build, `Shift+End` (`overlay_key`) in a
-   build with only the graphics feature. The overlay only appears about 8 seconds after the game starts.
+3. Open the overlay and its **Graphics** tab: `Shift+Home` (`hotkey_graphics` in `GW2Enhanced\config.ini`, also changed
+   in the Version tab). The overlay only appears about 8 seconds after the game starts.
 
 For what to check in the game see [docs/playtest.md](docs/playtest.md).
 
@@ -89,7 +89,7 @@ Also editable in the overlay (the `Save` button writes the file). Out-of-range v
 | `hdr_format` | `scrgb` | `scrgb`, `hdr10` | EXPERIMENTAL HDR10 swapchain, never with ReShade ([docs/hdr10.md](docs/hdr10.md)). Read at start |
 | `photo_key` | `Ctrl+Shift+End` | | Photo mode hotkey, same syntax ([docs/photo.md](docs/photo.md)). Read at start |
 | `photo_hide_ui` | `0` | `0`, `1` | Photo mode: save the 3D scene without the UI when possible |
-| `overlay_key` | `Shift+End` | | Overlay hotkey of a graphics-only build (in the full build the window's hotkey is the textures feature's `Shift+Home`). Modifiers (Shift, Ctrl, Alt) + key (End, Insert, F1..F24, A..Z, 0..9) |
+| `overlay_key` | `Shift+End` | | No longer used: the hotkeys are `hotkey` / `hotkey_graphics` in `GW2Enhanced\config.ini` (Version tab), `Shift+Home` by default |
 | `lens_strength` | `0.15` | 0 to 1 | Lens streak / glare ([docs/lens.md](docs/lens.md)); `0` = off |
 | `lens_threshold` | `4` | 1.2 to 8 | Light source brightness, times paper white before the highlight boost |
 | `lens_ghost` | `0.05` | 0 to 0.5 | Ghost flares of very bright sources; `0` = none |

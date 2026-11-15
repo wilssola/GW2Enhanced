@@ -13,7 +13,7 @@ What to check in the game, and what to send back. You need GW2 Enhanced with the
    - `hdr_output=on` if ReShade is present (with it, `auto` would stay SDR),
    - leave the rest at the defaults. There is no `dump_shaders` option.
 3. Start the game. `GW2Graphics\gw2graphics_log.txt` starts with a `GW2 Enhanced Graphics v...` line when the
-   graphics feature started. `Shift+Home` opens the overlay (`Shift+End` in a graphics-only build) with the
+   graphics feature started. `Shift+Home` opens the overlay with the
    **Graphics** tab, but the overlay only appears about 8 seconds after the game starts (it is installed late on
    purpose). The graphics feature runs next to the translation and HD textures features and ReShade; all of them
    must keep working, also with ReShade's menu open.

@@ -65,7 +65,7 @@ To uninstall, run the installer with `--uninstall` or delete `msimg32.dll`.
 | `remaster` | `true` | Serve the HD textures (also a toggle in the overlay) |
 | `composite_4x` | `true` | Allow 4x characters at all (`false` = 2x for everyone) |
 | `composite_4x_all` | `false` | 4x for every player on screen, not only your own (uses more memory) |
-| `overlay_key` | `Shift+Home` | Hotkey of the GW2 Enhanced overlay in every build with this feature: modifiers plus a key, or a virtual code |
+| `overlay_key` | `Shift+Home` | No longer used: the hotkeys are `hotkey` / `hotkey_textures` in `GW2Enhanced\config.ini` (Version tab), `Shift+Home` by default |
 | `pack_dir` | `GW2Remastered\pack` next to the game | Folder with the HD pack (also set in the overlay); no pack there = original textures |
 | `setup_done` | `false` | The first-run folder prompt was answered or skipped |
 | `live_reload_npc` | `true` | Reload NPCs when HD is toggled; set `false` if toggling crashes |

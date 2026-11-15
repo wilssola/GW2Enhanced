@@ -29,7 +29,7 @@ The graphics card modes need the big model, a separate package (`GW2Translated-m
 
 ## Usage
 
-- **Shift+Home** opens the GW2 Enhanced overlay, with the **Translation** tab (**Insert**, `overlay_key` below, in the Translation-only packages). While it is open, keyboard and mouse go to the overlay.
+- **Shift+Home** opens the GW2 Enhanced overlay, with the **Translation** tab (`hotkey_translation` in `GW2Enhanced\config.ini`, Version tab; `Shift+Home` by default). While it is open, keyboard and mouse go to the overlay.
 - **F10** reapplies the translation to the text already on screen.
 - `GW2Translated\gw2translated_log.txt` shows what the translation did, once its log is on (`log_translation=1` in
   `GW2Enhanced\config.ini`, or **Logs** in the overlay's Health tab; off by default).
@@ -49,7 +49,7 @@ Most of these can also be changed in the overlay.
 | `live_refresh` | `true` | Reapplies the translation to text already on screen. |
 | `refresh_key` | `0x79` | Refresh key (virtual-key code; `0x79` = F10). |
 | `overlay` | `true` | Shows the overlay. |
-| `overlay_key` | `0x2D` | Overlay key of the Translation-only packages (virtual-key code; `0x2D` = Insert). With the textures feature built in, the overlay uses its `Shift+Home`. |
+| `overlay_key` | `0x2D` | No longer used: the hotkeys are `hotkey` / `hotkey_translation` in `GW2Enhanced\config.ini` (Version tab), `Shift+Home` by default. |
 | `contribute` | `ask` | Sends game texts and local translations to improve the project (`ask`, `true`, `false`). |
 | `update_dictionary` | `true` | Downloads dictionary updates from the project's server, at most every 6 hours (`false` = only the dictionary installed with the mod). |
 | `bubble_wait` | `8` | Most extra seconds a speech bubble stays up while its translation is made (`0` = off). |

@@ -12,7 +12,7 @@ debug_compare=1            # each capture is a PAIR: mod + vanilla (0 = only the
 debug_hot_reload=1         # re-read config.ini when it changes and apply it live
 ```
 
-The overlay's Graphics tab (Shift+Home; Shift+End in a graphics-only build) has collapsing sections
+The overlay's Graphics tab (Shift+Home) has collapsing sections
 (General / HDR, Bloom + highlight, AO, Halo, Reflections, Sun shafts, Anti-aliasing & filtering, Fur, Debug); labels have their
 own room and long texts wrap. The Fur section has the full selector (list editor, preset, magenta view) and **Pick fur shaders**,
 a live table of the skinned draws with a per-group magenta highlight (see "The overlay's fur section and shader picker" in

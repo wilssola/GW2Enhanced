@@ -108,13 +108,13 @@ game's. If no feature published a panel, or hooking `Present` fails, the overlay
 keep running without it.
 
 The window is titled **GW2 Enhanced** and has a tab per built-in feature (**Translation**, **Textures**,
-**Graphics**) plus **Health**. One feature owns the hotkey and the open / closed state:
+**Graphics**) plus **Version** and **Health**. The hotkeys belong to the host (`enhanced/src/hotkeys.rs`), saved in
+`GW2Enhanced\config.ini` and changed in the Version tab; every one is `Shift+Home` by default:
 
-| Built in | Hotkey (default) | Where it is set |
+| Key | Builds | What it does |
 |---|---|---|
-| textures (also in the full build) | `Shift+Home` | `overlay_key` in `GW2Remastered\config.ini`, or the Textures tab |
-| translation, without textures | `Insert` | `overlay_key` in `GW2Translated\config.ini` |
-| graphics alone | `Shift+End` | `overlay_key` in `GW2Graphics\config.ini` |
+| `hotkey` | full build | opens / closes the window on the tab it was left on |
+| `hotkey_translation`, `hotkey_textures`, `hotkey_graphics` | every build with that feature | single-feature build: opens / closes the window; full build: opens it on that feature's tab (again on that tab: closes); equal to `hotkey`: acts as `hotkey` |
 
 The graphics feature does its per-frame work inside the render loop whether the window is open or not (it is the
 frame tick of its passes). The translation's first-run setup and the update prompt are windows of their own, shown

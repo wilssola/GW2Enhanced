@@ -92,8 +92,8 @@ in its panel).
    folder by itself. A `msimg32.dll` from another mod is backed up first, and the `version.dll` of the earlier
    separate GW2 Translated is removed (the translation now lives in `msimg32.dll`).
 3. Start the game. **Shift+Home** opens the overlay, with one tab per feature and a **Health** tab that lists every part of the
-   mod and whether it is working. (The Translation-only packages open it with **Insert**, the Graphics-only package
-   with **Shift+End**.)
+   mod and whether it is working. Hotkeys are in the **Version** tab (and `GW2Enhanced\config.ini`): one for the window and one per feature, all
+   **Shift+Home** by default; a feature's own key opens the window straight on its tab.
 
 The installer (`GW2Enhanced-Installer.exe`) is also a small launcher: it finds the game on Steam, Epic Games and the
 ArenaNet client, lists the releases with their notes, downloads and installs a package with the same signature

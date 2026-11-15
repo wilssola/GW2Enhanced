@@ -10,8 +10,7 @@ picture is dark or wrong (the log has a `WARNING` and the overlay `Final pass:` 
 
 ## 1. Check the pass structure
 
-1. Start the game, load into the world, open the overlay's **Graphics** tab (`Shift+Home`;
-   `Shift+End` in a graphics-only build), read the **Classifier** line.
+1. Start the game, load into the world, open the overlay's **Graphics** tab (`Shift+Home`), read the **Classifier** line.
    `frame matches` means the structure is still recognised. Anything else shows the reason.
 2. Click **Dump frame** in the world. It writes `GW2Graphics\frame-passes-<unix seconds>.log` (pass
    structure only, no shader lines). The dump may contain the overlay's own draw pass: it is drawn

@@ -12,7 +12,7 @@ screen) can be compared offline and the charr draws identified by their shaders 
 
 ## How to use it
 
-1. In game, with the overlay's Graphics tab open (Shift+Home; Shift+End in a graphics-only build), put a charr on screen and keep the camera still. Click **Dump frame**.
+1. In game, with the overlay's Graphics tab open (Shift+Home), put a charr on screen and keep the camera still. Click **Dump frame**.
    The click writes the usual `frame-passes-<unix>.log` and ALSO arms the draw capture for the NEXT frame. The overlay
    line `Draw capture:` says `capturing this frame (N draws so far)` and then `wrote draws-<unix>.log (N draws in pass #k, G groups)`.
    The two files are adjacent frames (the pass dump is the frame that was finishing, the draw log the one after it).
