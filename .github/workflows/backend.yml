@@ -5,7 +5,8 @@
 #                          Workers R2 Storage:Edit (template "Edit Cloudflare Workers" + D1 Edit)
 #   CLOUDFLARE_ACCOUNT_ID  3d18070b6522eece5d92058a9efa41bf (also pinned in backend/wrangler.toml)
 # Actions are pinned to commit SHAs and the deploy job has no build cache: it holds the Cloudflare token.
-# The Worker's own secrets (RELEASE_SIGNING_KEY, NVIDIA_API_KEY, ...) live in Cloudflare (`wrangler secret put`), not here.
+# The Worker's own secrets (NVIDIA_API_KEY, TURNSTILE_SECRET, ...) live in Cloudflare (`wrangler secret put`); the daily
+# release build and backup run in backend-jobs.yml.
 name: backend
 
 on:

@@ -14,16 +14,12 @@ workers_dev = true
 [build]
 command = "cargo install -q worker-build --version ~0.8 && worker-build --release"
 
-# Scheduled jobs (must match CRON_* in src/app/mod.rs):
+# Scheduled job (must match CRON_REVIEW in src/app/mod.rs):
 #   */5 * * * *  review queue (AI + reporter agreement), stats refresh
-#   0 6 * * *    dictionary release build (skipped when unchanged or pinned)
-#   30 6 * * *   D1 -> R2 backup
+# The daily dictionary release build and D1 -> R2 backup run in GitHub Actions
+# (.github/workflows/backend-jobs.yml, src/bin/jobs.rs), so the Worker fits the Free plan.
 [triggers]
-crons = ["*/5 * * * *", "0 6 * * *", "30 6 * * *"]
-
-# Release builds and backups gzip tens of MB: needs the Workers Paid plan.
-[limits]
-cpu_ms = 300000
+crons = ["*/5 * * * *"]
 
 [observability]
 enabled = true

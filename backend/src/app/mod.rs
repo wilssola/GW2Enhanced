@@ -234,10 +234,9 @@ async fn route(req: &mut Request, ctx: &Ctx) -> HResult {
     }
 }
 
-/// Cron schedules (keep in sync with `wrangler.toml`).
+/// Cron schedule (keep in sync with `wrangler.toml`). The daily release build and backup run in GitHub Actions
+/// (`src/bin/jobs.rs`): they need more CPU than a Worker gets on the Free plan.
 pub(crate) const CRON_REVIEW: &str = "*/5 * * * *";
-pub(crate) const CRON_RELEASE: &str = "0 6 * * *";
-pub(crate) const CRON_BACKUP: &str = "30 6 * * *";
 
 #[event(scheduled)]
 async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
@@ -248,12 +247,6 @@ async fn scheduled(event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
     let cron = event.cron();
     let result = match cron.as_str() {
         CRON_REVIEW => jobs::review(&ctx)
-            .await
-            .map(|r| serde_json::to_string(&r).unwrap_or_default()),
-        CRON_RELEASE => jobs::build_all_releases(&ctx, false)
-            .await
-            .map(|r| serde_json::to_string(&r).unwrap_or_default()),
-        CRON_BACKUP => jobs::backup(&ctx)
             .await
             .map(|r| serde_json::to_string(&r).unwrap_or_default()),
         other => Err(Error::RustError(format!("unknown cron {other}"))),

@@ -387,22 +387,13 @@ pub enum BuildResult {
         lang: String,
         version: u64,
     },
-    /// An admin rolled back: scheduled builds wait until an admin builds again.
-    Pinned {
-        lang: String,
-        version: i64,
-    },
 }
 
 fn pin_key(lang: &str) -> String {
     format!("release_pin:{lang}")
 }
 
-/// Version pinned by a rollback, if any.
-pub async fn pinned(ctx: &Ctx, lang: &str) -> Result<Option<i64>> {
-    Ok(db::kv_get(ctx, &pin_key(lang)).await?.and_then(|v| v.parse().ok()))
-}
-
+/// A rollback pins the language: the daily build (src/bin/jobs.rs) skips it until an admin builds again.
 pub async fn set_pin(ctx: &Ctx, lang: &str, version: Option<i64>) -> Result<()> {
     let stmt = match version {
         Some(v) => q::kv_put(&pin_key(lang), &v.to_string(), &ctx.now()),
@@ -410,22 +401,6 @@ pub async fn set_pin(ctx: &Ctx, lang: &str, version: Option<i64>) -> Result<()> 
     };
     ctx.q(stmt)?.run().await?;
     Ok(())
-}
-
-/// Scheduled build of every language (skips pinned ones).
-pub async fn build_all_releases(ctx: &Ctx, force: bool) -> Result<Vec<BuildResult>> {
-    let mut out = Vec::new();
-    for lang in ctx.langs().split(',').map(str::trim).filter(|l| !l.is_empty()) {
-        if let Some(version) = pinned(ctx, lang).await? {
-            out.push(BuildResult::Pinned {
-                lang: lang.into(),
-                version,
-            });
-            continue;
-        }
-        out.push(build_release(ctx, lang, force).await?);
-    }
-    Ok(out)
 }
 
 const RELEASE_PAGE: u64 = 5000;

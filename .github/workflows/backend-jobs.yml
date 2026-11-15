@@ -1,0 +1,58 @@
+# Daily backend jobs: dictionary release build, then the D1 -> R2 backup (backend/src/bin/jobs.rs).
+# They run here instead of in the Worker because they need more CPU than a Worker gets on the Free plan.
+#
+# Secrets (environment "production"):
+#   CLOUDFLARE_API_TOKEN   same token as the deploy (D1:Edit and Workers R2 Storage:Edit are what this uses)
+#   CLOUDFLARE_ACCOUNT_ID  3d18070b6522eece5d92058a9efa41bf
+#   RELEASE_SIGNING_KEY    the dictionary manifest signing key (same value as the Worker secret of that name)
+name: backend-jobs
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which job to run
+        type: choice
+        options: [both, release, backup]
+        default: both
+      force:
+        description: Build a release even when the content is unchanged
+        type: boolean
+        default: false
+
+concurrency:
+  group: backend-jobs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      # No build cache: this job holds the Cloudflare token and the signing key.
+      - name: Build
+        run: cargo build --locked --release --features jobs --bin jobs
+      - name: Dictionary release
+        if: github.event_name == 'schedule' || inputs.job != 'backup'
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: ./target/release/jobs release $FORCE
+      - name: Backup
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.job != 'release') }}
+        run: ./target/release/jobs backup
