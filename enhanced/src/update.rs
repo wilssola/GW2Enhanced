@@ -375,6 +375,8 @@ struct Asset {
 struct Release {
     version: String,
     assets: Vec<Asset>,
+    /// The release notes as plain text (the changelog shown in the update window and the Version tab).
+    notes: String,
 }
 
 impl Release {
@@ -408,7 +410,102 @@ fn parse_release(text: &str) -> Result<Release, String> {
                 .collect()
         })
         .unwrap_or_default();
-    Ok(Release { version, assets })
+    let notes = json.get("body").and_then(|b| b.as_str()).map(plain_release_notes).unwrap_or_default();
+    Ok(Release { version, assets, notes })
+}
+
+/// The changelog of the newest release, as plain text; empty until a check found it.
+pub fn release_notes() -> (String, String) {
+    NOTES.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// (version, plain-text notes) of the newest release seen by the last check.
+static NOTES: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
+
+/// GitHub release Markdown -> plain text for the overlay: headings and bullets kept as lines, links / emphasis / code
+/// marks / HTML removed, fenced blocks dropped, and every section whose heading mentions SHA-256 or checksums dropped
+/// (the download table and the verification steps only matter on the GitHub page; see generate_changelog.py).
+fn plain_release_notes(body: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    let mut fence = false;
+    let mut skip_level: Option<usize> = None;
+    for raw in body.lines() {
+        let line = raw.trim();
+        if line.starts_with("```") || line.starts_with("~~~") {
+            fence = !fence;
+            continue;
+        }
+        if fence {
+            continue;
+        }
+        let level = line.chars().take_while(|&c| c == '#').count();
+        let heading = (1..=6).contains(&level) && line[level..].starts_with(' ');
+        if let Some(l) = skip_level {
+            if !heading || level > l {
+                continue;
+            }
+            skip_level = None;
+        }
+        let content = if heading { line[level..].trim() } else { line };
+        let lower = content.to_ascii_lowercase();
+        if heading && (lower.contains("sha-256") || lower.contains("sha256") || lower.contains("checksum")) {
+            skip_level = Some(level);
+            continue;
+        }
+        let bullet = ["- ", "* ", "+ "].iter().find_map(|p| content.strip_prefix(p));
+        let text = plain_inline(bullet.unwrap_or(content));
+        let text = text.trim();
+        if !text.is_empty() {
+            lines.push(if bullet.is_some() { format!("\u{2022} {text}") } else { text.to_string() });
+        } else if lines.last().is_some_and(|l| !l.is_empty()) {
+            lines.push(String::new());
+        }
+    }
+    lines.join("\n").trim().to_string()
+}
+
+/// `[text](url)` -> text, `<tags>` removed, `**`, `__`, `~~` and backticks removed.
+fn plain_inline(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '!' if chars.peek() == Some(&'[') => {}
+            '[' => {
+                let mut label = String::new();
+                let mut closed = false;
+                for d in chars.by_ref() {
+                    if d == ']' {
+                        closed = true;
+                        break;
+                    }
+                    label.push(d);
+                }
+                out.push_str(&plain_inline(&label));
+                if closed && chars.peek() == Some(&'(') {
+                    for d in chars.by_ref() {
+                        if d == ')' {
+                            break;
+                        }
+                    }
+                }
+            }
+            '<' => {
+                for d in chars.by_ref() {
+                    if d == '>' {
+                        break;
+                    }
+                }
+            }
+            '*' | '`' | '~' => {}
+            '_' if chars.peek() == Some(&'_') => {
+                chars.next();
+            }
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn get(url: &str, accept: &str, api: bool) -> Result<ureq::http::Response<ureq::Body>, String> {
@@ -608,6 +705,7 @@ fn check() {
             return;
         }
     };
+    *NOTES.lock().unwrap_or_else(|e| e.into_inner()) = (release.version.clone(), release.notes.clone());
     let newer = match release_update(current_version(), &release.version) {
         Ok(n) => n,
         Err(e) => {
@@ -833,6 +931,11 @@ pub fn draw(ui: &Ui) {
                     "The game closes after the update; start it again to use the new version.",
                     "O jogo fecha depois da atualização; abra de novo para usar a nova versão.",
                 ));
+                let (nv, notes) = release_notes();
+                if nv == *version && !notes.is_empty() {
+                    ui.text(tr("What's new:", "Novidades:"));
+                    ui.child_window("##update-notes").size([0.0, 220.0]).border(true).build(|| ui.text_wrapped(&notes));
+                }
                 if ui.button(tr("Update now", "Atualizar agora")) {
                     begin_update(version.clone());
                 }
@@ -1081,6 +1184,10 @@ mod tests {
         let a = r.asset("GW2Enhanced-All-1.2.0.zip").unwrap();
         assert_eq!((a.url.as_str(), a.size), ("https://api.github.com/x/1", 42));
         assert!(parse_release("{}").is_err());
+        let notes = plain_release_notes(
+            "## Novidades\n\n- **Gráficos:** halo só em luzes ([`abc1234`](https://x/commit/abc1234))\n\n## SHA-256\n\n| a | b |\n```\nsha256sum -c\n```\n## Fim\ntexto",
+        );
+        assert_eq!(notes, "Novidades\n\n\u{2022} Gráficos: halo só em luzes (abc1234)\n\nFim\ntexto");
         assert!(parse_release("not json").is_err());
     }
 }
