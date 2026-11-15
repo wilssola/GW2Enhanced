@@ -1,3 +1,5 @@
+**English** | [Português (Brasil)](README.pt-BR.md)
+
 <p align="center"><img src="docs/images/logo.png" alt="GW2 Enhanced" width="720"></p>
 
 <h1 align="center">GW2 Enhanced</h1>
