@@ -759,6 +759,22 @@ pub fn current_delete(text_key: &str, lang: &str) -> Q {
     )
 }
 
+/// The text of the current translation of a text in a language.
+pub fn current_tr(text_key: &str, lang: &str) -> Q {
+    sqlite(
+        &Query::select()
+            .column((Translations::Table, Translations::Tr))
+            .from(Current::Table)
+            .inner_join(
+                Translations::Table,
+                Expr::col((Translations::Table, Translations::Id)).equals((Current::Table, Current::TranslationId)),
+            )
+            .and_where(Expr::col((Current::Table, Current::TextKey)).eq(text_key))
+            .and_where(Expr::col((Current::Table, Current::Lang)).eq(lang))
+            .to_owned(),
+    )
+}
+
 pub fn translation_target(id: &str) -> Q {
     sqlite(
         &Query::select()

@@ -24,6 +24,7 @@ pub enum Reject {
     Length,
     Source,
     Id,
+    LineBreaks,
 }
 
 impl Reject {
@@ -40,6 +41,7 @@ impl Reject {
             Reject::Length => "length",
             Reject::Source => "source",
             Reject::Id => "id",
+            Reject::LineBreaks => "line_breaks",
         }
     }
 }
@@ -191,6 +193,21 @@ pub fn looks_like_text(s: &str) -> bool {
     letters * 4 >= total && odd * 5 <= total && max_run <= 6
 }
 
+/// Number of line breaks of a text (`\r\n` counts once).
+pub fn line_breaks(s: &str) -> usize {
+    s.matches('\n').count() + s.matches('\r').count() - s.matches("\r\n").count()
+}
+
+/// A correction sent from the site keeps exactly the original's line breaks (the game lays the text out by them).
+pub fn check_line_breaks(en: &str, tr: &str) -> Result<(), Reject> {
+    if line_breaks(en) == line_breaks(tr) { Ok(()) } else { Err(Reject::LineBreaks) }
+}
+
+/// Two translations that differ only in spacing (ends, runs of spaces, line endings) are the same text.
+pub fn same_text(a: &str, b: &str) -> bool {
+    a.split_whitespace().eq(b.split_whitespace())
+}
+
 /// Checks a translation of `en` (from a player's PC or from the site).
 pub fn check_tr(en: &str, tr: &str) -> Result<(), Reject> {
     if tr.trim().is_empty() {
@@ -242,6 +259,21 @@ pub fn lang_allowed(lang: &str, allowed: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn corrections_keep_the_line_breaks() {
+        assert_eq!(super::check_line_breaks("A\nB", "X\r\nY"), Ok(()));
+        assert_eq!(super::check_line_breaks("A\n\nB", "X\nY"), Err(super::Reject::LineBreaks));
+        assert_eq!(super::check_line_breaks("AB", "X\nY"), Err(super::Reject::LineBreaks));
+        assert_eq!(super::check_line_breaks("AB", "XY"), Ok(()));
+    }
+
+    #[test]
+    fn same_text_ignores_only_spacing() {
+        assert!(super::same_text("Martelo de Bronze", "  Martelo  de Bronze\r\n"));
+        assert!(!super::same_text("Martelo de Bronze", "Martelo de bronze"));
+        assert!(!super::same_text("Martelo de Bronze", "Martelo de Bronze."));
+    }
+
     use super::*;
 
     #[test]

@@ -87,6 +87,10 @@
       "fix.title": "Sugerir tradução",
       "fix.note": "Mantenha as marcações do jogo iguais às do original. Sua sugestão passa por revisão antes de aparecer.",
       "fix.done": "Sugestão enviada para revisão. Obrigado!",
+      "fix.same": "Igual à tradução atual: mude o texto para enviar uma correção.",
+      "fix.breaks": "O original tem {0} quebra(s) de linha e a sua tradução tem {1}: use a mesma quantidade.",
+      "err.line_breaks": "A tradução precisa ter a mesma quantidade de quebras de linha do original.",
+      "err.same_as_current": "Essa sugestão é igual à tradução atual (ou a uma já enviada).",
       "cmp.before": "Original",
       "cmp.after": "HD",
       "cmp.range": "Comparar original e HD",
@@ -189,6 +193,10 @@
       "fix.title": "Suggest a translation",
       "fix.note": "Keep the game's markup the same as the original. Your suggestion is reviewed before it appears.",
       "fix.done": "Suggestion sent for review. Thank you!",
+      "fix.same": "Same as the current translation: change the text to send a correction.",
+      "fix.breaks": "The original has {0} line break(s) and your translation has {1}: use the same number.",
+      "err.line_breaks": "The translation must have as many line breaks as the original.",
+      "err.same_as_current": "This suggestion is the same as the current translation (or one already sent).",
       "cmp.before": "Original",
       "cmp.after": "HD",
       "cmp.range": "Compare original and HD",
@@ -922,11 +930,25 @@
     ta.value = item.current ? item.current.tr : "";
     const en = text("p", "txt", item.en);
     en.setAttribute("lang", "en");
+    // Spacing alone does not make a new translation (the server compares the same way).
+    const words = (s) => (s || "").trim().split(/\s+/).join(" ");
+    const same = () => item.current != null && words(ta.value) === words(item.current.tr);
+    // The game lays the text out by its line breaks: a correction keeps exactly as many as the original.
+    const breaks = (s) => ((s || "").replace(/\r\n?/g, "\n").match(/\n/g) || []).length;
+    const want = breaks(item.en);
+    const breaksOk = () => breaks(ta.value) === want;
+    const hint = text("p", "note warn", "");
+    hint.hidden = true;
+    ta.addEventListener("input", () => {
+      const msg = same() ? t("fix.same") : !breaksOk() ? t("fix.breaks", num(want), num(breaks(ta.value))) : "";
+      hint.textContent = msg;
+      hint.hidden = !msg;
+    });
     ask(t("fix.title"), [
       text("div", "label", t("item.en")), en,
-      text("div", "label gold", t("fix.yours")), ta,
+      text("div", "label gold", t("fix.yours")), ta, hint,
       text("p", "note", t("fix.note")),
-    ], () => ta.value.trim() !== "" && ta.value !== (item.current && item.current.tr),
+    ], () => ta.value.trim() !== "" && !same() && breaksOk(),
     async (token) => {
       await api("/v1/corrections", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text_key: item.text_key, lang: DICT_LANG, tr: ta.value, turnstile: token }) });
       toast(t("fix.done"));

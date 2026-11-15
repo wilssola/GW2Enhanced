@@ -663,3 +663,5 @@ dialog textarea {
   .paper::before { filter: none; }
   .gbtn, .play, .pg { border: 1px solid ButtonText; }
 }
+/* the correction dialog's "same as the current translation" hint */
+.note.warn { color: var(--crimson); font-weight: 600; }

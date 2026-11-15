@@ -338,9 +338,25 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
     let t = t
         .filter(|t| t.state == "trusted")
         .ok_or_else(|| api_err(404, "unknown_text"))?;
-    validate::check_tr(&t.en, &c.tr).map_err(|e| api_err(422, e.as_str()))?;
+    validate::check_tr(&t.en, &c.tr)
+        .and_then(|_| validate::check_line_breaks(&t.en, &c.tr))
+        .map_err(|e| api_err(422, e.as_str()))?;
+    // A suggestion identical to the current translation (or to one already suggested) changes nothing: refused
+    // before any rate bucket, Turnstile call or write.
+    #[derive(Deserialize)]
+    struct Cur {
+        tr: String,
+    }
+    let cur: Option<Cur> = ctx.q(q::current_tr(&c.text_key, &c.lang))?.first(None).await?;
+    if cur.is_some_and(|cur| validate::same_text(&cur.tr, &c.tr))
+        || db::translation_target(ctx, &translation_id(&c.text_key, &c.lang, &c.tr)).await?.is_some()
+    {
+        return Err(api_err(409, "same_as_current"));
+    }
     let limits = [(&ratelimit::CORRECTIONS, who.ip.as_str()), (&ratelimit::CORRECTIONS_NET, who.net.as_str())];
     let buckets = ensure_rate(ctx, &limits, 1.0).await?;
+    // As for votes: a failed attempt spends its token too.
+    ctx.batch(buckets.statements(ctx)?).await?;
     verify_turnstile(ctx, req, &c.turnstile).await?;
     ensure_writes(ctx, budget::CORRECTION_ROWS + budget::bytes_units(c.tr.len())).await?;
     let id = translation_id(&c.text_key, &c.lang, &c.tr);
@@ -354,8 +370,6 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
 
 /// `GET /v1/stats?lang=`
 pub async fn stats(req: &mut Request, ctx: &Ctx) -> HResult {
-    // As for votes: a failed attempt spends its token too.
-    ctx.batch(buckets.statements(ctx)?).await?;
     let url = req.url()?;
     let lang = url
         .query_pairs()
