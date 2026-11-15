@@ -1,4 +1,5 @@
-//! GW2 Translated backend (Cloudflare Worker).
+//! GW2 Enhanced backend (Cloudflare Worker): translation contributions, votes,
+//! dictionary releases and the project site.
 //!
 //! Pure logic lives in plain modules that build and test on the host
 //! (`cargo test`); the Worker glue (`app`, D1/R2/fetch I/O) only builds for
