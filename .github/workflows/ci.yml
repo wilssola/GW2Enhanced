@@ -1,0 +1,115 @@
+# Builds and tests the mod on every push to main and every pull request.
+#
+# Jobs run in parallel and none waits for another:
+#   build           the default workspace (`cargo build --release`: msimg32.dll with the three mods + the installer)
+#                   and the three single-mod DLLs (aliases in .cargo/config.toml)
+#   test            tests of core, translation, textures and the installer
+#   translator      the local translator (its CTranslate2 and DirectML runtimes come from translated/scripts)
+#   test-graphics   the graphics tests: ~30 min, their shaders run on WARP (no GPU on the runners)
+#   release-scripts the release-notes / SHA256SUMS.txt generator used by release.yml
+# Actions are pinned to commit SHAs. Build caches are only saved from main, so pull requests cannot fill or
+# poison them; the release workflow uses no cache at all.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build (all three mods + installer)
+        run: cargo build --release --locked
+      - name: Build (translation only)
+        run: cargo mod-translation --locked
+      - name: Build (HD textures only)
+        run: cargo mod-textures --locked
+      - name: Build (graphics only)
+        run: cargo mod-graphics --locked
+
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Tests that need the real Gw2-64.exe (GW2_EXE or re/Gw2-64.exe) skip themselves here.
+      # --release: in the debug profile gw2remastered's tests do not link (intel_tex_2's ISPC/C++ object asks for
+      # the dynamic CRT's __imp__wassert, which +crt-static does not provide).
+      - name: Tests
+        run: cargo test --release --locked -p gw2enhanced-core -p gw2translated -p gw2remastered -p gw2translated-installer
+
+  translator:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Pinned downloads, sha256-checked by the scripts (CTranslate2 wheel from PyPI, ONNX Runtime + DirectML from NuGet).
+      - name: Translator runtimes
+        shell: pwsh
+        run: |
+          ./translated/scripts/fetch-ctranslate2.ps1
+          ./translated/scripts/fetch-directml.ps1
+      - name: Build the translator
+        run: cargo build --release --locked -p gw2translated-translator
+
+  test-graphics:
+    runs-on: windows-latest
+    # Slow on purpose (shaders compiled and run on WARP); nothing waits for it.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Graphics tests
+        run: cargo test --locked -p gw2graphics
+
+  release-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Release-notes generator tests
+        env:
+          PYTHONUTF8: "1"
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'

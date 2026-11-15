@@ -1,0 +1,214 @@
+# Publishes a GitHub release with the zips of README.md "Downloads":
+#   GW2Enhanced-<Package>-<version>.zip   Package: All, Translation, Translation-CPU, Translation-CUDA,
+#                                         Translation-DirectML, Textures, Graphics (built by scripts/package.ps1)
+#   SHA256SUMS.txt                        `sha256sum` format; the in-game updater checks its download against it
+#   SHA256SUMS.txt.sig                    ed25519 signature of SHA256SUMS.txt; the updater refuses a release without it
+# plus a build provenance attestation for every zip (`gh attestation verify <zip> --repo <owner>/<repo>`).
+#
+# Needs the repository secret UPDATE_SIGNING_KEY: base64 of the 32-byte ed25519 seed whose public key the updater
+# has built in. The run fails at once without it.
+#
+# Trigger: pushing a tag v<version> (git tag v1.2.0 && git push origin v1.2.0), or running this workflow by hand
+# with a version, which creates the tag v<version> on the commit it runs on (main only) unless it already exists.
+# Not on every push to main (as Zapive does): every release asks every player in game to update and restarts the
+# game, and one release uploads several GB of zips (the CUDA ones carry cuBLAS and the big model), so a release
+# is a deliberate act. A version with a suffix (1.2.0-beta.1) is published as a prerelease, which the
+# "latest release" the updater looks at never points to.
+#
+# Supply chain: actions pinned to commit SHAs; no build cache of any kind (the job attests and publishes, a
+# poisoned cache must not reach it); every download is pinned and sha256-checked by the scripts, except the big
+# translation model, which is converted from Hugging Face at a fixed script version. The job that builds also
+# uploads the draft (the zips are several GB, too big to pass between jobs as artifacts); checkout does not keep
+# its token and only the upload step gets it. The signing key lives in a separate job (sign) that receives only
+# SHA256SUMS.txt.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the v (e.g. 1.2.0); the tag v<version> is created on main if missing"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One release at a time, never cut in half.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # creates the tag on a manual run
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      # Checked first so a missing key fails in seconds, not after the hours of building.
+      - name: Signing key present
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY != '' }}
+        run: |
+          if [ "$HAS_SIGNING_KEY" != true ]; then
+            echo "::error::secret UPDATE_SIGNING_KEY is missing: the in-game updater refuses a release whose SHA256SUMS.txt is not signed"
+            exit 1
+          fi
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v${INPUT_VERSION#v}"
+          fi
+          version="${tag#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$tag' is not v<major>.<minor>.<patch>[-pre]"
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::release $tag already exists; delete it (and its tag) to publish it again, or pick a new version"
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "tag $tag already exists: building it"
+            elif [ "$GITHUB_REF" = refs/heads/main ]; then
+              gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null
+              echo "created tag $tag on $GITHUB_SHA"
+            else
+              echo "::error::a manual release creates its tag from main only (this run is on $GITHUB_REF)"
+              exit 1
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 240
+    permissions:
+      contents: write # the release and its assets
+      id-token: write # build provenance (Sigstore)
+      attestations: write # build provenance
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      VERSION: ${{ needs.version.outputs.version }}
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      # The tag, so the build is exactly what it names; full history for the release notes.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      # uv: translated/scripts/convert-big-model.ps1 (the big model of the CUDA and DirectML modes).
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: false
+      - name: Release-notes generator tests
+        env:
+          PYTHONUTF8: "1"
+        run: python -m unittest discover -s .github/scripts -p 'test_*.py'
+      # Every package's msimg32.dll is built with GW2E_PACKAGE=<Package> and GW2E_VERSION=<version> (the in-game
+      # updater reads them); the translator's runtimes and models are fetched by translated/scripts (no Git LFS).
+      - name: Build the packages
+        shell: pwsh
+        run: ./scripts/package.ps1 -Version $env:VERSION
+      # Artifact attestations need a public repository (or GitHub Enterprise Cloud for a private one).
+      - name: Build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: dist/GW2Enhanced-*.zip
+      - name: Build provenance (skipped)
+        if: ${{ github.event.repository.private }}
+        run: >-
+          echo "::warning::no build provenance attestation: the repository is private
+          (attestations need a public repository or GitHub Enterprise Cloud)"
+      - name: Release notes and SHA256SUMS.txt
+        env:
+          PYTHONUTF8: "1"
+        run: >-
+          python .github/scripts/generate_changelog.py
+          --repository "$env:GITHUB_REPOSITORY"
+          --to-tag "$env:TAG"
+          --assets-dir dist
+          --checksums-output dist/SHA256SUMS.txt
+          --output dist/notes.md
+      # The sign job gets only this file (a few hundred bytes), never the build.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sha256sums
+          path: dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 1
+      # A draft: the updater only sees the release once the sign job has added the signature and published it.
+      - name: Upload (draft)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count=$(ls dist/GW2Enhanced-*.zip | wc -l)
+          [ "$count" -eq 7 ] || { echo "::error::expected 7 zips in dist/, found $count"; exit 1; }
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "GW2 Enhanced $TAG" --notes-file dist/notes.md \
+            dist/GW2Enhanced-*.zip dist/SHA256SUMS.txt
+
+  # Signs SHA256SUMS.txt (the in-game updater refuses a release without SHA256SUMS.txt.sig) and publishes the draft.
+  # Its own job, so UPDATE_SIGNING_KEY never shares a machine with the package build, uv or the model downloads:
+  # here only gw2enhanced-core and its locked dependencies are compiled.
+  sign:
+    needs: [version, release]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # uploads the signature, publishes the draft
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      VERSION: ${{ needs.version.outputs.version }}
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sha256sums
+          path: dist
+      # Build first, so the key is only in the environment of the step that runs the signer.
+      - name: Build the signer
+        run: cargo build --release --locked -p gw2enhanced-core --example sign_sums
+      # UPDATE_SIGNING_KEY: base64 of a 32-byte ed25519 seed. Writes dist/SHA256SUMS.txt.sig (base64 of the 64-byte
+      # signature over the exact bytes of SHA256SUMS.txt).
+      - name: Sign SHA256SUMS.txt
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: cargo run --release --locked -p gw2enhanced-core --example sign_sums -- dist/SHA256SUMS.txt
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -s dist/SHA256SUMS.txt.sig ] || { echo "::error::the signer wrote no dist/SHA256SUMS.txt.sig"; exit 1; }
+          flags=(--latest)
+          case "$VERSION" in *-*) flags=(--prerelease --latest=false) ;; esac
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/SHA256SUMS.txt.sig
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false "${flags[@]}"
