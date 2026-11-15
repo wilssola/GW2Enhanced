@@ -2,6 +2,8 @@
 name = "gw2translated"
 main = "build/index.js"
 compatibility_date = "2026-10-01"
+# Cloudflare account "GW2Enhanced" (deploys never go to another account by accident).
+account_id = "3d18070b6522eece5d92058a9efa41bf"
 
 # Served at https://gw2translated.<account-subdomain>.workers.dev
 # (workers.dev URLs always include the account subdomain).
@@ -39,7 +41,7 @@ DOWNLOAD_URL = "https://github.com/wilssola/GW2Enhanced/releases/latest"
 [[d1_databases]]
 binding = "DB"
 database_name = "gw2translated"
-database_id = "00000000-0000-0000-0000-000000000000" # replace with `wrangler d1 create` output
+database_id = "d2508cc0-12be-4668-91e9-56150402f6df"
 migrations_dir = "migrations"
 
 [[r2_buckets]]

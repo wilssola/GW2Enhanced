@@ -1,0 +1,71 @@
+# Backend (Cloudflare Worker): tests on every change, automatic deploy from main.
+#
+# Deploy needs two repository secrets:
+#   CLOUDFLARE_API_TOKEN   an API token of the "GW2Enhanced" account with Workers Scripts:Edit, D1:Edit and
+#                          Workers R2 Storage:Edit (template "Edit Cloudflare Workers" + D1 Edit)
+#   CLOUDFLARE_ACCOUNT_ID  3d18070b6522eece5d92058a9efa41bf (also pinned in backend/wrangler.toml)
+# The Worker's own secrets (RELEASE_SIGNING_KEY, NVIDIA_API_KEY, ...) live in Cloudflare (`wrangler secret put`), not here.
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: false # never cut a deploy or a migration in half
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - name: Tests (Worker logic on the host)
+        run: cargo test --locked
+      - name: Builds for the Worker (wasm32)
+        run: cargo check --locked --target wasm32-unknown-unknown
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Migrations first: a new Worker may need the new schema; a migration is written so the old Worker still works.
+      - name: Apply D1 migrations
+        run: npx -y wrangler@4 d1 migrations apply gw2translated --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy (wrangler runs worker-build)
+        run: npx -y wrangler@4 deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
