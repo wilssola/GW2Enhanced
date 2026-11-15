@@ -6,6 +6,12 @@ description = "Shared plumbing of GW2 Enhanced: locating game code across patche
 license = "MIT"
 
 [dependencies]
+# Signed updates: SHA256SUMS.txt carries an ed25519 signature (see src/signed.rs, examples/sign_sums.rs).
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast", "zeroize"] }
+base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }
+
+[dev-dependencies]
+getrandom = "0.2"

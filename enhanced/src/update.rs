@@ -51,6 +51,10 @@ const STAGE_DIR: &str = "update";
 const CLEANUP_LIST: &str = "update_cleanup.txt";
 const LOG_FILE: &str = "update_log.txt";
 const SUMS_ASSET: &str = "SHA256SUMS.txt";
+/// ed25519 signature of SHA256SUMS.txt (see `gw2enhanced_core::signed`): without a valid one nothing is installed.
+const SIG_ASSET: &str = "SHA256SUMS.txt.sig";
+/// Every asset is fetched through the GitHub API of this repository (never a url some JSON points elsewhere).
+const ASSET_URL_PREFIX: &str = "https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/";
 
 /// Size caps: the largest package (CUDA translator runtime) is well under this.
 const MAX_DOWNLOAD: u64 = 6 * 1024 * 1024 * 1024;
@@ -67,6 +71,11 @@ pub fn current_version() -> &'static str {
         .map(|v| v.trim().trim_start_matches('v'))
         .filter(|v| !v.is_empty())
         .unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
+/// The asset url is this repository's release asset API (`.../releases/assets/<numeric id>`).
+fn asset_url_ok(url: &str) -> bool {
+    url.strip_prefix(ASSET_URL_PREFIX).is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn asset_name(package: &str, version: &str) -> String {
@@ -721,6 +730,15 @@ fn apply(version: &str) -> Result<(), String> {
         .asset(SUMS_ASSET)
         .ok_or(format!("release {version} has no {SUMS_ASSET}: refusing an unverified update"))?
         .clone();
+    let sig = release
+        .asset(SIG_ASSET)
+        .ok_or(format!("release {version} has no {SIG_ASSET}: refusing an unsigned update"))?
+        .clone();
+    for a in [&asset, &sums, &sig] {
+        if !asset_url_ok(&a.url) {
+            return Err(format!("{} is not served by this repository's releases", a.name));
+        }
+    }
     DOWNLOAD_SIZE.store(asset.size, Ordering::Relaxed);
 
     // Staged inside the game folder: the same volume, so the swap is renames only.
@@ -728,10 +746,17 @@ fn apply(version: &str) -> Result<(), String> {
     let _ = fs::remove_dir_all(&stage);
     fs::create_dir_all(&stage).map_err(|e| format!("cannot write to the game folder: {e}"))?;
     let result = (|| {
-        let sums_text = {
+        let sums_bytes = {
             let mut resp = get(&sums.url, "application/octet-stream", false)?;
-            resp.body_mut().with_config().limit(1024 * 1024).read_to_string().map_err(|e| e.to_string())?
+            resp.body_mut().with_config().limit(1024 * 1024).read_to_vec().map_err(|e| e.to_string())?
         };
+        let sig_text = {
+            let mut resp = get(&sig.url, "application/octet-stream", false)?;
+            resp.body_mut().with_config().limit(4096).read_to_string().map_err(|e| e.to_string())?
+        };
+        // The signature covers the exact bytes: checked before anything in them is trusted.
+        gw2enhanced_core::signed::verify(&sums_bytes, &sig_text)?;
+        let sums_text = String::from_utf8(sums_bytes).map_err(|_| format!("{SUMS_ASSET} is not text"))?;
         let expected = expected_sum(&sums_text, &zip_name).ok_or(format!("{zip_name} is not in {SUMS_ASSET}"))?;
         let zip_path = stage.join(&zip_name);
         let actual = download_to(&asset, &zip_path)?;
@@ -929,6 +954,15 @@ mod tests {
         }
         // This build's own version is valid and never newer than itself.
         assert_eq!(release_update(current_version(), &format!("v{}", current_version())).unwrap(), None);
+    }
+
+    #[test]
+    fn asset_urls_must_be_this_repositorys_release_assets() {
+        assert!(asset_url_ok("https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/123456"));
+        assert!(!asset_url_ok("https://api.github.com/repos/someone/else/releases/assets/123456"));
+        assert!(!asset_url_ok("https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/12/../x"));
+        assert!(!asset_url_ok("https://evil.example/repos/wilssola/GW2Enhanced/releases/assets/1"));
+        assert!(!asset_url_ok("https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/"));
     }
 
     #[test]

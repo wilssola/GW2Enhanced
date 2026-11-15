@@ -13,6 +13,7 @@ pub mod module;
 pub mod pattern;
 pub mod registry;
 pub mod resolve;
+pub mod signed;
 pub mod site;
 
 pub use cache::{Cache, resolve_cached};
