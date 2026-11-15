@@ -51,6 +51,9 @@ jobs:
       # D1 Free allows 100k rows written per day: the shipped dictionary goes in a daily slice (SEED_BUDGET rows).
       - name: Dictionary seed
         if: github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'seed'
+        env:
+          # Leaves ~40k of the 100k daily writes for the site (reviews of uploads, votes, stats).
+          SEED_BUDGET: "60000"
         run: ./target/release/jobs seed ../translated/data/languages/pt-BR/dictionary.jsonl pt-BR
       - name: Dictionary release
         if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.job == 'all' || inputs.job == 'release') }}
