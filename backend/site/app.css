@@ -301,11 +301,11 @@ main { max-width: calc(var(--wrap) + 32px); margin: 0 auto; padding: 0 16px 64px
 .more-link { color: var(--crimson); font: 600 .98rem/1.2 var(--serif-display); }
 .more-link::after { content: "\2192"; display: inline-block; margin-left: 6px; transition: transform .3s var(--ease-out); }
 .feature:hover .more-link::after { transform: translateX(5px); }
-/* decorative on/off switch, same as the launcher's toggles */
-.switch { position: relative; flex: 0 0 38px; height: 20px; border-radius: 10px; background: var(--crimson); border: 1px solid #4a0708; }
-.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #f7f3ec; box-shadow: 0 1px 2px rgba(0, 0, 0, .4); transform: translateX(18px); transition: transform .3s var(--ease-out); }
-.feature:hover .switch::after { transform: translateX(0); }
-.feature:hover .switch { background: #8f8372; border-color: #5a5047; }
+/* decorative on/off switch, same as the launcher's toggles: off at rest, turns on when the card is hovered */
+.switch { position: relative; flex: 0 0 38px; height: 20px; border-radius: 10px; background: #8f8372; border: 1px solid #5a5047; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #f7f3ec; box-shadow: 0 1px 2px rgba(0, 0, 0, .4); transition: transform .3s var(--ease-out); }
+.feature:hover .switch::after, .feature:focus-within .switch::after { transform: translateX(18px); }
+.feature:hover .switch, .feature:focus-within .switch { background: var(--crimson); border-color: #4a0708; }
 .switch { transition: background .3s ease; }
 
 /* ---------- points ---------- */
