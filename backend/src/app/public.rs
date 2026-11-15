@@ -341,16 +341,14 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
     validate::check_tr(&t.en, &c.tr)
         .and_then(|_| validate::check_line_breaks(&t.en, &c.tr))
         .map_err(|e| api_err(422, e.as_str()))?;
-    // A suggestion identical to the current translation (or to one already suggested) changes nothing: refused
-    // before any rate bucket, Turnstile call or write.
+    // A suggestion identical to the current translation (public anyway) changes nothing: refused before any rate
+    // bucket, Turnstile call or write.
     #[derive(Deserialize)]
     struct Cur {
         tr: String,
     }
     let cur: Option<Cur> = ctx.q(q::current_tr(&c.text_key, &c.lang))?.first(None).await?;
-    if cur.is_some_and(|cur| validate::same_text(&cur.tr, &c.tr))
-        || db::translation_target(ctx, &translation_id(&c.text_key, &c.lang, &c.tr)).await?.is_some()
-    {
+    if cur.is_some_and(|cur| validate::same_text(&cur.tr, &c.tr)) {
         return Err(api_err(409, "same_as_current"));
     }
     let limits = [(&ratelimit::CORRECTIONS, who.ip.as_str()), (&ratelimit::CORRECTIONS_NET, who.net.as_str())];
@@ -358,8 +356,13 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
     // As for votes: a failed attempt spends its token too.
     ctx.batch(buckets.statements(ctx)?).await?;
     verify_turnstile(ctx, req, &c.turnstile).await?;
-    ensure_writes(ctx, budget::CORRECTION_ROWS + budget::bytes_units(c.tr.len())).await?;
     let id = translation_id(&c.text_key, &c.lang, &c.tr);
+    // The same text suggested before (perhaps still in review, so not public): answered like a new suggestion and
+    // nothing is written, so the answer tells nothing about suggestions in review.
+    if let Some((_, _, review)) = db::translation_target(ctx, &id).await? {
+        return json(202, &json!({ "translation_id": id, "review": review }));
+    }
+    ensure_writes(ctx, budget::CORRECTION_ROWS + budget::bytes_units(c.tr.len())).await?;
     let stmts = ctx.qs(q::correction(&id, &c.text_key, &c.lang, &c.tr, &who.ip, &ctx.now()))?;
     ctx.batch(stmts).await?;
     let (_, _, review) = db::translation_target(ctx, &id)
