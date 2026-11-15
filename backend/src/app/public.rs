@@ -287,9 +287,11 @@ pub async fn vote(req: &mut Request, ctx: &Ctx) -> HResult {
     let who = ctx.client(req)?;
     let v = VoteRequest::parse(&body(req, 8 * 1024).await?)?;
     ensure_not_banned(ctx, &who).await?;
-    // Nothing is written before the Turnstile check and the budget reservation pass.
+    // Every attempt that reaches Turnstile spends its token, failed ones too, and the bucket is stored right away so
+    // the gap between reading and storing it is one D1 round trip (a refused request still writes nothing).
     let limits = [(&ratelimit::VOTES, who.ip.as_str()), (&ratelimit::VOTES_NET, who.net.as_str())];
     let buckets = ensure_rate(ctx, &limits, 1.0).await?;
+    ctx.batch(buckets.statements(ctx)?).await?;
     verify_turnstile(ctx, req, &v.turnstile).await?;
     let Some((text_key, lang, review)) = db::translation_target(ctx, &v.translation_id).await? else {
         return Err(api_err(404, "unknown_translation"));
@@ -298,8 +300,7 @@ pub async fn vote(req: &mut Request, ctx: &Ctx) -> HResult {
         return Err(api_err(409, "not_votable"));
     }
     ensure_writes(ctx, budget::VOTE_ROWS).await?;
-    let mut stmts = buckets.statements(ctx)?;
-    stmts.push(ctx.q(q::vote_insert(&v.translation_id, &who.ip, v.value, &ctx.now()))?);
+    let stmts = vec![ctx.q(q::vote_insert(&v.translation_id, &who.ip, v.value, &ctx.now()))?];
     let res = ctx.batch(stmts).await?.pop().ok_or_else(|| api_err(500, "internal"))?;
     if res.meta()?.and_then(|m| m.changes).unwrap_or(0) == 0 {
         return Err(api_err(409, "already_voted"));
@@ -343,8 +344,7 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
     verify_turnstile(ctx, req, &c.turnstile).await?;
     ensure_writes(ctx, budget::CORRECTION_ROWS + budget::bytes_units(c.tr.len())).await?;
     let id = translation_id(&c.text_key, &c.lang, &c.tr);
-    let mut stmts = buckets.statements(ctx)?;
-    stmts.extend(ctx.qs(q::correction(&id, &c.text_key, &c.lang, &c.tr, &who.ip, &ctx.now()))?);
+    let stmts = ctx.qs(q::correction(&id, &c.text_key, &c.lang, &c.tr, &who.ip, &ctx.now()))?;
     ctx.batch(stmts).await?;
     let (_, _, review) = db::translation_target(ctx, &id)
         .await?
@@ -354,6 +354,8 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
 
 /// `GET /v1/stats?lang=`
 pub async fn stats(req: &mut Request, ctx: &Ctx) -> HResult {
+    // As for votes: a failed attempt spends its token too.
+    ctx.batch(buckets.statements(ctx)?).await?;
     let url = req.url()?;
     let lang = url
         .query_pairs()
