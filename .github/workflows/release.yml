@@ -22,7 +22,7 @@
 # only while the repository variable AUTO_RELEASE is `true` (gh variable set AUTO_RELEASE --body true), so the first
 # release waits until the build has been tested in game.
 #
-# Supply chain: actions on their major version tags; no build cache of any kind (the job attests and publishes, a
+# Supply chain: actions pinned to commit SHAs; no build cache of any kind (the job attests and publishes, a
 # poisoned cache must not reach it); every download is pinned and sha256-checked by the scripts, except the big
 # translation model, which is converted from Hugging Face at a fixed script version. The job that builds also
 # uploads the draft (the zips are several GB, too big to pass between jobs as artifacts); checkout does not keep
@@ -69,7 +69,7 @@ jobs:
             exit 1
           fi
       # Full history and tags for the automatic version (no token kept).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -153,14 +153,14 @@ jobs:
       CARGO_INCREMENTAL: 0
     steps:
       # The tag, so the build is exactly what it names; full history for the release notes.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.version.outputs.tag }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
       # uv: translated/scripts/convert-big-model.ps1 (the big model of the CUDA and DirectML modes).
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           enable-cache: false
       - name: Release-notes generator tests
@@ -175,7 +175,7 @@ jobs:
       # Artifact attestations need a public repository (or GitHub Enterprise Cloud for a private one).
       - name: Build provenance
         if: ${{ !github.event.repository.private }}
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
             dist/GW2Enhanced-*.zip
@@ -196,7 +196,7 @@ jobs:
           --checksums-output dist/SHA256SUMS.txt
           --output dist/notes.md
       # The sign job gets only this file (a few hundred bytes), never the build.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sha256sums
           path: dist/SHA256SUMS.txt
@@ -232,11 +232,11 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: 0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.version.outputs.tag }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
       - name: Tauri system libraries
         run: |
           sudo apt-get update
@@ -260,10 +260,10 @@ jobs:
           ls -l dist
       - name: Build provenance
         if: ${{ !github.event.repository.private }}
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: dist/GW2Enhanced-Installer-*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: linux-installer
           path: dist/GW2Enhanced-Installer-*
@@ -280,7 +280,7 @@ jobs:
     env:
       TAG: ${{ needs.version.outputs.tag }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: linux-installer
           path: dist
@@ -304,12 +304,12 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: 0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.version.outputs.tag }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/download-artifact@v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sha256sums
           path: dist
