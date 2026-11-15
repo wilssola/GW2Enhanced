@@ -91,7 +91,8 @@ no painel dele).
 
 1. Feche o jogo.
 2. Extraia o zip na pasta do jogo (a que tem o `Gw2-64.exe`), ou execute o instalador que ele contém, que encontra a
-   pasta sozinho. Um `msimg32.dll` de outro mod é copiado como backup antes, e o `version.dll` do antigo
+   pasta sozinho. Se outro mod já tiver um `msimg32.dll` ali, o instalador avisa e só o substitui se você escolher
+   (ele fica guardado e volta ao desinstalar). O `version.dll` do antigo
    GW2 Translated separado é removido (a tradução agora fica no `msimg32.dll`).
 3. Inicie o jogo. **Shift+Home** abre o overlay, com uma aba por recurso e uma aba **Health** que lista cada parte do
    mod e se ela está funcionando. As teclas de atalho ficam na aba **Version** (e em `GW2Enhanced\config.ini`): uma para a janela e uma por recurso, todas
