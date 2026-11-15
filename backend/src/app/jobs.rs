@@ -70,11 +70,16 @@ pub async fn review(ctx: &Ctx) -> Result<ReviewReport> {
     }
     // Housekeeping: full buckets need no row.
     ctx.q(q::rate_cleanup(ctx.now_ms - 2 * 86_400_000))?.run().await?;
+    // Counting the whole dictionary reads every row, and D1 Free allows 5M rows read per day: the stats are refreshed
+    // at most every STATS_EVERY_MS, not on every run.
     for lang in ctx.langs().split(',').map(str::trim).filter(|l| !l.is_empty()) {
-        let v = compute_stats(ctx, lang).await?;
-        ctx.q(q::kv_put(&format!("stats:{lang}"), &v.to_string(), &ctx.now()))?
-            .run()
-            .await?;
+        let fresh = cached_stats(ctx, lang)
+            .await?
+            .and_then(|v| v["updated_ms"].as_i64())
+            .is_some_and(|t| ctx.now_ms - t < STATS_EVERY_MS);
+        if !fresh {
+            store_stats(ctx, lang).await?;
+        }
     }
     Ok(rep)
 }
@@ -331,6 +336,18 @@ fn set_review(ctx: &Ctx, id: &str, review: &str, note: &str, now: &str) -> Resul
 }
 
 /// Site metrics for a language.
+/// How often the cron recounts the stats (each count reads the whole dictionary).
+const STATS_EVERY_MS: i64 = 6 * 3_600_000;
+
+/// Computes the stats and caches them in `kv`.
+pub async fn store_stats(ctx: &Ctx, lang: &str) -> Result<Value> {
+    let v = compute_stats(ctx, lang).await?;
+    ctx.q(q::kv_put(&format!("stats:{lang}"), &v.to_string(), &ctx.now()))?
+        .run()
+        .await?;
+    Ok(v)
+}
+
 pub async fn compute_stats(ctx: &Ctx, lang: &str) -> Result<Value> {
     #[derive(Deserialize)]
     struct Row {
@@ -349,22 +366,22 @@ pub async fn compute_stats(ctx: &Ctx, lang: &str) -> Result<Value> {
         perfect: 0,
         pending: 0,
     });
-    let pct = |x: i64| {
-        if r.texts == 0 {
-            0.0
-        } else {
-            (x as f64 * 10_000.0 / r.texts as f64).round() / 100.0
-        }
-    };
+    let catalog: i64 = db::kv_get(ctx, &format!("catalog:{lang}"))
+        .await?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let pct = |x: i64| crate::score::stats_pct(x, r.texts, catalog);
     Ok(json!({
         "lang": lang,
-        "texts": r.texts,
+        "texts": r.texts.max(catalog),
+        "loaded": r.texts,
         "translated": r.translated,
         "perfect": r.perfect,
         "translated_pct": pct(r.translated),
         "perfect_pct": pct(r.perfect),
         "review_queue": r.pending,
         "updated_at": ctx.now(),
+        "updated_ms": ctx.now_ms,
     }))
 }
 
@@ -588,3 +605,4 @@ pub async fn backup(ctx: &Ctx) -> Result<BackupReport> {
         .await?;
     Ok(report)
 }
+

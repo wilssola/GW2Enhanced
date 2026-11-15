@@ -306,6 +306,14 @@ fn seed(cf: &Cf, path: &str, lang: &str, budget: u64) -> Res<String> {
         None => 0,
     };
     let now = time::rfc3339(now_ms());
+    // The whole dictionary's size, so the site's percentage is over every text and not only the loaded ones; the
+    // cached stats are dropped so the next request recounts.
+    let catalog = lines
+        .iter()
+        .filter_map(|l| serde_json::from_str::<SeedLine>(l).ok())
+        .filter(|r| !validate::unusable(&r.en, &r.tr))
+        .count();
+    cf.batch(vec![q::kv_put(&format!("catalog:{lang}"), &catalog.to_string(), &now), q::kv_delete(&format!("stats:{lang}"))])?;
     let (mut i, mut spent, mut loaded) = (start, 0u64, 0usize);
     while i < lines.len() {
         let mut stmts = Vec::new();

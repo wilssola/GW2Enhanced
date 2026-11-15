@@ -280,7 +280,7 @@ pub async fn stats(req: &mut Request, ctx: &Ctx) -> HResult {
     }
     let mut v = match super::jobs::cached_stats(ctx, &lang).await? {
         Some(v) => v,
-        None => super::jobs::compute_stats(ctx, &lang).await?,
+        None => super::jobs::store_stats(ctx, &lang).await?,
     };
     v["downloads"] = json!(db::counter(ctx, "downloads").await?);
     json(200, &v)

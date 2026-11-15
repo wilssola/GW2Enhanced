@@ -108,3 +108,26 @@ mod tests {
         assert_eq!(pick_current(&v), None);
     }
 }
+
+/// The share of the game's texts that are translated: over the known texts, or over the whole shipped dictionary
+/// (`kv` `catalog:{lang}`, set by the seed job) while fewer texts than that are loaded.
+pub fn stats_pct(part: i64, texts: i64, catalog: i64) -> f64 {
+    let total = texts.max(catalog);
+    if total == 0 {
+        0.0
+    } else {
+        (part as f64 * 10_000.0 / total as f64).round() / 100.0
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::stats_pct;
+
+    #[test]
+    fn percentage_is_over_the_whole_dictionary_while_it_loads() {
+        assert_eq!(stats_pct(7351, 7351, 229_049), 3.21);
+        assert_eq!(stats_pct(10, 20, 0), 50.0);
+        assert_eq!(stats_pct(0, 0, 0), 0.0);
+    }
+}
