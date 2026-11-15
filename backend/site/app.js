@@ -42,6 +42,16 @@
     { gallery: "texturas", src: "/img/hd-weapon.jpg", alt: "Textura de arma: original à esquerda, HD à direita", caption: "Arma" },
     { gallery: "texturas", src: "/img/hd-building.jpg", alt: "Textura de construção: original à esquerda, HD à direita", caption: "Construção" },
     { gallery: "texturas", src: "/img/hd-city.jpg", alt: "Textura de cidade: original à esquerda, HD à direita", caption: "Cidade" },
+    { gallery: "texturas", src: "/img/hd-armor-leaves.jpg", alt: "Armadura de folhas: original à esquerda, HD à direita", caption: "Armadura de folhas" },
+    { gallery: "texturas", src: "/img/hd-armor-trim.jpg", alt: "Acabamento de armadura: original à esquerda, HD à direita", caption: "Acabamento de armadura" },
+    { gallery: "texturas", src: "/img/hd-creature.jpg", alt: "Criatura: original à esquerda, HD à direita", caption: "Criatura" },
+    { gallery: "texturas", src: "/img/hd-fur.jpg", alt: "Pelagem: original à esquerda, HD à direita", caption: "Pelagem" },
+    { gallery: "texturas", src: "/img/hd-leaf.jpg", alt: "Folha: original à esquerda, HD à direita", caption: "Folha" },
+    { gallery: "texturas", src: "/img/hd-wood.jpg", alt: "Madeira: original à esquerda, HD à direita", caption: "Madeira" },
+    { gallery: "texturas", src: "/img/hd-flower.jpg", alt: "Flor: original à esquerda, HD à direita", caption: "Flor" },
+    { gallery: "texturas", src: "/img/hd-crystal-blade.jpg", alt: "Lâmina de cristal: original à esquerda, HD à direita", caption: "Lâmina de cristal" },
+    { gallery: "texturas", src: "/img/hd-engraving.jpg", alt: "Gravura de arma: original à esquerda, HD à direita", caption: "Gravura de arma" },
+    { gallery: "texturas", src: "/img/hd-blade.jpg", alt: "Lâmina e cabo: original à esquerda, HD à direita", caption: "Lâmina e cabo" },
   ];
 
   /** Creates an element. `attrs` values must be constants or numbers, never API data. */

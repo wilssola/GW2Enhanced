@@ -17,6 +17,16 @@ pub const IMAGES: &[(&str, &[u8])] = &[
     img!("hd-weapon.jpg"),
     img!("hd-building.jpg"),
     img!("hd-city.jpg"),
+    img!("hd-armor-leaves.jpg"),
+    img!("hd-armor-trim.jpg"),
+    img!("hd-creature.jpg"),
+    img!("hd-fur.jpg"),
+    img!("hd-leaf.jpg"),
+    img!("hd-wood.jpg"),
+    img!("hd-flower.jpg"),
+    img!("hd-crystal-blade.jpg"),
+    img!("hd-engraving.jpg"),
+    img!("hd-blade.jpg"),
 ];
 
 /// The bytes and content type of `/img/{name}`, if it exists.
