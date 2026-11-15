@@ -10,11 +10,13 @@
 
 pub mod cache;
 pub mod i18n;
+pub mod logs;
 pub mod module;
 pub mod pattern;
 pub mod registry;
 pub mod release;
 pub mod resolve;
+pub mod settings;
 pub mod signed;
 pub mod site;
 

@@ -8,8 +8,10 @@
 //! Strings live where they are drawn, as pairs: [`tr`] for plain text and [`trf!`](crate::trf) for formatted text.
 //! Both take every language as an argument, so a string without its translation does not compile.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
+
+use crate::settings;
 
 /// A language the overlay is written in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,41 +110,15 @@ macro_rules! trf {
 
 /// `ui_language` in a `config.ini` text (`key=value` lines, `#`/`;` comments); `None` when absent or unknown.
 pub fn from_config(text: &str) -> Option<Lang> {
-    text.lines()
-        .map(str::trim)
-        .filter(|l| !l.starts_with('#') && !l.starts_with(';'))
-        .filter_map(|l| l.split_once('='))
-        .find(|(k, _)| k.trim().eq_ignore_ascii_case(KEY))
-        .and_then(|(_, v)| Lang::parse(v))
+    settings::get(text, KEY).and_then(|v| Lang::parse(&v))
 }
+
+const COMMENT: &str = "Language of the overlay: en or pt-BR (also changed in the overlay)";
 
 /// `text` with `ui_language` set to `lang`: the existing line is replaced, otherwise one is added at the end. Every
 /// other line is kept as it was.
 pub fn with_language(text: &str, lang: Lang) -> String {
-    let line = format!("{KEY}={}", lang.code());
-    let mut found = false;
-    let mut out: Vec<String> = Vec::new();
-    for l in text.lines() {
-        let t = l.trim();
-        let is_key = !t.starts_with('#')
-            && !t.starts_with(';')
-            && t.split_once('=').is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(KEY));
-        if is_key {
-            if !found {
-                out.push(line.clone());
-                found = true;
-            }
-        } else {
-            out.push(l.to_string());
-        }
-    }
-    if !found {
-        if out.is_empty() {
-            out.push("# Language of the overlay: en or pt-BR (also changed in the overlay)".into());
-        }
-        out.push(line);
-    }
-    out.join("\n") + "\n"
+    settings::with_key(text, KEY, lang.code(), Some(COMMENT))
 }
 
 /// The saved choice, else the Windows display language.
@@ -161,34 +137,20 @@ pub fn system_language() -> Lang {
     Lang::En
 }
 
-/// `GW2Enhanced\config.ini` next to the running exe.
-pub fn config_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    Some(exe.parent()?.join("GW2Enhanced").join("config.ini"))
-}
-
 /// Reads the saved choice (or the Windows language) once at start.
 pub fn init() {
-    let text = config_path().and_then(|p| std::fs::read_to_string(p).ok());
-    set(resolve(text.as_deref(), system_language()));
+    set(resolve(Some(&settings::read()), system_language()));
 }
 
 /// The player picked `lang` in the overlay: used right away and saved.
 pub fn choose(lang: Lang) -> std::io::Result<()> {
     set(lang);
-    match config_path() {
-        Some(p) => save_to(&p, lang),
-        None => Ok(()),
-    }
+    settings::save(KEY, lang.code(), Some(COMMENT))
 }
 
 /// Writes `lang` into the config file at `path` (created when missing), keeping its other lines.
 pub fn save_to(path: &Path, lang: Lang) -> std::io::Result<()> {
-    let old = std::fs::read_to_string(path).unwrap_or_default();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(path, with_language(&old, lang))
+    settings::save_to(path, KEY, lang.code(), Some(COMMENT))
 }
 
 #[cfg(test)]
@@ -233,9 +195,9 @@ mod tests {
     #[test]
     fn writing_keeps_the_other_lines() {
         let t = with_language("# comment\ncheck_updates=false\n", Lang::PtBr);
-        assert_eq!(t, "# comment\ncheck_updates=false\nui_language=pt-BR\n");
+        assert_eq!(t, format!("# comment\ncheck_updates=false\n# {COMMENT}\nui_language=pt-BR\n"));
         let t = with_language(&t, Lang::En);
-        assert_eq!(t, "# comment\ncheck_updates=false\nui_language=en\n");
+        assert_eq!(t, format!("# comment\ncheck_updates=false\n# {COMMENT}\nui_language=en\n"));
         // Duplicates collapse into one line, at the first one's place; a commented one stays a comment.
         let t = with_language("ui_language=en\n# ui_language=en\nx=1\nui_language=pt-BR\n", Lang::PtBr);
         assert_eq!(t, "ui_language=pt-BR\n# ui_language=en\nx=1\n");
