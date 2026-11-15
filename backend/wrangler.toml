@@ -32,7 +32,7 @@ REVIEW_BATCH = "200"
 TURNSTILE_SITE_KEY = "0x4AAAAAAGCQe1NPM2l91Efk"
 # Optional: only accept Turnstile tokens issued for this hostname.
 TURNSTILE_HOSTNAME = "app.gw2enhanced.workers.dev"
-DOWNLOAD_URL = "https://github.com/wilssola/GW2Enhanced/releases/latest"
+DOWNLOAD_URL = "https://github.com/wilssola/GW2Enhanced/releases/latest/download"
 
 [[d1_databases]]
 binding = "DB"

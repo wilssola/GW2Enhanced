@@ -330,7 +330,23 @@ pub async fn stats(req: &mut Request, ctx: &Ctx) -> HResult {
     json(200, &v)
 }
 
-/// `GET /v1/download`: counts (at most a few per IP per day), then redirects.
+/// The installer of the latest release for a platform: `os=windows|linux|deb`, else guessed from the User-Agent
+/// (Linux desktops get the AppImage, everyone else the Windows installer).
+pub fn installer_asset(os: Option<&str>, user_agent: &str) -> &'static str {
+    const WINDOWS: &str = "GW2Enhanced-Installer-windows-x64.exe";
+    const APPIMAGE: &str = "GW2Enhanced-Installer-linux-amd64.AppImage";
+    const DEB: &str = "GW2Enhanced-Installer-linux-amd64.deb";
+    match os {
+        Some("windows") => WINDOWS,
+        Some("linux") => APPIMAGE,
+        Some("deb") => DEB,
+        _ if user_agent.contains("Linux") && !user_agent.contains("Android") => APPIMAGE,
+        _ => WINDOWS,
+    }
+}
+
+/// `GET /v1/download[?os=windows|linux|deb]`: counts (at most a few per IP per day), then redirects to the installer
+/// of the latest release.
 pub async fn download(req: &mut Request, ctx: &Ctx) -> HResult {
     if let Ok(who) = ctx.client(req) {
         let d = db::rate(ctx, &ratelimit::DOWNLOADS, &who.ip, 1.0).await?;
@@ -338,10 +354,14 @@ pub async fn download(req: &mut Request, ctx: &Ctx) -> HResult {
             ctx.q(q::counter_increment("downloads"))?.run().await?;
         }
     }
-    let target = ctx.var(
+    let url = req.url()?;
+    let os = url.query_pairs().find(|(k, _)| k == "os").map(|(_, v)| v.into_owned());
+    let ua = req.headers().get("user-agent").ok().flatten().unwrap_or_default();
+    let base = ctx.var(
         "DOWNLOAD_URL",
-        "https://github.com/wilssola/GW2Enhanced/releases/latest",
+        "https://github.com/wilssola/GW2Enhanced/releases/latest/download",
     );
+    let target = format!("{}/{}", base.trim_end_matches('/'), installer_asset(os.as_deref(), &ua));
     let mut r = Response::redirect_with_status(Url::parse(&target).map_err(Error::from)?, 302)?;
     r.headers_mut().set("cache-control", "no-store")?;
     apply_headers(&mut r, Kind::Asset)?;
