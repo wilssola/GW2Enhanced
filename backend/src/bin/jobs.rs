@@ -248,10 +248,10 @@ fn build_release(cf: &Cf, key: &ed25519_dalek::SigningKey, lang: &str, force: bo
 }
 
 /// Same as `jobs::backup` in the Worker: every table to `backups/{timestamp}/{table}-NNN.jsonl.gz`, then `done.json`.
-/// D1 rows written by seeding one record: texts (+1 index), translations (+2), current (+2), and per game id an
+/// D1 rows written by seeding one record: texts (+1 index), translations (+2), current (+3), and per game id an
 /// id_pairs row (+1).
 fn seed_cost(ids: usize) -> u64 {
-    2 + 3 + 3 + 2 * ids as u64
+    2 + 3 + 4 + 2 * ids as u64
 }
 
 /// Records per D1 request (each is 3 statements plus one for its ids).
@@ -442,7 +442,7 @@ mod tests {
             let sql = st["sql"].as_str().unwrap();
             assert_eq!(sql.matches('?').count(), st["params"].as_array().unwrap().len(), "{sql}");
         }
-        assert_eq!(seed_cost(30), 68);
+        assert_eq!(seed_cost(30), 69);
     }
 
     #[test]
