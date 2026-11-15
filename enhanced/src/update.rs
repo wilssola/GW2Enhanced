@@ -292,6 +292,7 @@ pub fn window_visible() -> bool {
 /// One line for the Health tab's footer (in the overlay language; the reasons and errors stay as reported).
 pub fn summary() -> String {
     let state = match phase() {
+        Phase::Idle if checking() => tr("checking for updates...", "verificando atualizações...").to_string(),
         Phase::Idle => tr("update check pending", "verificação de atualização pendente").to_string(),
         Phase::Disabled(why) => why,
         Phase::UpToDate => tr("up to date", "atualizado").to_string(),
@@ -538,6 +539,35 @@ pub fn start() {
         }
     });
 }
+
+/// Manual check from the overlay ("Check for updates"): runs the same check again now, on its own thread. Ignored
+/// while a check, a download or an install is running.
+pub fn check_now() {
+    if CHECKING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if matches!(phase(), Phase::Downloading { .. } | Phase::Installing { .. }) {
+        CHECKING.store(false, Ordering::SeqCst);
+        return;
+    }
+    set_phase(Phase::Idle);
+    let spawned = std::thread::Builder::new().name("gw2enhanced-update-now".into()).spawn(|| {
+        if std::panic::catch_unwind(check).is_err() {
+            set_phase(Phase::CheckFailed("the check panicked".into()));
+        }
+        CHECKING.store(false, Ordering::SeqCst);
+    });
+    if spawned.is_err() {
+        CHECKING.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Whether a manual check is running.
+pub fn checking() -> bool {
+    CHECKING.load(Ordering::SeqCst)
+}
+
+static CHECKING: AtomicBool = AtomicBool::new(false);
 
 fn check() {
     if !is_game_exe() {

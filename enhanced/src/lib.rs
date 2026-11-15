@@ -411,8 +411,28 @@ fn health(ui: &Ui) {
         let _c = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
         ui.text_wrapped(update::summary());
     }
+    // One update per build: the full build updates GW2 Enhanced as a whole, a single-feature build only that feature.
+    if ui.button(gw2enhanced_core::trf!("Check for updates: {}###check-updates", "Verificar atualizações: {}###check-updates", update_target()))
+        && !update::checking()
+    {
+        update::check_now();
+    }
     ui.separator();
     log_switches(ui);
+}
+
+/// What this build's updater updates: GW2 Enhanced in the full build, the one feature in a single-feature build.
+fn update_target() -> &'static str {
+    let n = cfg!(feature = "translation") as u8 + cfg!(feature = "textures") as u8 + cfg!(feature = "graphics") as u8;
+    if n != 1 {
+        "GW2 Enhanced"
+    } else if cfg!(feature = "translation") {
+        tr("Translation", "Tradução")
+    } else if cfg!(feature = "textures") {
+        tr("Textures", "Texturas")
+    } else {
+        tr("Graphics", "Gráficos")
+    }
 }
 
 /// The features built into this DLL, with the name shown next to their Logs switch.
@@ -421,7 +441,7 @@ fn log_features() -> Vec<(Feature, &'static str)> {
     #[cfg(feature = "translation")]
     v.push((Feature::Translation, tr("Translation", "Tradução")));
     #[cfg(feature = "textures")]
-    v.push((Feature::Textures, tr("HD textures", "Texturas HD")));
+    v.push((Feature::Textures, tr("Textures", "Texturas")));
     #[cfg(feature = "graphics")]
     v.push((Feature::Graphics, tr("Graphics", "Gráficos")));
     v
