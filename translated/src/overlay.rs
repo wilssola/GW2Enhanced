@@ -270,6 +270,7 @@ impl Overlay {
             runtime::set_contribute(contribute);
         }
         ui.text_disabled(self.t(T::ContributeHint));
+        self.dictionary_updates(ui);
 
         ui.separator();
         if ui.collapsing_header(self.t(T::Performance), hudhook::imgui::TreeNodeFlags::empty()) {
@@ -311,6 +312,15 @@ impl Overlay {
             .build(|| self.body(ui));
         if !open {
             VISIBLE.store(false, Ordering::Relaxed);
+        }
+    }
+
+    /// Automatic dictionary downloads (`release.rs`) and the version in use.
+    fn dictionary_updates(&self, ui: &Ui) {
+        self.flag(ui, Flag::UpdateDictionary, T::UpdateDictionary);
+        match crate::release::in_use() {
+            Some(v) => ui.text_disabled(format!("{} {v}", self.t(T::DictionaryVersion))),
+            None => ui.text_disabled(self.t(T::DictionaryShipped)),
         }
     }
 

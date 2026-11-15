@@ -53,6 +53,9 @@ pub enum T {
     Next,
     Skip,
     OnboardAgain,
+    UpdateDictionary,
+    DictionaryVersion,
+    DictionaryShipped,
 }
 
 fn en(t: T) -> &'static str {
@@ -117,6 +120,9 @@ fn en(t: T) -> &'static str {
         T::Next => "Next",
         T::Skip => "Skip setup",
         T::OnboardAgain => "Run the first-time setup again",
+        T::UpdateDictionary => "Update the dictionary automatically",
+        T::DictionaryVersion => "Dictionary: downloaded version",
+        T::DictionaryShipped => "Dictionary: the one installed with the mod",
     }
 }
 
@@ -182,6 +188,9 @@ fn pt_br(t: T) -> &'static str {
         T::Next => "Avançar",
         T::Skip => "Pular configuração",
         T::OnboardAgain => "Refazer a configuração inicial",
+        T::UpdateDictionary => "Atualizar dicionário automaticamente",
+        T::DictionaryVersion => "Dicionário: versão baixada",
+        T::DictionaryShipped => "Dicionário: o que veio com o mod",
     }
 }
 
