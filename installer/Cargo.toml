@@ -2,11 +2,11 @@
 name = "gw2translated-installer"
 version = "0.1.0"
 edition = "2024"
-description = "GW2 Translated installer"
+description = "GW2 Enhanced installer"
 license = "MIT"
 
 [[bin]]
-name = "GW2Translated-Installer"
+name = "GW2Enhanced-Installer"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,14 +1,20 @@
-//! GW2 Translated installer.
+//! GW2 Enhanced installer.
 //!
-//! Ships in the package next to `version.dll` and the `GW2Translated\` folder:
+//! Ships at the root of every release zip, next to `msimg32.dll` and the data folders of the mods in that package
+//! (`GW2Translated\`, `GW2Graphics\`, ...):
 //!
 //! ```text
-//! GW2Translated-Installer.exe                installs (finds the game or lets the player pick it)
-//! GW2Translated-Installer.exe "<folder>"     installs into the given folder
-//! GW2Translated-Installer.exe --uninstall  uninstalls and restores the previous version.dll
+//! GW2Enhanced-Installer.exe                installs (finds the game or lets the player pick it)
+//! GW2Enhanced-Installer.exe "<folder>"     installs into the given folder
+//! GW2Enhanced-Installer.exe --uninstall    uninstalls and restores the previous msimg32.dll
 //! ```
 //!
-//! Never deletes the player's collected strings, live translations or `config.ini`.
+//! Never deletes the player's collected strings, live translations, logs or `config.ini`: the package never has
+//! them, and installing only adds or overwrites the files the package has.
+//!
+//! Upgrades from the old separate mods: GW2 Translated's `version.dll` is removed (the translation now lives in
+//! `msimg32.dll`; both at once would hook the game twice) and the `version.dll` it had backed up is put back; GW2
+//! Remastered's `msimg32.dll` is replaced without a backup, as it is ours.
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -20,14 +26,19 @@ use windows_sys::Win32::UI::Shell::{
     BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS, BROWSEINFOW, SHBrowseForFolderW, SHGetPathFromIDListW,
 };
 
-/// Marker present only in our `version.dll`.
-const DLL_MARKER: &[u8] = b"GW2TRANSLATED-DLL-MARKER";
-/// Copy of another mod's `version.dll` found during installation.
-const BACKUP: &str = "version.dll.antes-do-gw2translated";
-const DATA_DIR: &str = "GW2Translated";
-/// Package files that are always updated, per language.
-const SHIPPED: &[&str] = &["dictionary.jsonl", "web.jsonl"];
-/// Package files from older versions, removed on install.
+/// The mod's proxy DLL, next to `Gw2-64.exe`.
+const DLL: &str = "msimg32.dll";
+/// Markers of a `msimg32.dll` that is ours: GW2 Enhanced, and the old GW2 Remastered (same file name).
+const DLL_MARKERS: &[&[u8]] = &[b"GW2ENHANCED-DLL-MARKER!!", b"GW2REMASTERED-DLL-MARKER"];
+/// Copy of another mod's `msimg32.dll` found during installation.
+const BACKUP: &str = "msimg32.dll.antes-do-gw2enhanced";
+/// The old GW2 Translated proxy, its marker and the backup it made of another mod's `version.dll`.
+const LEGACY_DLL: &str = "version.dll";
+const LEGACY_MARKER: &[u8] = b"GW2TRANSLATED-DLL-MARKER";
+const LEGACY_BACKUP: &str = "version.dll.antes-do-gw2translated";
+/// Data folders a package may carry next to `msimg32.dll` (one per mod), copied as they are.
+const DATA_DIRS: &[&str] = &["GW2Translated", "GW2Remastered", "GW2Graphics"];
+/// Translation files from older versions, removed on install (per language).
 const OBSOLETE: &[&str] = &["strings.jsonl", "ids.jsonl"];
 const STEAM_APP_DIR: &str = r"steamapps\common\Guild Wars 2";
 
@@ -138,8 +149,12 @@ fn game_running() -> bool {
         .unwrap_or(false)
 }
 
+fn has_marker(file: &Path, markers: &[&[u8]]) -> bool {
+    std::fs::read(file).is_ok_and(|b| markers.iter().any(|m| b.windows(m.len()).any(|w| w == *m)))
+}
+
 fn is_ours(dll: &Path) -> bool {
-    std::fs::read(dll).is_ok_and(|b| b.windows(DLL_MARKER.len()).any(|w| w == DLL_MARKER))
+    has_marker(dll, DLL_MARKERS)
 }
 
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<u64> {
@@ -158,63 +173,76 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<u64> {
     Ok(n)
 }
 
-fn install(pkg: &Path, game: &Path) -> Result<(), String> {
-    let new_dll = pkg.join("version.dll");
-    let new_data = pkg.join(DATA_DIR);
-    if !new_dll.is_file() || !new_data.join("languages").is_dir() {
-        return Err(format!(
-            "pacote incompleto: faltam version.dll ou {DATA_DIR}\\languages\\ em {}",
-            pkg.display()
-        ));
+/// Removes the old GW2 Translated `version.dll` (and puts back the one it had backed up).
+fn remove_legacy(game: &Path) -> Result<(), String> {
+    let dll = game.join(LEGACY_DLL);
+    if dll.is_file() && has_marker(&dll, &[LEGACY_MARKER]) {
+        std::fs::remove_file(&dll)
+            .map_err(|e| format!("não consegui remover o version.dll antigo do GW2 Translated: {e}"))?;
+        println!("  version.dll antigo do GW2 Translated removido (a tradução agora fica no {DLL})");
+        let backup = game.join(LEGACY_BACKUP);
+        if backup.is_file() {
+            std::fs::rename(&backup, &dll)
+                .map_err(|e| format!("não consegui restaurar o version.dll anterior: {e}"))?;
+            println!("  version.dll de outro mod restaurado");
+        }
     }
-    let dll = game.join("version.dll");
+    Ok(())
+}
+
+fn install(pkg: &Path, game: &Path) -> Result<(), String> {
+    let new_dll = pkg.join(DLL);
+    if !new_dll.is_file() {
+        return Err(format!("pacote incompleto: falta {DLL} em {}", pkg.display()));
+    }
+    remove_legacy(game)?;
+    let dll = game.join(DLL);
     if dll.is_file() && !is_ours(&dll) {
         let backup = game.join(BACKUP);
         if !backup.exists() {
-            std::fs::copy(&dll, &backup).map_err(|e| format!("não consegui guardar o version.dll atual: {e}"))?;
-            println!("  version.dll de outro mod guardado como {BACKUP}");
+            std::fs::copy(&dll, &backup).map_err(|e| format!("não consegui guardar o {DLL} atual: {e}"))?;
+            println!("  {DLL} de outro mod guardado como {BACKUP}");
         }
     }
-    std::fs::copy(&new_dll, &dll).map_err(|e| format!("não consegui copiar o version.dll: {e}"))?;
-    println!("  version.dll instalado");
+    std::fs::copy(&new_dll, &dll).map_err(|e| format!("não consegui copiar o {DLL}: {e}"))?;
+    println!("  {DLL} instalado");
 
-    let data = game.join(DATA_DIR);
-    for lang in std::fs::read_dir(new_data.join("languages"))
-        .map_err(|e| e.to_string())?
-        .flatten()
-    {
-        let dst = data.join("languages").join(lang.file_name());
-        std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
-        for f in SHIPPED {
-            if lang.path().join(f).is_file() {
-                std::fs::copy(lang.path().join(f), dst.join(f)).map_err(|e| format!("{f}: {e}"))?;
+    for dir in DATA_DIRS {
+        let from = pkg.join(dir);
+        if !from.is_dir() {
+            continue;
+        }
+        let to = game.join(dir);
+        let n = copy_dir(&from, &to).map_err(|e| format!("{dir}: {e}"))?;
+        println!("  {dir}\\ atualizado ({n} arquivos)");
+        if let Ok(langs) = std::fs::read_dir(to.join("languages")) {
+            for lang in langs.flatten() {
+                for f in OBSOLETE {
+                    let _ = std::fs::remove_file(lang.path().join(f));
+                }
             }
         }
-        for f in OBSOLETE {
-            let _ = std::fs::remove_file(dst.join(f));
-        }
-        println!("  idioma {} atualizado", lang.file_name().to_string_lossy());
-    }
-    if new_data.join("translator").is_dir() {
-        let n =
-            copy_dir(&new_data.join("translator"), &data.join("translator")).map_err(|e| format!("tradutor: {e}"))?;
-        println!("  tradutor local instalado ({n} arquivos)");
     }
     Ok(())
 }
 
 fn uninstall(game: &Path) -> Result<(), String> {
-    let dll = game.join("version.dll");
+    remove_legacy(game)?;
+    let dll = game.join(DLL);
     if dll.is_file() && is_ours(&dll) {
-        std::fs::remove_file(&dll).map_err(|e| format!("não consegui remover o version.dll: {e}"))?;
-        println!("  version.dll do GW2 Translated removido");
+        std::fs::remove_file(&dll).map_err(|e| format!("não consegui remover o {DLL}: {e}"))?;
+        println!("  {DLL} do GW2 Enhanced removido");
     }
     let backup = game.join(BACKUP);
-    if backup.is_file() {
-        std::fs::rename(&backup, &dll).map_err(|e| format!("não consegui restaurar o version.dll anterior: {e}"))?;
-        println!("  version.dll anterior restaurado");
+    if backup.is_file() && !dll.exists() {
+        std::fs::rename(&backup, &dll).map_err(|e| format!("não consegui restaurar o {DLL} anterior: {e}"))?;
+        println!("  {DLL} anterior restaurado");
     }
-    println!("  a pasta {DATA_DIR}\\ (coleta e configuração) foi mantida; apague à mão se quiser");
+    let dirs: Vec<String> = DATA_DIRS.iter().map(|d| format!("{d}\\")).collect();
+    println!(
+        "  as pastas {} (configuração, coleta, logs) foram mantidas; apague à mão se quiser",
+        dirs.join(", ")
+    );
     Ok(())
 }
 
@@ -286,7 +314,7 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
-    println!("GW2 Translated — tradução do Guild Wars 2\n");
+    println!("GW2 Enhanced — tradução, texturas HD e gráficos para o Guild Wars 2\n");
     let code = match run() {
         Ok(()) => {
             println!("\nPronto! Abra o jogo normalmente.");
@@ -322,16 +350,18 @@ mod tests {
     #[test]
     fn install_keeps_player_files_and_backs_up_foreign_dll() {
         let (pkg, game) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        std::fs::write(pkg.path().join("version.dll"), b"xx GW2TRANSLATED-DLL-MARKER xx").unwrap();
+        std::fs::write(pkg.path().join(DLL), b"xx GW2ENHANCED-DLL-MARKER!! xx").unwrap();
         let lang = pkg.path().join(r"GW2Translated\languages\pt-BR");
         std::fs::create_dir_all(&lang).unwrap();
-        std::fs::create_dir_all(pkg.path().join(r"GW2Translated\translator")).unwrap();
-        for f in SHIPPED {
-            std::fs::write(lang.join(f), "").unwrap();
-        }
+        std::fs::create_dir_all(pkg.path().join(r"GW2Translated\translator\models\pt-BR")).unwrap();
+        std::fs::create_dir_all(pkg.path().join(r"GW2Graphics\luts")).unwrap();
+        std::fs::write(lang.join("dictionary.jsonl"), "{}\n").unwrap();
+        std::fs::write(lang.join("web.jsonl"), "").unwrap();
         std::fs::write(pkg.path().join(r"GW2Translated\translator\t.exe"), b"t").unwrap();
+        std::fs::write(pkg.path().join(r"GW2Translated\translator\models\pt-BR\m.bin"), b"m").unwrap();
+        std::fs::write(pkg.path().join(r"GW2Graphics\luts\warm.cube"), b"lut").unwrap();
         std::fs::write(game.path().join("Gw2-64.exe"), b"").unwrap();
-        std::fs::write(game.path().join("version.dll"), b"outro mod").unwrap();
+        std::fs::write(game.path().join(DLL), b"outro mod").unwrap();
         let data = game.path().join("GW2Translated");
         std::fs::create_dir_all(data.join(r"languages\pt-BR")).unwrap();
         std::fs::write(data.join("config.ini"), "translate=false").unwrap();
@@ -343,7 +373,7 @@ mod tests {
         std::fs::write(data.join(r"languages\pt-BR\ids.jsonl"), "").unwrap();
 
         install(pkg.path(), game.path()).unwrap();
-        assert!(is_ours(&game.path().join("version.dll")));
+        assert!(is_ours(&game.path().join(DLL)));
         assert_eq!(std::fs::read(game.path().join(BACKUP)).unwrap(), b"outro mod");
         assert_eq!(
             std::fs::read_to_string(data.join("config.ini")).unwrap(),
@@ -353,13 +383,54 @@ mod tests {
         assert!(data.join(r"languages\pt-BR\dictionary.jsonl").is_file());
         assert!(!data.join(r"languages\pt-BR\ids.jsonl").exists());
         assert!(data.join(r"translator\t.exe").is_file());
+        assert!(data.join(r"translator\models\pt-BR\m.bin").is_file());
+        assert!(game.path().join(r"GW2Graphics\luts\warm.cube").is_file());
+        assert!(!game.path().join("GW2Remastered").exists());
 
         // Reinstalling does not overwrite the backup with our own DLL.
         install(pkg.path(), game.path()).unwrap();
         assert_eq!(std::fs::read(game.path().join(BACKUP)).unwrap(), b"outro mod");
 
         uninstall(game.path()).unwrap();
-        assert_eq!(std::fs::read(game.path().join("version.dll")).unwrap(), b"outro mod");
+        assert_eq!(std::fs::read(game.path().join(DLL)).unwrap(), b"outro mod");
         assert!(data.join("config.ini").is_file());
+    }
+
+    #[test]
+    fn install_replaces_the_old_separate_mods() {
+        let (pkg, game) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        std::fs::write(pkg.path().join(DLL), b"xx GW2ENHANCED-DLL-MARKER!! xx").unwrap();
+        std::fs::write(game.path().join("Gw2-64.exe"), b"").unwrap();
+        // Old GW2 Remastered msimg32.dll: ours, so no backup.
+        std::fs::write(game.path().join(DLL), b"xx GW2REMASTERED-DLL-MARKER xx").unwrap();
+        // Old GW2 Translated version.dll, which had backed up another mod's version.dll.
+        std::fs::write(game.path().join(LEGACY_DLL), b"xx GW2TRANSLATED-DLL-MARKER xx").unwrap();
+        std::fs::write(game.path().join(LEGACY_BACKUP), b"outro version.dll").unwrap();
+
+        install(pkg.path(), game.path()).unwrap();
+        assert!(has_marker(&game.path().join(DLL), &[b"GW2ENHANCED-DLL-MARKER!!"]));
+        assert!(!game.path().join(BACKUP).exists());
+        assert_eq!(
+            std::fs::read(game.path().join(LEGACY_DLL)).unwrap(),
+            b"outro version.dll"
+        );
+        assert!(!game.path().join(LEGACY_BACKUP).exists());
+
+        // A version.dll that is not ours is left alone.
+        install(pkg.path(), game.path()).unwrap();
+        assert_eq!(
+            std::fs::read(game.path().join(LEGACY_DLL)).unwrap(),
+            b"outro version.dll"
+        );
+
+        uninstall(game.path()).unwrap();
+        assert!(!game.path().join(DLL).exists());
+    }
+
+    #[test]
+    fn install_refuses_a_package_without_the_dll() {
+        let (pkg, game) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        std::fs::write(game.path().join("Gw2-64.exe"), b"").unwrap();
+        assert!(install(pkg.path(), game.path()).unwrap_err().contains(DLL));
     }
 }
