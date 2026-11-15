@@ -4,7 +4,7 @@
 #   CLOUDFLARE_API_TOKEN   an API token of the "GW2Enhanced" account with Workers Scripts:Edit, D1:Edit and
 #                          Workers R2 Storage:Edit (template "Edit Cloudflare Workers" + D1 Edit)
 #   CLOUDFLARE_ACCOUNT_ID  3d18070b6522eece5d92058a9efa41bf (also pinned in backend/wrangler.toml)
-# Actions are pinned to commit SHAs and the deploy job has no build cache: it holds the Cloudflare token.
+# Actions use their major version tags (@v4); the deploy job has no build cache: it holds the Cloudflare token.
 # The Worker's own secrets (NVIDIA_API_KEY, TURNSTILE_SECRET, ...) live in Cloudflare (`wrangler secret put`); the daily
 # release build and backup run in backend-jobs.yml.
 name: backend
@@ -32,11 +32,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
       - name: Tests (Worker logic on the host)
@@ -50,11 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: oven-sh/setup-bun@v2
       # Wrangler is the version pinned in backend/package.json (bun.lock).
       - name: Install wrangler
         run: bun install --frozen-lockfile

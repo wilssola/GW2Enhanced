@@ -45,7 +45,9 @@ pub const COOL_GAIN: f32 = 4.0;
 /// Chroma `(max - min) / max` below the first value is "white" (no penalty), above the second fully saturated.
 pub const CHROMA_RAMP: (f32, f32) = (0.25, 0.75);
 /// A pixel counts towards the bright area of its neighbourhood when its largest channel is above this share of the threshold.
-pub const COVER_FRACTION: f32 = 0.5;
+/// 0.25 (was 0.5): a glowing creature's body (about 1x paper white) must count as area, else only the hover highlight's thin
+/// outline around it was bright enough, read as a small area, and the creature flared when the mouse passed over it.
+pub const COVER_FRACTION: f32 = 0.25;
 /// Side of the square neighbourhood whose bright area is measured, in units of `lens_max_size`.
 pub const WINDOW_MULT: f32 = 4.0;
 /// Bright area of the neighbourhood in units of `lens_max_size` squared: up to the first value the pixel is a full source,
