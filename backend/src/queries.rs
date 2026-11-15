@@ -472,6 +472,8 @@ pub fn contribution(c: &ContributionRows) -> Vec<Q> {
         .from_as(Translations::Table, Y)
         .and_where(Expr::col((Y, Translations::TextKey)).eq(jf("k")))
         .and_where(Expr::col((Y, Translations::Lang)).eq(c.lang))
+        // Hidden ones (moderated away) do not use up the text's room.
+        .and_where(Expr::col((Y, Translations::Review)).ne("hidden"))
         .to_owned();
     out.push(sqlite(
         &Query::insert()

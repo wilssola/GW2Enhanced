@@ -345,6 +345,10 @@ fn a_text_collects_at_most_max_translations() {
     assert_eq!(count(&c, "SELECT count(DISTINCT translation_id) FROM translation_reporters"), MAX_TRANSLATIONS_PER_TEXT);
     upload(&c, "late", serde_json::json!([{"id": format!("{:032x}", 0), "k": K1, "tr": "Espada 0", "src": "argos"}]));
     assert_eq!(count(&c, "SELECT reporters FROM translations WHERE tr = 'Espada 0'"), 2);
+    // A hidden translation frees its room.
+    c.execute_batch("UPDATE translations SET review = 'hidden' WHERE tr = 'Espada 1'").unwrap();
+    upload(&c, "new", serde_json::json!([{"id": format!("{:032x}", 99), "k": K1, "tr": "Espada nova", "src": "argos"}]));
+    assert_eq!(count(&c, "SELECT count(*) FROM translations WHERE tr = 'Espada nova'"), 1);
 }
 
 #[test]

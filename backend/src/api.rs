@@ -102,13 +102,20 @@ pub fn prepare_contribution(body: &[u8], allowed_langs: &str) -> Result<Prepared
         ..Default::default()
     };
     let mut seen = HashSet::new();
+    // One translation per text per request: the per-text cap is checked against stored rows, so several variants of
+    // one text in a single request would all pass it.
+    let mut translated = HashSet::new();
     for raw in req.items {
         let Ok(item) = serde_json::from_value::<RawItem>(raw) else {
             out.rejected += 1;
             continue;
         };
         match prepare_item(item, &req.lang) {
-            Ok((p, tr_ok)) => {
+            Ok((mut p, mut tr_ok)) => {
+                if p.tr.is_some() && !translated.insert(p.text_key.clone()) {
+                    p.tr = None;
+                    tr_ok = false;
+                }
                 let dedupe = (p.text_key.clone(), p.game_id, p.tr.as_ref().map(|t| t.id.clone()));
                 if !seen.insert(dedupe) {
                     out.rejected += 1;
@@ -328,6 +335,20 @@ mod tests {
         // plain "Sword" items are duplicates of it.
         assert_eq!(p.items.len(), 2);
         assert_eq!(p.rejected, 7);
+    }
+
+    #[test]
+    fn one_translation_per_text_per_request() {
+        let body = br#"{"lang":"pt-BR","items":[
+            {"en":"Sword","tr":"Espada","src":"argos"},
+            {"en":"Sword","tr":"Espadinha","src":"argos"},
+            {"en":"Sword","tr":"Espadona","src":"argos"}
+        ]}"#;
+        let p = prepare_contribution(body, LANGS).unwrap();
+        // The first keeps its translation; the others lose it and their English part is a duplicate.
+        assert_eq!(p.items.iter().filter(|i| i.tr.is_some()).count(), 1);
+        assert_eq!(p.items[0].tr.as_ref().unwrap().tr, "Espada");
+        assert_eq!(p.rejected, 2);
     }
 
     #[test]
