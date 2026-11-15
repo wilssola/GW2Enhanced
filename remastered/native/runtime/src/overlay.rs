@@ -365,6 +365,19 @@ fn save_settings() {
     }
 }
 
+/// A dimmed note, wrapped at the window edge (the host window has a fixed width, so long lines must not be cut).
+fn hint(ui: &Ui, text: impl AsRef<str>) {
+    let c = ui.style_color(hudhook::imgui::StyleColor::TextDisabled);
+    let _t = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
+    ui.text_wrapped(text);
+}
+
+/// Coloured text, wrapped at the window edge like [`hint`].
+fn colored(ui: &Ui, color: [f32; 4], text: impl AsRef<str>) {
+    let _t = ui.push_style_color(hudhook::imgui::StyleColor::Text, color);
+    ui.text_wrapped(text);
+}
+
 fn game_has_focus() -> bool {
     let mut pid = 0;
     unsafe { GetWindowThreadProcessId(GetForegroundWindow(), &mut pid) };
@@ -469,7 +482,7 @@ impl Overlay {
         }
         let first_run = NO_PACK.load(Ordering::Relaxed) && !SETUP_DONE.load(Ordering::Relaxed);
         if first_run {
-            ui.text_colored(
+            colored(ui, 
                 [1.0, 0.85, 0.3, 1.0],
                 tr("Welcome! Choose where the HD textures are.", "Bem-vindo! Escolha onde estão as texturas HD."),
             );
@@ -478,7 +491,7 @@ impl Overlay {
                 "Escolha a pasta com o pacote (a que tem o pack.idx). Até lá, ou se você pular, o jogo mostra as texturas originais.",
             ));
         } else if NO_PACK.load(Ordering::Relaxed) {
-            ui.text_colored(
+            colored(ui, 
                 [1.0, 0.6, 0.3, 1.0],
                 tr(
                     "No HD textures found: the game shows its original textures.",
@@ -490,7 +503,7 @@ impl Overlay {
         ui.set_next_item_width(-1.0);
         ui.input_text("##packdir", &mut self.path).build();
         if PICKING.load(Ordering::Relaxed) {
-            ui.text_disabled(tr("Choose the folder in the dialog window...", "Escolha a pasta na janela que abriu..."));
+            hint(ui, tr("Choose the folder in the dialog window...", "Escolha a pasta na janela que abriu..."));
         } else if ui.button(tr("Browse...###browse", "Procurar...###browse")) {
             start_picker();
         }
@@ -526,10 +539,10 @@ impl Overlay {
         }
         if let Some(note) = self.note {
             let c = if note.ok() { [0.4, 1.0, 0.4, 1.0] } else { [1.0, 0.4, 0.4, 1.0] };
-            ui.text_colored(c, note.text());
+            colored(ui, c, note.text());
         }
         if RESTART_NEEDED.load(Ordering::Relaxed) && self.note.is_none() {
-            ui.text_colored(
+            colored(ui, 
                 [0.4, 1.0, 0.4, 1.0],
                 tr("Restart the game to apply the new folder.", "Reinicie o jogo para usar a nova pasta."),
             );
@@ -557,8 +570,8 @@ impl Overlay {
             save_settings();
             log!("overlay: 4x for every player {}", if all { "ON" } else { "OFF" });
         }
-        ui.text_disabled(tr("HD off shows the original textures.", "Com o HD desligado, o jogo mostra as texturas originais."));
-        ui.text_disabled(tr(
+        hint(ui, tr("HD off shows the original textures.", "Com o HD desligado, o jogo mostra as texturas originais."));
+        hint(ui, tr(
             "4x for all players uses more memory and also applies after a map change.",
             "4x para todos os jogadores usa mais memória e também vale depois de trocar de mapa.",
         ));
@@ -587,49 +600,49 @@ impl Overlay {
             }
             if tint {
                 if !enabled() {
-                    ui.text_colored(
+                    colored(ui, 
                         [1.0, 0.4, 0.4, 1.0],
                         tr("HD textures are off: nothing is colored.", "As texturas HD estão desligadas: nada é colorido."),
                     );
                 }
-                ui.text_colored([1.0, 0.0, 1.0, 1.0], tr("Magenta: 2x piece (AI)", "Magenta: peça 2x (IA)"));
-                ui.text_colored([0.0, 1.0, 1.0, 1.0], tr("Cyan: 4x piece (AI)", "Ciano: peça 4x (IA)"));
-                ui.text_colored(
+                colored(ui, [1.0, 0.0, 1.0, 1.0], tr("Magenta: 2x piece (AI)", "Magenta: peça 2x (IA)"));
+                colored(ui, [0.0, 1.0, 1.0, 1.0], tr("Cyan: 4x piece (AI)", "Ciano: peça 4x (IA)"));
+                colored(ui, 
                     [1.0, 0.65, 0.0, 1.0],
                     tr("Orange: 4x piece, doubled from 2x", "Laranja: peça 4x, dobrada a partir da 2x"),
                 );
-                ui.text_colored(
+                colored(ui, 
                     [1.0, 1.0, 0.0, 1.0],
                     tr("Yellow: plain upscale (no AI)", "Amarelo: ampliação simples (sem IA)"),
                 );
-                ui.text_colored([0.0, 1.0, 0.0, 1.0], tr("Green: model texture", "Verde: textura de modelo"));
-                ui.text_colored(
+                colored(ui, [0.0, 1.0, 0.0, 1.0], tr("Green: model texture", "Verde: textura de modelo"));
+                colored(ui, 
                     [0.3, 0.3, 1.0, 1.0],
                     tr("Blue: 4x model texture (you)", "Azul: textura de modelo 4x (você)"),
                 );
                 ui.text(tr("Normal color: not replaced", "Cor normal: não substituída"));
                 ui.text(tr("Left alone, by reason:", "Deixadas como estão, por motivo:"));
-                ui.text_colored([1.0, 0.25, 0.25, 1.0], tr("Red: effect", "Vermelho: efeito"));
-                ui.text_colored(
+                colored(ui, [1.0, 0.25, 0.25, 1.0], tr("Red: effect", "Vermelho: efeito"));
+                colored(ui, 
                     [0.65, 0.25, 0.85, 1.0],
                     tr(
                         "Purple: pair, big member already high resolution (1024 px+)",
                         "Roxo: par, o membro maior já está em alta resolução (1024 px+)",
                     ),
                 );
-                ui.text_colored(
+                colored(ui, 
                     [1.0, 1.0, 1.0, 1.0],
                     tr("White: already at target size", "Branco: já está no tamanho final"),
                 );
-                ui.text_colored([0.65, 0.4, 0.1, 1.0], tr("Brown: under 128 px", "Marrom: menor que 128 px"));
-                ui.text_colored([1.0, 0.7, 0.8, 1.0], tr("Pink: no job, other", "Rosa: sem tarefa, outros"));
-                ui.text_colored(
+                colored(ui, [0.65, 0.4, 0.1, 1.0], tr("Brown: under 128 px", "Marrom: menor que 128 px"));
+                colored(ui, [1.0, 0.7, 0.8, 1.0], tr("Pink: no job, other", "Rosa: sem tarefa, outros"));
+                colored(ui, 
                     [0.6, 0.6, 0.6, 1.0],
                     tr("Gray: character piece source", "Cinza: origem de peça de personagem"),
                 );
             }
         } else {
-            ui.text_disabled(tr(
+            hint(ui, tr(
                 "Live reload unavailable. Change maps to apply.",
                 "Recarga ao vivo indisponível. Troque de mapa para aplicar.",
             ));

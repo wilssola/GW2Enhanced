@@ -47,15 +47,13 @@ const MAX_UNPACKED: u64 = 12 * 1024 * 1024 * 1024;
 
 /// The package this DLL was built as, or `None` for a local build (no updates then).
 pub fn package() -> Option<&'static str> {
-    option_env!("GW2E_PACKAGE").map(str::trim).filter(|p| !p.is_empty())
+    gw2enhanced_core::release::package()
 }
 
-/// The version this DLL was built as: CI's `GW2E_VERSION` (the release tag), else the crate version.
+/// The release version this DLL was built as (CI's `GW2E_VERSION`, the tag), or `dev` for a local build: the value
+/// shown in the overlay and compared with the published releases.
 pub fn current_version() -> &'static str {
-    option_env!("GW2E_VERSION")
-        .map(|v| v.trim().trim_start_matches('v'))
-        .filter(|v| !v.is_empty())
-        .unwrap_or(env!("CARGO_PKG_VERSION"))
+    gw2enhanced_core::release::version()
 }
 
 /// `Some(version)` (without `v`) when `tag` is newer than `current`. Build metadata (`+...`) never makes a release
@@ -293,7 +291,6 @@ pub fn window_visible() -> bool {
 
 /// One line for the Health tab's footer (in the overlay language; the reasons and errors stay as reported).
 pub fn summary() -> String {
-    let pkg = package().unwrap_or(tr("development build", "build de desenvolvimento"));
     let state = match phase() {
         Phase::Idle => tr("update check pending", "verificação de atualização pendente").to_string(),
         Phase::Disabled(why) => why,
@@ -310,7 +307,12 @@ pub fn summary() -> String {
         }
         Phase::Failed { error, .. } => trf!("update failed: {error}", "falha na atualização: {error}"),
     };
-    format!("GW2 Enhanced v{} ({pkg}): {state}", current_version())
+    let build = if gw2enhanced_core::release::is_release() {
+        gw2enhanced_core::release::label()
+    } else {
+        trf!("{} (development build)", "{} (build de desenvolvimento)", gw2enhanced_core::release::label())
+    };
+    format!("GW2 Enhanced {build}: {state}")
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -547,6 +549,11 @@ fn check() {
         return;
     };
     sweep(&game);
+    if !gw2enhanced_core::release::is_release() {
+        log("development build (GW2E_VERSION not set at build time): no update check");
+        set_phase(Phase::Disabled("development build: no update check".into()));
+        return;
+    }
     let Some(pkg) = package() else {
         log("development build (GW2E_PACKAGE not set at build time): no update check");
         set_phase(Phase::Disabled("development build: no update check".into()));
@@ -754,6 +761,13 @@ fn close_game() {
 // ---------------------------------------------------------------------------------------------------------------
 // The window.
 
+/// A dimmed note, wrapped at the window edge.
+fn dim(ui: &Ui, text: &str) {
+    let c = ui.style_color(hudhook::imgui::StyleColor::TextDisabled);
+    let _t = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
+    ui.text_wrapped(text);
+}
+
 fn mb(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
 }
@@ -775,8 +789,9 @@ pub fn draw(ui: &Ui) {
     ui.window(tr("GW2 Enhanced update###gw2enhanced-update", "Atualização do GW2 Enhanced###gw2enhanced-update"))
         .position([w * 0.5, 80.0], Condition::Appearing)
         .position_pivot([0.5, 0.0])
-        .size([420.0, 0.0], Condition::Appearing)
-        .flags(WindowFlags::NO_COLLAPSE | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SAVED_SETTINGS)
+        // Fixed width, height fitted to the content (wrapped text under ALWAYS_AUTO_RESIZE shrinks frame by frame).
+        .size([420.0 * ui.io().font_global_scale.max(1.0), 0.0], Condition::Always)
+        .flags(WindowFlags::NO_COLLAPSE | WindowFlags::NO_SAVED_SETTINGS)
         .build(|| match &p {
             Phase::Available { version } => {
                 let current = current_version();
@@ -784,7 +799,7 @@ pub fn draw(ui: &Ui) {
                     "GW2 Enhanced {version} is available (you have {current}).",
                     "O GW2 Enhanced {version} está disponível (você tem a {current})."
                 ));
-                ui.text_disabled(tr(
+                dim(ui, tr(
                     "The game closes after the update; start it again to use the new version.",
                     "O jogo fecha depois da atualização; abra de novo para usar a nova versão.",
                 ));
@@ -811,7 +826,7 @@ pub fn draw(ui: &Ui) {
                     let done = mb(done);
                     ui.text(trf!("Downloading {version}: {done}", "Baixando {version}: {done}"));
                 }
-                ui.text_disabled(tr("You can keep playing meanwhile.", "Você pode continuar jogando enquanto isso."));
+                dim(ui, tr("You can keep playing meanwhile.", "Você pode continuar jogando enquanto isso."));
             }
             Phase::Installing { version } => {
                 ui.text(trf!("Installing {version}...", "Instalando {version}..."));
@@ -832,7 +847,7 @@ pub fn draw(ui: &Ui) {
                     "The update to {version} failed: {error}",
                     "A atualização para {version} falhou: {error}"
                 ));
-                ui.text_disabled(tr(
+                dim(ui, tr(
                     "Nothing was replaced; the game keeps running on the current version.",
                     "Nada foi substituído; o jogo continua na versão atual.",
                 ));
@@ -872,8 +887,12 @@ mod tests {
         for tag in ["", "v", "latest", "1.2", "v1.2.3.4"] {
             assert!(release_update("1.2.3", tag).is_err(), "{tag}");
         }
-        // This build's own version is valid and never newer than itself.
-        assert_eq!(release_update(current_version(), &format!("v{}", current_version())).unwrap(), None);
+        // A release build's own version is valid and never newer than itself; a local one is "dev" and never checks.
+        if gw2enhanced_core::release::is_release() {
+            assert_eq!(release_update(current_version(), &format!("v{}", current_version())).unwrap(), None);
+        } else {
+            assert_eq!(current_version(), "dev");
+        }
     }
 
     #[test]

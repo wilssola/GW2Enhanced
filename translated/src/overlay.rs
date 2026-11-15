@@ -189,7 +189,7 @@ impl Overlay {
             self.language_changed = *code != self.language;
         }
         if self.language_changed {
-            ui.text_disabled(self.t(T::LanguageRestart));
+            hint(ui, self.t(T::LanguageRestart));
         }
     }
 
@@ -218,7 +218,7 @@ impl Overlay {
                 ui.bullet_text(format!("{} ({}): {free_mb} {free} {note}", g.name, g.vendor_name()));
             }
         } else {
-            ui.text_disabled(none);
+            hint(ui, none);
         }
         let in_use = live::active_device();
         if !in_use.is_empty() {
@@ -232,10 +232,10 @@ impl Overlay {
                 }
                 ui.text(line);
             }
-            None => ui.text_disabled(format!("{} {}", self.t(T::Resources), self.t(T::TranslatorOff))),
+            None => hint(ui, format!("{} {}", self.t(T::Resources), self.t(T::TranslatorOff))),
         }
         if runtime::device() != Device::Cpu && in_use.starts_with("cpu") {
-            ui.text_disabled(self.t(T::GpuComing));
+            hint(ui, self.t(T::GpuComing));
         }
         let mut threads = runtime::threads() as i32;
         ui.text_wrapped(self.t(T::Threads));
@@ -252,7 +252,7 @@ impl Overlay {
         if ui.slider("##bubble_wait", 0, 30, &mut wait) {
             runtime::set_bubble_wait(wait);
         }
-        ui.text_disabled(self.t(T::BubbleWaitHint));
+        hint(ui, self.t(T::BubbleWaitHint));
     }
 
     /// The panel's content, without a window around it (the unified overlay puts it in a tab).
@@ -273,7 +273,7 @@ impl Overlay {
         if ui.checkbox(self.t(T::Contribute), &mut contribute) {
             runtime::set_contribute(contribute);
         }
-        ui.text_disabled(self.t(T::ContributeHint));
+        hint(ui, self.t(T::ContributeHint));
         self.dictionary_updates(ui);
 
         ui.separator();
@@ -302,14 +302,14 @@ impl Overlay {
             Some((screen, ahead, queued)) => {
                 ui.text(format!("{screen} / {ahead} / {queued}  {}", self.t(T::StatusLive)))
             }
-            None => ui.text_disabled(self.t(T::StatusLiveOff)),
+            None => hint(ui, self.t(T::StatusLiveOff)),
         }
-        ui.text_disabled(self.t(T::CloseHint));
+        hint(ui, self.t(T::CloseHint));
     }
 
     fn main_window(&mut self, ui: &Ui) {
         let mut open = true;
-        ui.window(format!("{}  v{}###gw2translated", self.t(T::Title), crate::VERSION))
+        ui.window(format!("{}  {}###gw2translated", self.t(T::Title), gw2enhanced_core::release::label()))
             .size([460.0, 0.0], Condition::FirstUseEver)
             .opened(&mut open)
             .flags(WindowFlags::NO_COLLAPSE | WindowFlags::ALWAYS_AUTO_RESIZE)
@@ -391,6 +391,13 @@ fn overlay_language_picker(ui: &Ui) {
             }
         }
     }
+}
+
+/// A dimmed note, wrapped at the window edge (the host window has a fixed width, so long lines must not be cut).
+fn hint(ui: &Ui, text: impl AsRef<str>) {
+    let c = ui.style_color(hudhook::imgui::StyleColor::TextDisabled);
+    let _t = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
+    ui.text_wrapped(text);
 }
 
 fn game_has_focus() -> bool {

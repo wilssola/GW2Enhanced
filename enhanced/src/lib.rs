@@ -271,11 +271,14 @@ impl ImguiRenderLoop for Overlay {
             return;
         }
         let mut open = true;
-        ui.window("GW2 Enhanced###gw2enhanced")
-            .size([460.0, 0.0], Condition::FirstUseEver)
+        // A fixed width and a height that fits the content: with ALWAYS_AUTO_RESIZE, panels whose wrapped text and
+        // full-width widgets follow the window width made the window shrink a little every frame after a tab switch.
+        let [dw, dh] = ui.io().display_size;
+        ui.window(format!("GW2 Enhanced {}###gw2enhanced", gw2enhanced_core::release::label()))
+            .size([window_width(dw, dh), 0.0], Condition::Always)
             .position([60.0, 60.0], Condition::FirstUseEver)
             .opened(&mut open)
-            .flags(WindowFlags::NO_COLLAPSE | WindowFlags::ALWAYS_AUTO_RESIZE)
+            .flags(WindowFlags::NO_COLLAPSE)
             .build(|| {
                 language_picker(ui);
                 if let Some(_bar) = ui.tab_bar("gw2enhanced-tabs") {
@@ -342,6 +345,12 @@ impl ImguiRenderLoop for Overlay {
     }
 }
 
+/// Width of the main window: 480 px at 1080p, scaled like the font (up to 2x), never wider than the screen.
+fn window_width(display_w: f32, display_h: f32) -> f32 {
+    let w = 480.0 * (display_h / 1080.0).clamp(1.0, 2.0);
+    if display_w.is_finite() && display_w > 0.0 { w.min(display_w * 0.9) } else { w }
+}
+
 /// The overlay language, above the tabs so it is there whichever feature is built in.
 fn language_picker(ui: &Ui) {
     let cur = i18n::current();
@@ -387,14 +396,21 @@ fn health(ui: &Ui) {
         };
         // The reasons come from the features as they report them (English, like the log).
         let (ok, degraded, off) = ("OK", tr("DEGRADED", "PARCIAL"), tr("OFF", "DESLIGADO"));
-        match &e.state {
-            State::Ok => ui.text_colored([0.4, 1.0, 0.4, 1.0], format!("{ok:<10}{what}")),
-            State::Degraded(t) => ui.text_colored([1.0, 0.85, 0.3, 1.0], format!("{degraded:<10}{what}: {t}")),
-            State::Off(t) => ui.text_colored([1.0, 0.4, 0.4, 1.0], format!("{off:<10}{what}: {t}")),
-        }
+        let (color, line) = match &e.state {
+            State::Ok => ([0.4, 1.0, 0.4, 1.0], format!("{ok:<10}{what}")),
+            State::Degraded(t) => ([1.0, 0.85, 0.3, 1.0], format!("{degraded:<10}{what}: {t}")),
+            State::Off(t) => ([1.0, 0.4, 0.4, 1.0], format!("{off:<10}{what}: {t}")),
+        };
+        // Wrapped: the window has a fixed width and the reasons can be long.
+        let _c = ui.push_style_color(hudhook::imgui::StyleColor::Text, color);
+        ui.text_wrapped(line);
     }
     ui.separator();
-    ui.text_disabled(update::summary());
+    {
+        let c = ui.style_color(hudhook::imgui::StyleColor::TextDisabled);
+        let _c = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
+        ui.text_wrapped(update::summary());
+    }
     ui.separator();
     log_switches(ui);
 }
@@ -413,11 +429,15 @@ fn log_features() -> Vec<(Feature, &'static str)> {
 
 /// One Logs switch per feature (off by default, saved, live), and the recent problems kept while the files are off.
 fn log_switches(ui: &Ui) {
-    ui.text(tr("Logs", "Logs"));
-    ui.text_disabled(tr(
-        "Off by default. Turn a log on before reporting a problem; it is written to the GW2Enhanced and feature folders next to the game.",
-        "Desligados por padrão. Ligue o log antes de relatar um problema; ele é gravado nas pastas GW2Enhanced e das funções, ao lado do jogo.",
-    ));
+    ui.text("Logs");
+    {
+        let c = ui.style_color(hudhook::imgui::StyleColor::TextDisabled);
+        let _c = ui.push_style_color(hudhook::imgui::StyleColor::Text, c);
+        ui.text_wrapped(tr(
+            "Off by default. Turn a log on before reporting a problem; it is written to the GW2Enhanced and feature folders next to the game.",
+            "Desligados por padrão. Ligue o log antes de relatar um problema; ele é gravado nas pastas GW2Enhanced e das funções, ao lado do jogo.",
+        ));
+    }
     for (f, name) in log_features() {
         let mut on = f.log().enabled();
         if ui.checkbox(format!("{name}##log-{}", f.key()), &mut on) {
