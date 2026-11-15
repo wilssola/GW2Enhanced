@@ -16,6 +16,7 @@ static LIVE_TRANSLATE: AtomicBool = AtomicBool::new(true);
 static WEB_TRANSLATE: AtomicBool = AtomicBool::new(true);
 static AUTOCOLLECT: AtomicBool = AtomicBool::new(true);
 static SEED_DECODE: AtomicBool = AtomicBool::new(true);
+static UPDATE_DICTIONARY: AtomicBool = AtomicBool::new(true);
 static CONTRIBUTE: AtomicU8 = AtomicU8::new(0);
 static DEVICE: AtomicU8 = AtomicU8::new(0);
 static THREADS: AtomicU32 = AtomicU32::new(0);
@@ -33,6 +34,7 @@ pub enum Flag {
     WebTranslate,
     Autocollect,
     SeedDecode,
+    UpdateDictionary,
 }
 
 impl Flag {
@@ -43,6 +45,7 @@ impl Flag {
             Flag::WebTranslate => &WEB_TRANSLATE,
             Flag::Autocollect => &AUTOCOLLECT,
             Flag::SeedDecode => &SEED_DECODE,
+            Flag::UpdateDictionary => &UPDATE_DICTIONARY,
         }
     }
 
@@ -53,6 +56,7 @@ impl Flag {
             Flag::WebTranslate => "web_translate",
             Flag::Autocollect => "autocollect",
             Flag::SeedDecode => "seed_decode",
+            Flag::UpdateDictionary => "update_dictionary",
         }
     }
 }
@@ -71,6 +75,7 @@ pub fn init(config: &Config, config_path: std::path::PathBuf) {
     WEB_TRANSLATE.store(config.web_translate, Ordering::Relaxed);
     AUTOCOLLECT.store(config.autocollect, Ordering::Relaxed);
     SEED_DECODE.store(config.seed_decode, Ordering::Relaxed);
+    UPDATE_DICTIONARY.store(config.update_dictionary, Ordering::Relaxed);
     CONTRIBUTE.store(contribute_code(config.contribute), Ordering::Relaxed);
     DEVICE.store(device_code(config.translator_device), Ordering::Relaxed);
     THREADS.store(config.translator_threads, Ordering::Relaxed);

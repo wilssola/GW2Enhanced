@@ -42,6 +42,8 @@ pub struct Config {
     pub overlay_key: u32,
     /// Send untranslated game texts to improve the project.
     pub contribute: Contribute,
+    /// Download the reviewed dictionary releases from the project's server.
+    pub update_dictionary: bool,
     /// Longest extra time (seconds) a speech bubble stays up while its
     /// translation is being made; 0 = never hold.
     pub bubble_wait: u32,
@@ -94,6 +96,7 @@ impl Default for Config {
             overlay: true,
             overlay_key: 0x2D,
             contribute: Contribute::Ask,
+            update_dictionary: true,
             bubble_wait: 8,
             translator_device: Device::Auto,
             translator_threads: 0,
@@ -125,6 +128,10 @@ const KEYS: &[(&str, &str)] = &[
     (
         "contribute",
         "Send game texts and local translations to improve the project (ask, true, false)",
+    ),
+    (
+        "update_dictionary",
+        "Download dictionary updates from the project's server (signed; checked at most every 6 hours)",
     ),
     (
         "bubble_wait",
@@ -200,6 +207,7 @@ impl Config {
             "overlay" => self.overlay = parse_bool(v).unwrap_or(self.overlay),
             "overlay_key" => self.overlay_key = parse_u32(v).unwrap_or(self.overlay_key),
             "contribute" => self.contribute = parse_contribute(v).unwrap_or(self.contribute),
+            "update_dictionary" => self.update_dictionary = parse_bool(v).unwrap_or(self.update_dictionary),
             "bubble_wait" => self.bubble_wait = parse_u32(v).map_or(self.bubble_wait, |s| s.min(30)),
             "translator_device" => self.translator_device = Device::parse(v).unwrap_or(self.translator_device),
             "translator_threads" => {
@@ -227,6 +235,7 @@ impl Config {
                 Contribute::Yes => "true".into(),
                 Contribute::No => "false".into(),
             },
+            "update_dictionary" => self.update_dictionary.to_string(),
             "bubble_wait" => self.bubble_wait.to_string(),
             "translator_device" => self.translator_device.key().into(),
             "translator_threads" => self.translator_threads.to_string(),

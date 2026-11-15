@@ -6,6 +6,7 @@
 //! ├─ gw2translated_log.txt
 //! ├─ discovered.jsonl, decrypted.jsonl      collection (always the original English)
 //! ├─ languages\<language>\                  dictionary.jsonl, local.jsonl
+//! │  └─ release\                            downloaded dictionary releases (see `release.rs`)
 //! └─ translator\
 //!    ├─ gw2translated-translator.exe
 //!    └─ models\<language>\                  local translation model
@@ -53,6 +54,10 @@ impl Paths {
     }
     pub fn local(&self) -> PathBuf {
         self.language_dir().join("local.jsonl")
+    }
+    /// Dictionary releases downloaded from the project's server.
+    pub fn release_dir(&self) -> PathBuf {
+        self.language_dir().join("release")
     }
     /// Translations of web page texts made on this PC (never uploaded).
     pub fn web_local(&self) -> PathBuf {
