@@ -22,7 +22,7 @@ use serde_json::Value;
 use crate::config::Contribute;
 use crate::{log, net, runtime};
 
-const HOST: &str = "gw2translated.workers.dev";
+const HOST: &str = "app.gw2enhanced.workers.dev";
 const PATH: &str = "/v1/contributions";
 /// Limits of one request (the server refuses more).
 const MAX_ITEMS: usize = 500;

@@ -58,7 +58,7 @@ jobs:
           node-version: 22
       # Migrations first: a new Worker may need the new schema; a migration is written so the old Worker still works.
       - name: Apply D1 migrations
-        run: npx -y wrangler@4.162.0 d1 migrations apply gw2translated --remote
+        run: npx -y wrangler@4.162.0 d1 migrations apply gw2enhanced --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

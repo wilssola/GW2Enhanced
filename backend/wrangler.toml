@@ -1,12 +1,12 @@
 # GW2 Enhanced backend (Rust, workers-rs). See README.md for deploy steps.
-name = "gw2translated"
+name = "app"
 main = "build/index.js"
 compatibility_date = "2026-10-01"
 # Cloudflare account "GW2Enhanced" (deploys never go to another account by accident).
 account_id = "3d18070b6522eece5d92058a9efa41bf"
 
-# Served at https://gw2translated.<account-subdomain>.workers.dev
-# (workers.dev URLs always include the account subdomain).
+# Served at https://app.gw2enhanced.workers.dev (worker `app` on the account subdomain `gw2enhanced`;
+# workers.dev URLs are always <worker>.<account subdomain>.workers.dev).
 workers_dev = true
 # Custom domain instead / as well (needs a zone on the account):
 # routes = [{ pattern = "api.example.com", custom_domain = true }]
@@ -40,13 +40,13 @@ DOWNLOAD_URL = "https://github.com/wilssola/GW2Enhanced/releases/latest"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "gw2translated"
-database_id = "d2508cc0-12be-4668-91e9-56150402f6df"
+database_name = "gw2enhanced"
+database_id = "f3ceb6c1-9476-4971-b098-4eddc75fc8ef"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "RELEASES"
-bucket_name = "gw2translated"
+bucket_name = "gw2enhanced"
 
 # Secrets (wrangler secret put NAME), never in this file:
 #   NVIDIA_API_KEY, TURNSTILE_SECRET, RELEASE_SIGNING_KEY, ADMIN_TOKEN, IP_SALT
