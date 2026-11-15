@@ -95,9 +95,43 @@ pub fn take(limit: &Limit, state: Option<Bucket>, now_ms: i64, cost: f64) -> Dec
     }
 }
 
+/// Buckets kept in the memory of one isolate: the fallback when the D1 bucket cannot be read or stored, so a limit
+/// still holds (per isolate) while D1 is out of its daily quota. Bounded: past [`MemoryBuckets::MAX`] keys it starts over.
+#[derive(Default)]
+pub struct MemoryBuckets {
+    buckets: std::collections::HashMap<String, Bucket>,
+}
+
+impl MemoryBuckets {
+    pub const MAX: usize = 4096;
+
+    pub fn take(&mut self, key: &str, limit: &Limit, now_ms: i64, cost: f64) -> Decision {
+        if self.buckets.len() >= Self::MAX && !self.buckets.contains_key(key) {
+            self.buckets.clear();
+        }
+        let d = take(limit, self.buckets.get(key).copied(), now_ms, cost);
+        self.buckets.insert(key.to_string(), d.bucket);
+        d
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn memory_buckets_limit_per_key_and_stay_bounded() {
+        let lim = Limit { name: "t", capacity: 2.0, per_sec: 0.0 };
+        let mut m = MemoryBuckets::default();
+        assert!(m.take("a", &lim, 0, 1.0).allowed);
+        assert!(m.take("a", &lim, 0, 1.0).allowed);
+        assert!(!m.take("a", &lim, 0, 1.0).allowed);
+        assert!(m.take("b", &lim, 0, 1.0).allowed);
+        for i in 0..MemoryBuckets::MAX + 10 {
+            m.take(&i.to_string(), &lim, 0, 1.0);
+        }
+        assert!(m.buckets.len() <= MemoryBuckets::MAX);
+    }
 
     const L: Limit = Limit {
         name: "t",

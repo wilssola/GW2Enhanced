@@ -61,15 +61,22 @@ pub async fn ensure_rate(ctx: &Ctx, limit: &Limit, ip_hash: &str, cost: f64) -> 
     if d.allowed { Ok(()) } else { ensure_rate_denied(d.retry_after) }
 }
 
-/// The read limit of public lists: like [`ensure_rate`], but a failing bucket (D1 out of its daily write quota, or
-/// down) lets the read through. A read must not depend on a write.
+thread_local! {
+    static MEMORY_BUCKETS: std::cell::RefCell<ratelimit::MemoryBuckets> = Default::default();
+}
+
+/// The read limit of public lists: like [`ensure_rate`], but when the D1 bucket fails (D1 out of its daily write
+/// quota, or down) the limit is kept in the isolate's memory instead of failing the read. A read must not depend on a
+/// write.
 pub async fn ensure_read_rate(ctx: &Ctx, limit: &Limit, ip_hash: &str, cost: f64) -> std::result::Result<(), Fail> {
     match rate(ctx, limit, ip_hash, cost).await {
         Ok(d) if !d.allowed => ensure_rate_denied(d.retry_after),
         Ok(_) => Ok(()),
         Err(e) => {
-            console_warn!("read limit skipped: {e}");
-            Ok(())
+            console_warn!("read limit on the isolate's memory (D1 bucket failed: {e})");
+            let key = format!("{}:{}", limit.name, ip_hash);
+            let d = MEMORY_BUCKETS.with(|m| m.borrow_mut().take(&key, limit, ctx.now_ms, cost));
+            if d.allowed { Ok(()) } else { ensure_rate_denied(d.retry_after) }
         }
     }
 }
