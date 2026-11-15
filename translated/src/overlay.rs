@@ -9,7 +9,8 @@
 //!   what to translate, where the local translator runs (GPU or CPU), speech
 //!   bubbles and the invitation to contribute.
 //!
-//! Text shown here follows the selected language ([`crate::ui_text`]).
+//! Text shown here follows the overlay language ([`gw2enhanced_core::i18n`], [`crate::ui_text`]), which is not the
+//! language the game is translated into.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +25,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindow
 use crate::config::{Contribute, Device};
 use crate::runtime::{self, Flag};
 use crate::ui_text::{T, language_name, text};
+use gw2enhanced_core::i18n::{self, Lang};
 use crate::{gpu, live, log, refresh};
 
 /// The first-time setup waits for the game to finish its first loading screen.
@@ -68,7 +70,7 @@ pub struct Overlay {
 
 impl Overlay {
     fn t(&self, t: T) -> &'static str {
-        text(&self.language, t)
+        text(i18n::current(), t)
     }
 
     pub fn poll_key(&mut self) {
@@ -117,6 +119,8 @@ impl Overlay {
                 match self.step {
                     0 => {
                         ui.text_wrapped(self.t(T::WizIntro));
+                        ui.spacing();
+                        overlay_language_picker(ui);
                         ui.spacing();
                         self.language_picker(ui);
                     }
@@ -328,6 +332,10 @@ impl Overlay {
         let mut on = runtime::get(flag);
         if ui.checkbox(self.t(label), &mut on) {
             runtime::set(flag, on);
+            // The text already on screen follows too (back to the game's own text when turned off).
+            if flag == Flag::Translate {
+                refresh::request_now();
+            }
         }
     }
 }
@@ -364,6 +372,23 @@ impl ImguiRenderLoop for Overlay {
             MessageFilter::InputAll
         } else {
             MessageFilter::empty()
+        }
+    }
+}
+
+/// The overlay language (the same setting as the selector above the main window's tabs), for the first-time setup,
+/// which is a window of its own.
+fn overlay_language_picker(ui: &Ui) {
+    let cur = i18n::current();
+    ui.text(i18n::tr("Overlay language", "Idioma do overlay"));
+    if let Some(_c) = ui.begin_combo("##wizard-overlay-language", cur.name()) {
+        for l in Lang::ALL {
+            if ui.selectable_config(l.name()).selected(l == cur).build()
+                && l != cur
+                && let Err(e) = i18n::choose(l)
+            {
+                log!("overlay: could not save ui_language: {e}");
+            }
         }
     }
 }

@@ -1,8 +1,9 @@
 //! Text shown to the player in the overlay, per language.
 //!
-//! The player reads the overlay, so it follows the selected language; code,
-//! logs and docs stay in English. A language without its own table falls
-//! back to English.
+//! It follows the overlay language (`gw2enhanced_core::i18n`), not the language
+//! the game is translated into; code, logs and docs stay in English.
+
+use gw2enhanced_core::i18n::Lang;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum T {
@@ -61,8 +62,8 @@ pub enum T {
 fn en(t: T) -> &'static str {
     match t {
         T::Title => "GW2 Translated",
-        T::Language => "Language",
-        T::LanguageRestart => "The new language is used after restarting the game.",
+        T::Language => "Game translation language",
+        T::LanguageRestart => "The new translation language is used after restarting the game.",
         T::Options => "Options",
         T::Translate => "Translate the game",
         T::LiveTranslate => "Translate missing texts on this PC",
@@ -129,8 +130,8 @@ fn en(t: T) -> &'static str {
 fn pt_br(t: T) -> &'static str {
     match t {
         T::Title => "GW2 Translated",
-        T::Language => "Idioma",
-        T::LanguageRestart => "O novo idioma vale depois de reiniciar o jogo.",
+        T::Language => "Idioma da tradução do jogo",
+        T::LanguageRestart => "O novo idioma da tradução vale depois de reiniciar o jogo.",
         T::Options => "Opções",
         T::Translate => "Traduzir o jogo",
         T::LiveTranslate => "Traduzir no PC o que faltar",
@@ -194,11 +195,11 @@ fn pt_br(t: T) -> &'static str {
     }
 }
 
-/// Text for `t` in `language` (folder code such as `pt-BR`).
-pub fn text(language: &str, t: T) -> &'static str {
-    match language {
-        "pt-BR" => pt_br(t),
-        _ => en(t),
+/// Text for `t` in the overlay language `lang`.
+pub fn text(lang: Lang, t: T) -> &'static str {
+    match lang {
+        Lang::En => en(t),
+        Lang::PtBr => pt_br(t),
     }
 }
 
@@ -210,5 +211,37 @@ pub fn language_name(code: &str) -> String {
         "fr" => "Français".into(),
         "de" => "Deutsch".into(),
         _ => code.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every key; `en` and `pt_br` are exhaustive matches, so a key without a text does not compile.
+    const ALL: &[T] = &[
+        T::Title, T::Language, T::LanguageRestart, T::Options, T::Translate, T::LiveTranslate, T::WebTranslate,
+        T::Collect, T::Contribute, T::ContributeHint, T::RefreshNow, T::Status, T::StatusTexts, T::StatusLive,
+        T::StatusLiveOff, T::CloseHint, T::PopupTitle, T::PopupBody, T::PopupYes, T::PopupNo, T::Resources,
+        T::WizTitle, T::WizStep, T::WizIntro, T::WizTranslateTitle, T::WizDeviceTitle, T::WizDeviceHint,
+        T::DeviceAuto, T::DeviceCuda, T::DeviceDirectMl, T::DeviceCpu, T::GpuDetected, T::GpuNone, T::GpuFree,
+        T::GpuNotEnough, T::DeviceInUse, T::GpuComing, T::TranslatorOff, T::Threads, T::WizBubbleTitle,
+        T::BubbleWait, T::BubbleWaitHint, T::Performance, T::Back, T::Next, T::Skip, T::OnboardAgain,
+    ];
+
+    #[test]
+    fn every_key_has_both_languages() {
+        for &t in ALL {
+            let (en, pt) = (text(Lang::En, t), text(Lang::PtBr, t));
+            assert!(!en.trim().is_empty() && !pt.trim().is_empty(), "{t:?}");
+            // Only the product name is the same in both.
+            assert!(en != pt || t == T::Title, "{t:?} is not translated");
+        }
+    }
+
+    #[test]
+    fn the_translation_language_is_labelled_as_such() {
+        assert!(text(Lang::En, T::Language).contains("translation"));
+        assert!(text(Lang::PtBr, T::Language).contains("tradução"));
     }
 }
