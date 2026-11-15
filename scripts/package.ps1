@@ -220,3 +220,10 @@ foreach ($p in $Package) {
     $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
     Write-Host ("{0}  {1}  ({2:N1} MB)" -f $hash, (Split-Path -Leaf $zip), ((Get-Item $zip).Length / 1MB))
 }
+
+# The installer and launcher on its own, under a name without the version, so
+# https://github.com/<owner>/<repo>/releases/latest/download/GW2Enhanced-Installer-windows-x64.exe always points to the
+# newest one (the website's download button). It downloads and verifies the mod itself.
+$installer = Join-Path $OutDir 'GW2Enhanced-Installer-windows-x64.exe'
+Copy-Item "$release\GW2Enhanced-Installer.exe" $installer -Force
+Write-Host ("{0}  {1}" -f (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower(), (Split-Path -Leaf $installer))
