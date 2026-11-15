@@ -53,7 +53,7 @@ pub fn init() {
         return;
     }
     log::init(&data.join("gw2remastered_log.txt"));
-    log!("==== GW2 Remastered v{VERSION} ==== exe={}", exe.display());
+    log!("==== GW2 Remastered {} ==== exe={}", gw2enhanced_core::release::label(), exe.display());
     match game::Image::current() {
         Some(img) => {
             log!("game image at {:#x}", img.base);

@@ -105,6 +105,49 @@ pub fn is_protected(rel: &Path) -> bool {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Which release this build is: CI sets GW2E_VERSION (the tag) and GW2E_PACKAGE (the flavour) for every package.
+
+/// The version shown for a local build (no `GW2E_VERSION`).
+pub const DEV_VERSION: &str = "dev";
+
+/// The release version this build is (without `v`), or [`DEV_VERSION`] for a local build.
+pub fn version() -> &'static str {
+    version_from(option_env!("GW2E_VERSION"))
+}
+
+/// The package this build is (`All`, `Translation-CUDA`...), or `None` for a local build.
+pub fn package() -> Option<&'static str> {
+    package_from(option_env!("GW2E_PACKAGE"))
+}
+
+/// The build is a release (CI set its version), so it can be compared with the published ones.
+pub fn is_release() -> bool {
+    version() != DEV_VERSION
+}
+
+/// "v1.4.0 (All)", "v1.4.0", or "dev" for a local build: what the overlay shows.
+pub fn label() -> String {
+    label_of(version(), package())
+}
+
+pub fn version_from(v: Option<&'static str>) -> &'static str {
+    v.map(|v| v.trim().trim_start_matches('v')).filter(|v| !v.is_empty()).unwrap_or(DEV_VERSION)
+}
+
+pub fn package_from(p: Option<&'static str>) -> Option<&'static str> {
+    p.map(str::trim).filter(|p| !p.is_empty())
+}
+
+pub fn label_of(version: &str, package: Option<&str>) -> String {
+    match (version, package) {
+        (DEV_VERSION, Some(p)) => format!("{DEV_VERSION} ({p})"),
+        (DEV_VERSION, None) => DEV_VERSION.to_string(),
+        (v, Some(p)) => format!("v{v} ({p})"),
+        (v, None) => format!("v{v}"),
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Build info inside msimg32.dll: which version and package a DLL is, readable from the file without loading it.
 
 /// Start of the build info record in the DLL.
@@ -152,6 +195,29 @@ pub fn parse_build_info(dll: &[u8]) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_build_is_named_by_its_release_version_and_package() {
+        assert_eq!(version_from(Some("v1.4.0")), "1.4.0");
+        assert_eq!(version_from(Some(" 2.0.1 ")), "2.0.1");
+        assert_eq!(version_from(Some("")), DEV_VERSION);
+        assert_eq!(version_from(None), DEV_VERSION);
+        assert_eq!(package_from(Some("Translation-CUDA")), Some("Translation-CUDA"));
+        assert_eq!(package_from(Some(" ")), None);
+        assert_eq!(label_of("1.4.0", Some("All")), "v1.4.0 (All)");
+        assert_eq!(label_of("1.4.0", None), "v1.4.0");
+        assert_eq!(label_of(DEV_VERSION, None), "dev");
+        assert_eq!(label_of(DEV_VERSION, Some("Graphics")), "dev (Graphics)");
+        // This build: a local one is "dev", never the crate version.
+        assert_eq!(is_release(), option_env!("GW2E_VERSION").is_some_and(|v| !v.trim().trim_start_matches('v').is_empty()));
+        if !is_release() {
+            assert_eq!(version(), "dev");
+            assert!(label().starts_with("dev"));
+        }
+        if let Some(p) = package() {
+            assert!(PACKAGES.contains(&p), "GW2E_PACKAGE={p} is not a known package");
+        }
+    }
 
     #[test]
     fn asset_urls_must_be_this_repositorys_release_assets() {

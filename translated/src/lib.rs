@@ -99,7 +99,7 @@ pub fn init() {
         return;
     }
     log::init(&base.log());
-    log!("==== GW2 Translated v{VERSION} ==== exe={}", exe.display());
+    log!("==== GW2 Translated {} ==== exe={}", gw2enhanced_core::release::label(), exe.display());
 
     let config = match Config::load_or_create(&base.config()) {
         Ok(c) => c,

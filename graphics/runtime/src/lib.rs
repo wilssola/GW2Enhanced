@@ -83,7 +83,7 @@ pub fn init() {
     }
     log::init(&data.join("gw2graphics_log.txt"));
     let cfg = config::Config::load(&data.join("config.ini"));
-    log!("==== GW2 Enhanced Graphics v{VERSION} ==== exe={}", exe.display());
+    log!("==== GW2 Enhanced Graphics {} ==== exe={}", gw2enhanced_core::release::label(), exe.display());
     log!("config: {cfg:?}");
     upgrade::set_forced_off(!cfg.hdr_upgrade);
     clampemu::set_enabled(cfg.hdr_clamp);
