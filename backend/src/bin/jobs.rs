@@ -25,7 +25,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-const DEFAULT_DB: &str = "f3ceb6c1-9476-4971-b098-4eddc75fc8ef";
+const DEFAULT_DB: &str = "a3eb4cd3-c55f-4521-a5b7-4a6326740b13";
 const DEFAULT_BUCKET: &str = "gw2enhanced";
 const DEFAULT_LANGS: &str = "pt-BR";
 const API: &str = "https://api.cloudflare.com/client/v4";
