@@ -468,9 +468,9 @@ impl Config {
                 "rim_debug" => c.rim_debug = flag(v, d.rim_debug),
                 "overlay_key" if !v.is_empty() => c.overlay_key = v.to_string(),
                 // The dev_ names are what the debug mode keys were called before; old files keep working.
-                "debug_capture_seconds" | "dev_capture_seconds" => c.debug_capture_seconds = num(v, 0.0, 3600.0, d.debug_capture_seconds as f32).round() as u32,
-                "debug_compare" | "dev_compare" => c.debug_compare = flag(v, d.debug_compare),
-                "debug_hot_reload" | "dev_hot_reload" => c.debug_hot_reload = flag(v, d.debug_hot_reload),
+                "debug_capture_seconds" => c.debug_capture_seconds = num(v, 0.0, 3600.0, d.debug_capture_seconds as f32).round() as u32,
+                "debug_compare" => c.debug_compare = flag(v, d.debug_compare),
+                "debug_hot_reload" => c.debug_hot_reload = flag(v, d.debug_hot_reload),
                 "debug_view" => c.debug_view = num(v, 0.0, 5.0, 0.0).round() as u8,
                 "photo_key" if !v.is_empty() => c.photo_key = v.to_string(),
                 "photo_hide_ui" => c.photo_hide_ui = flag(v, d.photo_hide_ui),
@@ -1368,10 +1368,6 @@ subsurface_strength=nan");
         assert_eq!((c.debug_capture_seconds, c.debug_compare, c.debug_hot_reload), (0, true, false));
         let c = Config::parse("debug_capture_seconds=20\ndebug_compare=0\ndebug_hot_reload=1");
         assert_eq!((c.debug_capture_seconds, c.debug_compare, c.debug_hot_reload), (20, false, true));
-        // The names these keys had before still work.
-        let c = Config::parse("dev_capture_seconds=20\ndev_compare=0\ndev_hot_reload=1");
-        assert_eq!((c.debug_capture_seconds, c.debug_compare, c.debug_hot_reload), (20, false, true));
-        assert!(!c.to_ini().contains("dev_"), "only the new names are written");
         assert_eq!(Config::parse("debug_capture_seconds=99999").debug_capture_seconds, 3600);
         assert_eq!(Config::parse("debug_capture_seconds=-5").debug_capture_seconds, 0);
         assert_eq!(Config::parse("debug_capture_seconds=abc").debug_capture_seconds, 0);
