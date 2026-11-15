@@ -120,7 +120,7 @@ fn the_pixels_are_split_per_draw_and_the_points_report_the_texture_values() {
     assert_eq!(m.draw, Some(1));
     assert!(m.dist > 0.0, "the nearest drawn pixel");
     let t = report(&draws, &tex, &s, untagged, &pts, &["furtex-00000001-rgb/-a/-detail.png".into()]);
-    for want in ["#0 red [", "#1 green [", "count 3354", "count 2712", "not fur 100.0 %", "untagged fur px 1", "centre px (3, 0): draw #1 green", "t0 rgba (", "files in dev\\: furtex-00000001"] {
+    for want in ["#0 red [", "#1 green [", "count 3354", "count 2712", "not fur 100.0 %", "untagged fur px 1", "centre px (3, 0): draw #1 green", "t0 rgba (", "files in debug\\: furtex-00000001"] {
         assert!(t.contains(want), "{want}: {t}");
     }
     // The overlay plots the draws' uvs in their colours on the dimmed atlas, not-fur texels white.

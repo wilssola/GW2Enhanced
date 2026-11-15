@@ -823,7 +823,7 @@ pub fn reason() -> String {
     REASON.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
-/// The game's swapchain as last seen (0 = none yet). Used by the dev screenshot at present time.
+/// The game's swapchain as last seen (0 = none yet). Used by the debug screenshot at present time.
 pub(crate) fn game_swapchain() -> usize {
     GAME_SC.load(Relaxed)
 }

@@ -552,7 +552,7 @@ impl Exposure {
         self.lv[4].size
     }
 
-    /// The texture of the current state (tests, the dev read-back).
+    /// The texture of the current state (tests, the debug read-back).
     pub fn state_tex(&self) -> Obj {
         self.state[self.cur].tex
     }
@@ -780,7 +780,7 @@ unsafe fn bind_light_inputs(ctx: Obj, dev: Obj, v: [[f32; 4]; 2], state: Obj, ba
 
 static EXPO: Mutex<Option<Exposure>> = Mutex::new(None);
 static LAST_RUN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-/// The game's immediate context of the last run (for the dev read-back, same thread).
+/// The game's immediate context of the last run (for the debug read-back, same thread).
 static LAST_CTX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// Last read-back (EV applied, measured log2 luminance, EV asked for); NaN until the first one.
 static READ_EV: AtomicU32 = AtomicU32::new(0x7fc0_0000);

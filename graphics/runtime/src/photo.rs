@@ -242,7 +242,7 @@ pub fn combo_down(held: impl Fn(i32) -> bool, key: u32, mods: u32) -> bool {
 pub enum PhotoKind {
     /// One shot with the mod.
     Single,
-    /// The mod's picture and the vanilla emulation (the dev pair machine).
+    /// The mod's picture and the vanilla emulation (the debug pair machine).
     Pair,
 }
 

@@ -2507,7 +2507,7 @@ fn dump_vs(vs_ptr: usize, hash: Option<u32>) {
     let sig = crate::furmask::vs_sig(vs_ptr).map(|s| s.text()).unwrap_or_default();
     let _ = std::thread::Builder::new().name("gw2g-shell-vsdump".into()).spawn(move || {
         let dis = shaders::disassemble(&code).unwrap_or_else(|e| format!("// {e}"));
-        let dir = dir.join("dev");
+        let dir = dir.join("debug");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join(format!("vs-{h:08x}.txt"));
         let text = format!("// vertex shader {h:08x} ({} bytes), outputs: {sig}\n// written by the shell fur (docs/shell-fur.md) for shell_normal / the position math\n{dis}\n", code.len());

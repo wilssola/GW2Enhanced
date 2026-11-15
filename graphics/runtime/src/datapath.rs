@@ -608,7 +608,7 @@ unsafe fn bind_current(ctx: Obj) {
             crate::exposure::on_light_adjust(ctx, dev);
             // One-off depth diagnostic (overlay button "Log depth stats"; see depthstats.rs).
             crate::depthstats::on_light_adjust(ctx, dev);
-            // Debug capture: the engine's linear depth of this frame for `status_depth=` (only while a dev shot waits for it; see debugshot.rs).
+            // Debug capture: the engine's linear depth of this frame for `status_depth=` (only while a debug shot waits for it; see debugshot.rs).
             crate::debugshot::on_light_adjust(ctx, dev);
         }
         release(dev);

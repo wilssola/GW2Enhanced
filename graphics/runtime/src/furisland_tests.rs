@@ -569,14 +569,14 @@ fn v10_copies_of_an_excluded_island_share_its_verdict() {
     assert_eq!(tiles(&[[0.003, 0.03, 0.078, 0.25], [-0.997, 0.03, -0.922, 0.25], [0.5, 0.5, 0.6, 0.6]]), vec![0, 0, 1]);
 }
 
-/// v10 on the REAL island tables of the dev folder (`furmesh-*.txt`, written in the game by v9: per island triangles, uv box, area
+/// v10 on the REAL island tables of the debug folder (`furmesh-*.txt`, written in the game by v9: per island triangles, uv box, area
 /// share, texels, non-fur share, verdict; the meshes themselves are not on disk). What can be replayed from a table: the copy rule
 /// exactly, and the tile guard of the shape rule (which islands sit in a tile that may be judged by shape: an upper bound of what
 /// the cone test can add; the cone test itself needs the triangles). Reported per table; skipped when no table is on disk.
 #[test]
 fn v10_the_real_island_tables_copies_and_shape_candidates() {
-    let Ok(dir) = std::fs::read_dir(DEV) else {
-        println!("no dev folder: skipped");
+    let Ok(dir) = std::fs::read_dir(DEBUG_DIR) else {
+        println!("no debug folder: skipped");
         return;
     };
     let mut files: Vec<std::path::PathBuf> = dir.flatten().map(|e| e.path()).filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("furmesh-") && n.ends_with(".txt"))).collect();
@@ -750,7 +750,7 @@ fn v10_the_real_island_tables_copies_and_shape_candidates() {
             // (v15: only for meshes of at least LIMB_MIN_TRIS triangles: the 266-triangle mesh 29c32b35 of the game's v14 session, a small
             // separate part, has an 11.8 % island there; the check was pinned to the character body meshes of the tables)
             let mesh_tris: u32 = infos.iter().map(|i| i.shape.tris).sum();
-            // (v15: reported, no longer asserted: the dev folder keeps growing with every session's dumps, e.g. 353853b0 has a 13.1 %
+            // (v15: reported, no longer asserted: the debug folder keeps growing with every session's dumps, e.g. 353853b0 has a 13.1 %
             // island in such a tile; the cone test, not this upper bound, decides in the game)
             if biggest > 0.10 && (mesh_tris as usize) >= LIMB_MIN_TRIS {
                 println!("    note: {name}: a tile that may be judged by shape holds a fur island of {:.1} %", biggest * 100.0);
@@ -785,9 +785,9 @@ fn v10_the_real_island_tables_copies_and_shape_candidates() {
     println!("{seen} real island tables replayed, {hand_tables} hand meshes (v14 may change only these)");
 }
 
-// ---- the real atlases of the dev folder ------------------------------------------------------------------------------------------
+// ---- the real atlases of the debug folder ------------------------------------------------------------------------------------------
 
-const DEV: &str = "GW2Graphics/debug/";
+const DEBUG_DIR: &str = "GW2Graphics/debug/";
 
 /// What `encode_png_rgb8` wrote (stored deflate blocks, filter 0): (w, h, rgb). None for anything else.
 fn read_png(path: &str) -> Option<(u32, u32, Vec<u8>)> {
@@ -837,8 +837,8 @@ fn read_png(path: &str) -> Option<(u32, u32, Vec<u8>)> {
 }
 
 fn real_atlas(crc: &str) -> Option<Img> {
-    let (w, h, rgb) = read_png(&format!("{DEV}furtex-{crc}-rgb.png"))?;
-    let (w2, h2, a) = read_png(&format!("{DEV}furtex-{crc}-a.png"))?;
+    let (w, h, rgb) = read_png(&format!("{DEBUG_DIR}furtex-{crc}-rgb.png"))?;
+    let (w2, h2, a) = read_png(&format!("{DEBUG_DIR}furtex-{crc}-a.png"))?;
     if (w, h) != (w2, h2) {
         return None;
     }
@@ -1117,14 +1117,14 @@ fn v12_a_mitten_hand_with_claws_keeps_its_fur() {
     }
 }
 
-/// v12 on the REAL paw of the dev folder: the arm / paw mesh `38c9862b` (its `furisland` PNG = the painted triangle classes over its
+/// v12 on the REAL paw of the debug folder: the arm / paw mesh `38c9862b` (its `furisland` PNG = the painted triangle classes over its
 /// own atlas `a06644ee`; a charr uses the same layout with atlas `323868e4`). Decodes the painted classes, then, per
 /// region, the share of texels where the strand texel rule keeps fur with the v8 windows and with the v9 NEAR windows: the hand back
 /// (the near arc, all its triangles near) and the finger islands (the 24-triangle islands of the paw tile, v11: excluded by shape).
 /// Report only (skipped when absent).
 #[test]
 fn v12_the_real_paw_near_windows_report() {
-    let Some((w, h, paint)) = read_png(&format!("{DEV}furisland-<crc>.png")) else {
+    let Some((w, h, paint)) = read_png(&format!("{DEBUG_DIR}furisland-<crc>.png")) else {
         println!("no furisland-<crc>.png: skipped");
         return;
     };

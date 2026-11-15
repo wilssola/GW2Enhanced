@@ -912,7 +912,7 @@ fn next_id() -> u64 {
     }
 }
 
-/// Takes the dev settings of the config (start-up).
+/// Takes the debug settings of the config (start-up).
 pub fn configure(cfg: &Config) {
     set_capture_seconds(cfg.debug_capture_seconds);
     set_compare(cfg.debug_compare);
@@ -948,7 +948,7 @@ fn force_off(now_ms: u64) -> bool {
 fn restore_now(why: &str) -> bool {
     let Some(s) = lock_saved().take() else { return false };
     s.restore(gate::set_user_enabled, output::set_levels);
-    log!("debugshot: user values restored ({why}): enabled {}, paper white {:.0}, peak {:.0}", s.enabled, s.paper, s.peak);
+    log!("debug: user values restored ({why}): enabled {}, paper white {:.0}, peak {:.0}", s.enabled, s.paper, s.peak);
     true
 }
 
@@ -1219,7 +1219,7 @@ fn disarm(d: &mut DepthSlot) {
     crate::ao::set_depth_consumer(DEPTH_FOR_DEV, false);
 }
 
-/// A dev shot of the mod is about to be issued at present `frame`: gets its depth ready (`st.depth`), or says why there is none
+/// A debug shot of the mod is about to be issued at present `frame`: gets its depth ready (`st.depth`), or says why there is none
 /// (`st.depth_note`). False = the shot waits one more present (the depth of the next frame's light-adjust draw is being asked for).
 fn prepare_depth(st: &mut State, frame: u64) -> bool {
     prepare_depth_with(st, frame, gate::user_enabled())
@@ -1262,7 +1262,7 @@ fn prepare_depth_with(st: &mut State, frame: u64, enabled: bool) -> bool {
     }
 }
 
-/// The depth part of a shot's text: a dev shot of the mod (`wanted`) keeps its read-back for the writer thread (`Some`), or gets the line
+/// The depth part of a shot's text: a debug shot of the mod (`wanted`) keeps its read-back for the writer thread (`Some`), or gets the line
 /// `status_depth=unavailable (reason)`; any other shot (vanilla emulation, photo) gets nothing.
 fn attach_depth(text: &mut String, wanted: bool, depth: Option<DepthData>, note: Option<String>) -> Option<DepthData> {
     if !wanted {
@@ -1290,7 +1290,7 @@ fn depth_housekeeping(frame: u64) {
     }
 }
 
-/// The light-adjust draw (`datapath::bind_current`, on the game's context): when a dev shot waits for the depth, reads the engine's linear depth
+/// The light-adjust draw (`datapath::bind_current`, on the game's context): when a debug shot waits for the depth, reads the engine's linear depth
 /// of THIS frame back. A GPU stall of the render thread, once per capture; one atomic load otherwise. Never unwinds.
 pub fn on_light_adjust(ctx: Obj, dev: Obj) {
     if !DEPTH_ARMED.load(Relaxed) {
@@ -1372,7 +1372,7 @@ struct Meta {
     paper: f32,
     text: String,
     photo: Option<PhotoTag>,
-    /// The engine's linear depth read back for this shot (dev shots of the mod only); the writer thread turns it into `status_depth=`.
+    /// The engine's linear depth read back for this shot (debug shots of the mod only); the writer thread turns it into `status_depth=`.
     depth: Option<DepthData>,
 }
 
@@ -1536,7 +1536,7 @@ fn stat_rows(s: &Stats) -> Vec<(&'static str, String)> {
 const STATS_NOTE: &str = "statistics: linear light, 1.0 = paper white, computed on the full-resolution data before clipping (luminance = Rec.709 weights; p99 from a log histogram, about 2 % resolution)";
 
 pub fn single_txt(id: u64, text: &str, st: &Stats) -> String {
-    let mut s = format!("GW2 Enhanced Graphics dev shot {id}\nfiles: shot-{id}.png (also latest.png)\nPNG: sRGB, half resolution; scRGB value / (paper_white/80), clamped (what an SDR monitor would show)\n{STATS_NOTE}\n\n== statistics ==\n");
+    let mut s = format!("GW2 Enhanced Graphics debug shot {id}\nfiles: shot-{id}.png (also latest.png)\nPNG: sRGB, half resolution; scRGB value / (paper_white/80), clamped (what an SDR monitor would show)\n{STATS_NOTE}\n\n== statistics ==\n");
     for (k, v) in stat_rows(st) {
         s.push_str(&format!("{k}={v}\n"));
     }
@@ -1547,7 +1547,7 @@ pub fn single_txt(id: u64, text: &str, st: &Stats) -> String {
 
 pub fn pair_txt(id: u64, mod_text: &str, mod_stats: &Stats, van: Option<(&str, &Stats, Option<DiffStats>)>, note: &str) -> String {
     let mut s = format!(
-        "GW2 Enhanced Graphics dev pair {id}\nfiles: pair-{id}-mod.png pair-{id}-vanilla.png (also latest-mod.png, latest-vanilla.png)\nvanilla = the mod's own vanilla emulation (what you see with Enabled unchecked), not a pixel-identical original\nPNG: sRGB, half resolution; scRGB value / (paper_white/80), clamped; each shot uses the paper white it was taken with\n{STATS_NOTE}\n"
+        "GW2 Enhanced Graphics debug pair {id}\nfiles: pair-{id}-mod.png pair-{id}-vanilla.png (also latest-mod.png, latest-vanilla.png)\nvanilla = the mod's own vanilla emulation (what you see with Enabled unchecked), not a pixel-identical original\nPNG: sRGB, half resolution; scRGB value / (paper_white/80), clamped; each shot uses the paper white it was taken with\n{STATS_NOTE}\n"
     );
     if !note.is_empty() {
         s.push_str(&format!("note: {note}\n"));
@@ -1622,7 +1622,7 @@ struct PendingMod {
     text: String,
     stats: Stats,
     luma: Vec<f32>,
-    /// Photo pair: the stem of the files (None = a dev pair).
+    /// Photo pair: the stem of the files (None = a debug pair).
     photo: Option<String>,
 }
 
@@ -1633,7 +1633,7 @@ fn worker(rx: std::sync::mpsc::Receiver<Msg>, dir: PathBuf) {
         match r {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                log!("debugshot: {e}");
+                log!("debug: {e}");
                 set_status(format!("error: {e}"));
             }
             Err(_) => set_status("error: the writer panicked"),
@@ -1713,7 +1713,7 @@ fn process(msg: Msg, dir: &Path, pending: &mut Option<PendingMod>) -> Result<(),
 }
 
 /// Photo mode: full resolution PNG + Radiance .hdr + settings text into `GW2Graphics\photos`. A problem (low disk space, write error)
-/// is reported in `status_photo=` and the log; the dev status is left alone.
+/// is reported in `status_photo=` and the log; the debug status is left alone.
 fn process_photo(job: Job, pending: &mut Option<PendingMod>) -> Result<(), String> {
     let r = photo_inner(job, pending);
     if let Err(e) = &r {
@@ -2077,7 +2077,7 @@ unsafe fn capture_step(st: &mut State, frame: u64, now: u64, bb: Obj, d: &Tex2dD
                 }
             }
         }
-        // 2c. Photos first: one capture at a time, the dev timer and the dev buttons wait for them (and the other way round, a running
+        // 2c. Photos first: one capture at a time, the debug timer and the debug buttons wait for them (and the other way round, a running
         // pair holds the photo back).
         let free = st.gpu.as_ref().map_or(0, |g| g.slots.free_count());
         match photo::arbitrate(photo::queued(), st.machine.is_forced(), st.scene_wait.is_some(), free, gate::user_enabled()) {
@@ -2163,7 +2163,7 @@ unsafe fn issue(st: &mut State, frame: u64, bb: Obj, ctx: Obj, kind: (Kind, u64)
         (Kind::PairVanilla, true) => "photo pair, shot B: vanilla emulation (Enabled forced off)",
     };
     let mut text = settings_text(label, frame, screen, fmt);
-    // Dev shots of the mod carry the depth telemetry (`status_depth=`): the numbers are made by the writer thread; if there is none, the reason.
+    // Debug shots of the mod carry the depth telemetry (`status_depth=`): the numbers are made by the writer thread; if there is none, the reason.
     let depth_data = attach_depth(&mut text, photo.is_none() && matches!(kind, Kind::Single | Kind::PairMod), st.depth.take(), st.depth_note.take());
     let g = st.gpu.as_mut().ok_or("no ring")?;
     let i = g.slots.acquire(frame).ok_or("no free staging slot")?;
@@ -2173,7 +2173,7 @@ unsafe fn issue(st: &mut State, frame: u64, bb: Obj, ctx: Obj, kind: (Kind, u64)
 }
 
 // ================================================================================================================
-// Dev thread: watchdog and hot reload
+// Debug thread: watchdog and hot reload
 // ================================================================================================================
 
 static RELOAD: Mutex<Option<(Config, Config)>> = Mutex::new(None);
@@ -2186,10 +2186,10 @@ pub fn take_reload() -> Option<(Config, Config)> {
     RELOAD.try_lock().ok()?.take()
 }
 
-/// Starts the writer and the dev thread (watchdog + hot reload). `path` is `config.ini`, `initial` what it said at start.
+/// Starts the writer and the debug thread (watchdog + hot reload). `path` is `config.ini`, `initial` what it said at start.
 pub fn start(path: PathBuf, initial: Config) {
     configure(&initial);
-    let dir = path.parent().map(|p| p.join("dev")).unwrap_or_else(|| PathBuf::from("dev"));
+    let dir = path.parent().map(|p| p.join("debug")).unwrap_or_else(|| PathBuf::from("debug"));
     let _ = DIR.set(dir.clone());
     let _ = PHOTO_DIR.set(path.parent().map(|p| p.join("photos")).unwrap_or_else(|| PathBuf::from("photos")));
     let (tx, rx) = sync_channel::<Msg>(2);
@@ -2197,7 +2197,7 @@ pub fn start(path: PathBuf, initial: Config) {
         let d = dir.clone();
         let _ = std::thread::Builder::new().name("gw2graphics-debugshot".into()).spawn(move || worker(rx, d));
     }
-    let _ = std::thread::Builder::new().name("gw2graphics-dev".into()).spawn(move || {
+    let _ = std::thread::Builder::new().name("gw2graphics-debug".into()).spawn(move || {
         let mut last_file = initial;
         let mut last_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         let mut candidate = None;
@@ -2235,7 +2235,7 @@ pub fn start(path: PathBuf, initial: Config) {
             }));
         }
     });
-    log!("debugshot: started (capture every {} s, compare {}, hot reload {}, folder {})", capture_seconds(), compare(), hot_reload(), dir.display());
+    log!("debug: started (capture every {} s, compare {}, hot reload {}, folder {})", capture_seconds(), compare(), hot_reload(), dir.display());
 }
 
 fn watchdog_tick() {
@@ -2252,10 +2252,10 @@ pub fn log_reload(d: &Diff) {
         return;
     }
     if !d.live.is_empty() {
-        log!("debugshot: config.ini changed, applied live: {}", d.live.join(", "));
+        log!("debug: config.ini changed, applied live: {}", d.live.join(", "));
     }
     for k in &d.ignored {
-        log!("debugshot: config.ini key {k} changed but needs a restart; ignored");
+        log!("debug: config.ini key {k} changed but needs a restart; ignored");
     }
 }
 

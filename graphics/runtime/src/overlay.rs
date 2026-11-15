@@ -1547,7 +1547,7 @@ impl Overlay {
 }
 
 impl Overlay {
-    /// Work that must happen every frame whether or not the panel is open: resolve, output, calibration, dev shots.
+    /// Work that must happen every frame whether or not the panel is open: resolve, output, calibration, debug shots.
     pub fn per_frame(&mut self) {
         let _ = std::panic::catch_unwind(|| recorder::frame_end(d3d::hooks()));
         let _ = std::panic::catch_unwind(output::tick);

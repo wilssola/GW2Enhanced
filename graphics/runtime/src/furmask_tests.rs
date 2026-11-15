@@ -1113,7 +1113,7 @@ fn the_occlusion_probe_emulates_the_check_on_the_cpu() {
     assert_eq!(decode_depth(28, &[0; 4]), None);
 }
 
-/// The live switch and the dev-capture probe through the real entry point (`on_light_adjust`, the global mask state): with
+/// The live switch and the debug-capture probe through the real entry point (`on_light_adjust`, the global mask state): with
 /// `fur_occlusion=0` the mask stays as drawn and the status says off; switched back on, the check erases; the probe reads the
 /// masks back BEFORE the check and counts what it erases.
 #[test]

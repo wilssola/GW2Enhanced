@@ -484,7 +484,7 @@ pub fn configure_rim(ps: &str, min_vcb: u32, debug: bool) {
     refresh_rim_consumer();
 }
 
-/// The rim selector as written to the log / the dev text.
+/// The rim selector as written to the log / the debug text.
 pub fn rim_selector_text() -> String {
     join_hashes(&RIM_SELECTOR.lock().unwrap_or_else(|e| e.into_inner()).ps)
 }
@@ -518,7 +518,7 @@ pub fn rim_height() -> u32 {
     RIM_H.load(Relaxed)
 }
 
-/// One line for the overlay / the dev text (`status_rim=`): what the rim selector did last frame.
+/// One line for the overlay / the debug text (`status_rim=`): what the rim selector did last frame.
 pub fn rim_status_text() -> String {
     if !RIM_NONEMPTY.load(Relaxed) {
         return "off (rim_ps is empty)".to_string();
@@ -547,7 +547,7 @@ pub fn rim_status_text() -> String {
     )
 }
 
-/// The normalised lists as written to the log / the dev text: (`fur_ps`, `fur_vs`).
+/// The normalised lists as written to the log / the debug text: (`fur_ps`, `fur_vs`).
 pub fn selector_text() -> (String, String) {
     let s = SELECTOR.lock().unwrap_or_else(|e| e.into_inner());
     (join_hashes(&s.ps), join_hashes(&s.vs))
@@ -625,7 +625,7 @@ pub fn frame_begin() {
     crate::furprobe::frame_begin(PROBE_WANT.load(Relaxed));
 }
 
-/// One line for the overlay / the dev text: what the selector did last frame.
+/// One line for the overlay / the debug text: what the selector did last frame.
 pub fn status_text() -> String {
     if HL_ACTIVE.load(Relaxed) && !FAILED.load(Relaxed) && BLOB.get().is_some() {
         return format!(
@@ -1140,7 +1140,7 @@ static UV_DESC: Mutex<String> = Mutex::new(String::new());
 static UV_LOGGED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 
 /// The bytecode of the vertex shaders whose outputs look like the game's character layouts (a TEXCOORD with xy, at least two float3+
-/// TEXCOORDs and SV_Position): the shell fur's dev dump disassembles the ones that get shells (`shellfur::dump_vs`). At most 256.
+/// TEXCOORDs and SV_Position): the shell fur's debug dump disassembles the ones that get shells (`shellfur::dump_vs`). At most 256.
 static VS_CODE: Mutex<Option<HashMap<usize, Arc<Vec<u8>>>>> = Mutex::new(None);
 
 fn character_like(elems: &[SigElem]) -> bool {

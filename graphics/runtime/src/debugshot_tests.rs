@@ -485,7 +485,7 @@ fn photo_files_are_never_touched_by_the_dev_retention() {
 
 #[test]
 fn a_photo_pair_has_the_same_restore_guarantees_as_a_dev_pair() {
-    // The photo pair IS the dev pair machine: forced -> exactly one ending step -> restored, within the watchdog time, for every schedule.
+    // The photo pair IS the debug pair machine: forced -> exactly one ending step -> restored, within the watchdog time, for every schedule.
     for &(dt, settle_ms) in &[(16u64, 0u64), (33, 700), (200, 99_999), (1_000, 0)] {
         let mut m = PairMachine::new();
         let saved = Saved { enabled: true, paper: 203.0, peak: 1000.0, at_ms: 0 };

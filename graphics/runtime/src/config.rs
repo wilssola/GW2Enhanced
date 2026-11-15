@@ -729,7 +729,7 @@ impl Config {
                 "# Overlay hotkey: modifiers (Shift, Ctrl, Alt) + key (End, Insert, F1..F24, A..Z, 0..9).\n",
                 "overlay_key={}\n",
                 "\n",
-                "# Debug mode (docs/debug-mode.md), all off by default: a screenshot into GW2Graphics\\dev every N seconds (0 = off, max 3600),\n",
+                "# Debug mode (docs/debug-mode.md), all off by default: a screenshot into GW2Graphics\\debug every N seconds (0 = off, max 3600),\n",
                 "# as a pair (mod + vanilla comparison) when debug_compare=1, and re-reading this file live when it changes.\n",
                 "debug_capture_seconds={}\n",
                 "debug_compare={}\n",

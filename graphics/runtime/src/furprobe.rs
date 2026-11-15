@@ -4,7 +4,7 @@
 //! so the horn, the claws and the nose have the gloss of the coat in the engine's composited 4096 atlas (the dat textures the threshold
 //! was measured on are not what is bound). Nothing on disk shows the bound atlas, so the mod reads it back itself.
 //!
-//! HOW. A frame that starts with a dev-capture probe pending (`frame_begin`) COLLECTS its masked fur draws (`push_draw`: shaders, vcb,
+//! HOW. A frame that starts with a debug-capture probe pending (`frame_begin`) COLLECTS its masked fur draws (`push_draw`: shaders, vcb,
 //! the draw call, shells yes / no and the engine's `t0` / `t1` resources with their view's mip range) and TAGS the fur mask: the mask's
 //! `b` (1.0 before) becomes `0.5 + k / 64` with k = the draw's index in the frame + 1 (`tag_value`; every reader of `b` only tests
 //! `> 0.5`, so the picture is unchanged). `shell_debug=2` tags every frame and the composite paints each shell strand with the colour of
@@ -544,7 +544,7 @@ fn f4(c: Option<[f32; 4]>, n: usize) -> String {
 pub fn report(draws: &[DrawMeta], tex: &[TexData], st: &[DrawStats], untagged: u64, pts: &[(String, u32, u32, PointInfo)], files: &[String]) -> String {
     let total: u64 = st.iter().map(|s| s.px).sum::<u64>() + untagged;
     let mut t = format!(
-        "per-draw probe ({} fur draws collected, {total} visible fur-draw px, shell_debug=2 colours; NOTE: measured in the frame right after the PREVIOUS debug capture, so it belongs to that capture's screenshot and to dev\\furprobe-last.txt, written with the PNGs):",
+        "per-draw probe ({} fur draws collected, {total} visible fur-draw px, shell_debug=2 colours; NOTE: measured in the frame right after the PREVIOUS debug capture, so it belongs to that capture's screenshot and to debug\\furprobe-last.txt, written with the PNGs):",
         draws.len()
     );
     for (d, s) in draws.iter().zip(st) {
@@ -597,7 +597,7 @@ pub fn report(draws: &[DrawMeta], tex: &[TexData], st: &[DrawStats], untagged: u
         ));
     }
     if !files.is_empty() {
-        t.push_str(&format!("; files in dev\\: {}", files.join(", ")));
+        t.push_str(&format!("; files in debug\\: {}", files.join(", ")));
     }
     t
 }
@@ -868,7 +868,7 @@ pub unsafe fn analyze(dev: Obj, ctx: Obj, texels: Vec<[u16; 4]>, stamp: Vec<f32>
     }
     drop(collected); // the references go back on the render thread
     BUSY.store(true, Relaxed);
-    let dir = crate::grading::dir().map(|d| d.join("dev"));
+    let dir = crate::grading::dir().map(|d| d.join("debug"));
     let spawned = std::thread::Builder::new().name("gw2g-furprobe".into()).spawn(move || {
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let mut tex = tex;

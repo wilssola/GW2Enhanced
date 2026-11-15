@@ -167,7 +167,7 @@ fn the_queue_is_fifo_and_bounded() {
 #[test]
 fn only_one_capture_at_a_time() {
     use PhotoKind::*;
-    // nothing queued: the dev logic goes on
+    // nothing queued: the debug logic goes on
     assert_eq!(arbitrate(None, false, false, 3, true), Plan::Idle);
     assert_eq!(arbitrate(None, true, true, 0, true), Plan::Idle);
     // a pair or a scene grab is running: the photo waits, and nothing else may start either (Wait, not Idle)
@@ -187,9 +187,9 @@ fn only_one_capture_at_a_time() {
     assert_eq!(scene_step(100, 50), SceneStep::Wait, "counter going back");
 }
 
-/// A scheduler that mixes photo requests with the dev timer and the dev pair machine, in the order `capture_step` uses: the pair machine
-/// first, then `arbitrate`, then the dev logic. At no step do two captures start, a queued photo is never starved by the dev timer and the
-/// dev timer is never starved for good.
+/// A scheduler that mixes photo requests with the debug timer and the debug pair machine, in the order `capture_step` uses: the pair machine
+/// first, then `arbitrate`, then the debug logic. At no step do two captures start, a queued photo is never starved by the debug timer and the
+/// debug timer is never starved for good.
 #[test]
 fn photos_and_the_dev_timer_never_run_together_and_both_get_their_turn() {
     use crate::debugshot::{PairMachine, PairStep, capture_due};
@@ -244,7 +244,7 @@ fn photos_and_the_dev_timer_never_run_together_and_both_get_their_turn() {
         assert!(photos + devs - started_before <= 1, "two captures started in one step");
     }
     assert!(photos >= 10, "photos starved: {photos}");
-    assert!(devs >= 10, "the dev timer starved: {devs}");
+    assert!(devs >= 10, "the debug timer starved: {devs}");
     assert_eq!(q.len(), 0, "every queued photo was taken");
 }
 

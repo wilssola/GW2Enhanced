@@ -41,7 +41,7 @@
 //! own tile (tail, limbs) are never judged so; (b) COPIES: an island with the triangle count and uv box of an excluded island (its
 //! mirror / LOD copy) is excluded too.
 //!
-//! Dev: `status_shells=` lists per replayed draw the islands total / excluded / sub-regions / near and the state (pending capture,
+//! Debug: `status_shells=` lists per replayed draw the islands total / excluded / sub-regions / near and the state (pending capture,
 //! read-back, analysis; ready; failed); with `shell_debug=2` (at the analysis) or at a debug capture, `GW2Graphics\debug\furmesh-<uvcrc>.txt`
 //! (per island: triangles, uv box, 3D area share, elongation, taper, non-fur share, threshold, verdict) and `furisland-<uvcrc>.png` (the
 //! atlas with the islands painted: green fur, red excluded island, orange excluded sub-region, yellow near).
@@ -997,7 +997,7 @@ pub struct IslandInfo {
     pub why: Why,
 }
 
-/// Why an island has its verdict (the dev dump's reason).
+/// Why an island has its verdict (the debug dump's reason).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Why {
     /// Fur: the non-fur share is under the threshold and its part is not cone-shaped.
@@ -1783,7 +1783,7 @@ static DUMPS: Mutex<Vec<DumpItem>> = Mutex::new(Vec::new());
 const DUMP_KEEP: usize = 6;
 
 fn write_dump(a: &Analysis, img: &Img, count: u32) -> Option<String> {
-    let dir = crate::grading::dir()?.join("dev");
+    let dir = crate::grading::dir()?.join("debug");
     let _ = std::fs::create_dir_all(&dir);
     let txt = dir.join(format!("furmesh-{:08x}.txt", a.uv_hash));
     let png = dir.join(format!("furisland-{:08x}.png", a.uv_hash));
@@ -1801,7 +1801,7 @@ pub fn dump_on_capture() {
     };
     if !all.is_empty() {
         let _ = std::thread::Builder::new().name("gw2g-furisland-txt".into()).spawn(move || {
-            let Some(dir) = crate::grading::dir().map(|d| d.join("dev")) else { return };
+            let Some(dir) = crate::grading::dir().map(|d| d.join("debug")) else { return };
             let _ = std::fs::create_dir_all(&dir);
             let mut n = 0;
             for a in &all {
@@ -1827,7 +1827,7 @@ pub fn dump_on_capture() {
     let _ = std::thread::Builder::new().name("gw2g-furisland-dump".into()).spawn(move || {
         for (a, img, count) in todo {
             if let Some(f) = write_dump(&a, &img, count) {
-                log!("furisland: wrote dev\\{f}");
+                log!("furisland: wrote debug\\{f}");
             }
         }
     });
@@ -1891,7 +1891,7 @@ fn spawn_job(key: u64, count: u32, floats: Vec<f32>, n: usize, p00: f32, p11: f3
             Ok((a, img)) => {
                 if debug2 {
                     if let Some(f) = write_dump(&a, &img, count) {
-                        log!("furisland: wrote dev\\{f}");
+                        log!("furisland: wrote debug\\{f}");
                     }
                 }
                 if let Ok(mut d) = DUMPS.lock() {
