@@ -311,3 +311,60 @@ fn sql_never_contains_values() {
     let (sql, _) = list_texts("pt-BR", ListSort::Worst, Some(EVIL), 31, 0);
     assert!(!sql.contains("DROP"), "{sql}");
 }
+
+fn upload(c: &Connection, ip: &str, trs: serde_json::Value) {
+    let texts = serde_json::json!([{"k": K1, "en": "Sword"}]).to_string();
+    let trs = trs.to_string();
+    let rows = ContributionRows {
+        texts: &texts,
+        pairs: "[]",
+        trs: &trs,
+        ip_hash: ip,
+        lang: "pt-BR",
+        now: "2026-01-01T00:00:00Z",
+        game_build: None,
+    };
+    for q in contribution(&rows) {
+        exec(c, &q);
+    }
+}
+
+fn count(c: &Connection, sql: &str) -> i64 {
+    c.query_row(sql, [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn a_text_collects_at_most_max_translations() {
+    let c = db();
+    for i in 0..MAX_TRANSLATIONS_PER_TEXT + 5 {
+        let id = format!("{i:032x}");
+        upload(&c, &format!("ip{i}"), serde_json::json!([{"id": id, "k": K1, "tr": format!("Espada {i}"), "src": "argos"}]));
+    }
+    assert_eq!(count(&c, "SELECT count(*) FROM translations"), MAX_TRANSLATIONS_PER_TEXT);
+    // A refused one leaves no reporter row; an existing one still gains reporters.
+    assert_eq!(count(&c, "SELECT count(DISTINCT translation_id) FROM translation_reporters"), MAX_TRANSLATIONS_PER_TEXT);
+    upload(&c, "late", serde_json::json!([{"id": format!("{:032x}", 0), "k": K1, "tr": "Espada 0", "src": "argos"}]));
+    assert_eq!(count(&c, "SELECT reporters FROM translations WHERE tr = 'Espada 0'"), 2);
+}
+
+#[test]
+fn no_uploads_for_a_text_the_server_ai_translated() {
+    let c = db();
+    c.execute_batch(&format!(
+        "INSERT INTO texts (key, en, created_at) VALUES ('{K1}', 'Sword', 'now');
+         INSERT INTO translations (id, text_key, lang, tr, source, review, created_at)
+         VALUES ('{T1}', '{K1}', 'pt-BR', 'Espada', 'ai', 'passed', 'now');"
+    ))
+    .unwrap();
+    upload(&c, "ip1", serde_json::json!([{"id": K2, "k": K1, "tr": "Espadinha", "src": "argos"}]));
+    assert_eq!(count(&c, "SELECT count(*) FROM translations"), 1);
+    assert_eq!(count(&c, "SELECT count(*) FROM translation_reporters"), 0);
+    // Another language is not affected.
+    let texts = serde_json::json!([{"k": K1, "en": "Sword"}]).to_string();
+    let trs = serde_json::json!([{"id": K2, "k": K1, "tr": "Espada", "src": "argos"}]).to_string();
+    let rows = ContributionRows { texts: &texts, pairs: "[]", trs: &trs, ip_hash: "ip2", lang: "es", now: "now", game_build: None };
+    for q in contribution(&rows) {
+        exec(&c, &q);
+    }
+    assert_eq!(count(&c, "SELECT count(*) FROM translations WHERE lang = 'es'"), 1);
+}

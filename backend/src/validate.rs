@@ -224,11 +224,12 @@ pub fn check_tr(en: &str, tr: &str) -> Result<(), Reject> {
     Ok(())
 }
 
-/// Maps a contribution's `src` to the stored source (`ai`, `argos`, `user`).
+/// Maps an uploaded translation's `src` to the stored source: only `argos` (made on the player's PC) is accepted.
 pub fn source(src: Option<&str>) -> Result<&'static str, Reject> {
     match src {
+        // Only translations made on the player's PC. The server's AI translations (`ai` / `nemotron`) come from the
+        // server itself, never from an upload.
         Some("argos") => Ok("argos"),
-        Some("ai" | "nemotron") => Ok("ai"),
         _ => Err(Reject::Source),
     }
 }
@@ -310,7 +311,8 @@ mod tests {
     #[test]
     fn sources_and_langs() {
         assert_eq!(source(Some("argos")), Ok("argos"));
-        assert_eq!(source(Some("nemotron")), Ok("ai"));
+        assert_eq!(source(Some("nemotron")), Err(Reject::Source));
+        assert_eq!(source(Some("ai")), Err(Reject::Source));
         assert_eq!(source(Some("user")), Err(Reject::Source));
         assert!(lang_allowed("pt-BR", "pt-BR, es"));
         assert!(!lang_allowed("pt", "pt-BR"));

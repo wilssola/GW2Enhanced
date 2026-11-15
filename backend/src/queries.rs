@@ -341,6 +341,10 @@ pub struct ContributionRows<'a> {
     pub game_build: Option<i64>,
 }
 
+/// Different translations one text can collect from players' uploads (per language); more are refused, so a text
+/// cannot pile up variants.
+pub const MAX_TRANSLATIONS_PER_TEXT: i64 = 10;
+
 /// Every statement that stores a contribution (run as one D1 batch).
 pub fn contribution(c: &ContributionRows) -> Vec<Q> {
     let mut out = Vec::new();
@@ -453,7 +457,22 @@ pub fn contribution(c: &ContributionRows) -> Vec<Q> {
             )
             .to_owned(),
     ));
-    // Translations and their distinct reporters.
+    // Translations and their distinct reporters. A new translation is refused when the text already has one made by
+    // the server's AI (better than any local model) or already has MAX_TRANSLATIONS_PER_TEXT variants.
+    let ai_done = Query::select()
+        .expr(Expr::val(1))
+        .from_as(Translations::Table, Y)
+        .and_where(Expr::col((Y, Translations::TextKey)).eq(jf("k")))
+        .and_where(Expr::col((Y, Translations::Lang)).eq(c.lang))
+        .and_where(Expr::col((Y, Translations::Source)).eq("ai"))
+        .and_where(Expr::col((Y, Translations::Review)).ne("hidden"))
+        .to_owned();
+    let variants = Query::select()
+        .expr(Func::count(Expr::col((Y, Translations::Id))))
+        .from_as(Translations::Table, Y)
+        .and_where(Expr::col((Y, Translations::TextKey)).eq(jf("k")))
+        .and_where(Expr::col((Y, Translations::Lang)).eq(c.lang))
+        .to_owned();
     out.push(sqlite(
         &Query::insert()
             .into_table(Translations::Table)
@@ -473,17 +492,26 @@ pub fn contribution(c: &ContributionRows) -> Vec<Q> {
                     .expr(jf("tr"))
                     .expr(jf("src"))
                     .expr(Expr::val(c.now))
+                    .and_where(Expr::not_exists(ai_done))
+                    .and_where(Expr::expr(Expr::SubQuery(None, Box::new(variants.into()))).lt(MAX_TRANSLATIONS_PER_TEXT))
                     .to_owned(),
             )
             .expect("6 columns")
             .on_conflict(do_nothing())
             .to_owned(),
     ));
+    // Reporters only for translations that exist (a refused one leaves nothing behind).
+    let stored = Query::select().column(Translations::Id).from(Translations::Table).to_owned();
     out.push(sqlite(
         &Query::insert()
             .into_table(TranslationReporters::Table)
             .columns([TranslationReporters::TranslationId, TranslationReporters::IpHash])
-            .select_from(json_list(c.trs, Some("id")).expr(Expr::val(c.ip_hash)).to_owned())
+            .select_from(
+                json_list(c.trs, Some("id"))
+                    .expr(Expr::val(c.ip_hash))
+                    .and_where(jf("id").in_subquery(stored))
+                    .to_owned(),
+            )
             .expect("2 columns")
             .on_conflict(do_nothing())
             .to_owned(),
