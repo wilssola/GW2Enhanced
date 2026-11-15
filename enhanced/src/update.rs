@@ -40,7 +40,6 @@ const CLOSE_GRACE: Duration = Duration::from_secs(20);
 const DATA_DIR: &str = "GW2Enhanced";
 const STAGE_DIR: &str = "update";
 const CLEANUP_LIST: &str = "update_cleanup.txt";
-const LOG_FILE: &str = "update_log.txt";
 
 /// Size caps: the largest package (CUDA translator runtime) is well under this.
 const MAX_DOWNLOAD: u64 = 6 * 1024 * 1024 * 1024;
@@ -329,21 +328,9 @@ fn is_game_exe() -> bool {
         .unwrap_or(false)
 }
 
+/// Into the mod's own log (`GW2Enhanced\gw2enhanced_log.txt`, written only while `log_host=1`).
 fn log(msg: &str) {
-    let Some(dir) = game_dir().map(|g| g.join(DATA_DIR)) else { return };
-    let _ = fs::create_dir_all(&dir);
-    let path = dir.join(LOG_FILE);
-    // Kept small: one start writes a line or two.
-    if fs::metadata(&path).map(|m| m.len() > 256 * 1024).unwrap_or(false) {
-        let _ = fs::remove_file(&path);
-    }
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "[{secs}] {msg}");
-    }
+    gw2enhanced_core::logs::HOST.write(&format!("update: {msg}"));
 }
 
 /// Deletes what the previous update left: the staging folder and the `.old` files that were in use.

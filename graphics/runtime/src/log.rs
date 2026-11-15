@@ -1,34 +1,31 @@
 //! Log in `gw2graphics_log.txt`, in the format `[seconds] message`.
+//!
+//! Off by default: written only with `log_graphics=1` in `GW2Enhanced\config.ini` (or the Logs switch in the
+//! overlay's Health tab), see `gw2enhanced_core::logs`. The previous session's log is kept as `<name>.prev.txt`, so
+//! the log of a session that crashed survives the next launch.
 
-use std::fs::{File, OpenOptions};
-use std::io::Write;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 use std::time::Instant;
 
-static START: OnceLock<Instant> = OnceLock::new();
-static FILE: Mutex<Option<File>> = Mutex::new(None);
+use gw2enhanced_core::logs::GRAPHICS;
 
-/// Opens (truncating) the log. Until then, messages are discarded. The previous session's log is
-/// kept as `<name>.prev.txt`, so the log of a session that crashed survives the next launch.
+static START: OnceLock<Instant> = OnceLock::new();
+
+/// Where the log goes (opened only while logging is on). Until then, messages are discarded.
 pub fn init(path: &Path) {
     START.get_or_init(Instant::now);
-    let _ = std::fs::rename(path, path.with_extension("prev.txt"));
-    let f = OpenOptions::new().create(true).write(true).truncate(true).open(path).ok();
-    *FILE.lock().unwrap_or_else(|e| e.into_inner()) = f;
+    GRAPHICS.init(path);
 }
 
-/// Milliseconds since the log was opened (monotonic).
+/// Milliseconds since the start (monotonic).
 pub fn uptime_ms() -> u64 {
     START.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
 pub fn write(msg: &str) {
-    let t = START.get_or_init(Instant::now).elapsed().as_secs_f64();
-    if let Some(f) = FILE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
-        let _ = writeln!(f, "[{t:8.3}] {msg}");
-        let _ = f.flush();
-    }
+    START.get_or_init(Instant::now);
+    GRAPHICS.write(msg);
 }
 
 #[macro_export]

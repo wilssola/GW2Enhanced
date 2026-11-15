@@ -1,29 +1,20 @@
 //! Log in `gw2remastered_log.txt`, in the format `[seconds] message`.
+//!
+//! Off by default: written only with `log_textures=1` in `GW2Enhanced\config.ini` (or the Logs switch in the
+//! overlay's Health tab), see `gw2enhanced_core::logs`. The previous session's log is kept as `<name>.prev.txt`, so
+//! the log of a session that crashed survives the next launch.
 
-use std::fs::{File, OpenOptions};
-use std::io::Write;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
 
-static START: OnceLock<Instant> = OnceLock::new();
-static FILE: Mutex<Option<File>> = Mutex::new(None);
+use gw2enhanced_core::logs::TEXTURES;
 
-/// Opens (truncating) the log. Until then, messages are discarded. The previous session's log is
-/// kept as `<name>.prev.txt`, so the log of a session that crashed survives the next launch.
+/// Where the log goes (opened only while logging is on). Until then, messages are discarded.
 pub fn init(path: &Path) {
-    START.get_or_init(Instant::now);
-    let _ = std::fs::rename(path, path.with_extension("prev.txt"));
-    let f = OpenOptions::new().create(true).write(true).truncate(true).open(path).ok();
-    *FILE.lock().unwrap_or_else(|e| e.into_inner()) = f;
+    TEXTURES.init(path);
 }
 
 pub fn write(msg: &str) {
-    let t = START.get_or_init(Instant::now).elapsed().as_secs_f64();
-    if let Some(f) = FILE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
-        let _ = writeln!(f, "[{t:8.3}] {msg}");
-        let _ = f.flush();
-    }
+    TEXTURES.write(msg);
 }
 
 #[macro_export]

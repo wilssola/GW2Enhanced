@@ -23,6 +23,7 @@ use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
 use gw2enhanced_core::i18n::{self, Lang, tr};
+use gw2enhanced_core::logs::{self, Feature};
 use gw2enhanced_core::registry::{self, State};
 
 /// Lets the installer recognise our `msimg32.dll`.
@@ -58,13 +59,21 @@ fn guarded(name: &'static str, f: impl FnOnce() + std::panic::UnwindSafe) {
                 registry::report(name, "", State::Ok);
             }
         }
-        Err(_) => registry::report(name, "", State::Off("panicked while starting".into())),
+        Err(_) => {
+            logs::HOST.write(&format!("{name}: panicked while starting"));
+            registry::report(name, "", State::Off("panicked while starting".into()));
+        }
     }
 }
 
 fn init(module: usize) {
     // Before any panel exists: they all draw in the overlay language.
     i18n::init();
+    // Off unless log_host=1 (the features open their own logs the same way).
+    if let Some(dir) = gw2enhanced_core::settings::path().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
+        logs::HOST.init(&dir.join("gw2enhanced_log.txt"));
+    }
+    logs::HOST.write(&format!("GW2 Enhanced {} starting", update::current_version()));
     let mut threads = Vec::new();
     // Each feature has its own panic guard and thread: they hook at different moments and one must not wait for another.
     #[cfg(feature = "translation")]
@@ -386,6 +395,56 @@ fn health(ui: &Ui) {
     }
     ui.separator();
     ui.text_disabled(update::summary());
+    ui.separator();
+    log_switches(ui);
+}
+
+/// The features built into this DLL, with the name shown next to their Logs switch.
+fn log_features() -> Vec<(Feature, &'static str)> {
+    let mut v = vec![(Feature::Host, tr("GW2 Enhanced (overlay, updates)", "GW2 Enhanced (overlay, atualizações)"))];
+    #[cfg(feature = "translation")]
+    v.push((Feature::Translation, tr("Translation", "Tradução")));
+    #[cfg(feature = "textures")]
+    v.push((Feature::Textures, tr("HD textures", "Texturas HD")));
+    #[cfg(feature = "graphics")]
+    v.push((Feature::Graphics, tr("Graphics", "Gráficos")));
+    v
+}
+
+/// One Logs switch per feature (off by default, saved, live), and the recent problems kept while the files are off.
+fn log_switches(ui: &Ui) {
+    ui.text(tr("Logs", "Logs"));
+    ui.text_disabled(tr(
+        "Off by default. Turn a log on before reporting a problem; it is written to the GW2Enhanced and feature folders next to the game.",
+        "Desligados por padrão. Ligue o log antes de relatar um problema; ele é gravado nas pastas GW2Enhanced e das funções, ao lado do jogo.",
+    ));
+    for (f, name) in log_features() {
+        let mut on = f.log().enabled();
+        if ui.checkbox(format!("{name}##log-{}", f.key()), &mut on) {
+            if let Err(e) = logs::choose(f, on) {
+                registry::report("overlay", "logs", State::Degraded(format!("could not save {}: {e}", f.key())));
+            }
+        }
+        if on && let Some(p) = f.log().path() {
+            ui.same_line();
+            ui.text_disabled(p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        }
+    }
+    let recent: Vec<(&'static str, Vec<String>)> =
+        log_features().into_iter().map(|(f, name)| (name, f.log().recent())).filter(|(_, r)| !r.is_empty()).collect();
+    if !recent.is_empty()
+        && ui.collapsing_header(
+            tr("Recent problems###recent-problems", "Problemas recentes###recent-problems"),
+            hudhook::imgui::TreeNodeFlags::empty(),
+        )
+    {
+        for (name, lines) in recent {
+            ui.text(name);
+            for l in lines.iter().rev().take(10) {
+                ui.text_wrapped(l);
+            }
+        }
+    }
 }
 
 /// Waits for the features to publish their panels (they do it at different moments), then hooks `Present` once.
