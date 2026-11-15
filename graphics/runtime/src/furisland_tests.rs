@@ -1,5 +1,5 @@
 //! Host tests of the v9 island classification (furisland.rs): the union-find islands, the shape descriptor, the voting, the
-//! sub-regions, the read-back checks, the dev files, and the real atlases of `GW2Graphics\debug\` (skipped when absent).
+//! sub-regions, the read-back checks, the debug files, and the real atlases of `GW2Graphics\debug\` (skipped when absent).
 
 use super::*;
 

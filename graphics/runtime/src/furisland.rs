@@ -42,7 +42,7 @@
 //! mirror / LOD copy) is excluded too.
 //!
 //! Dev: `status_shells=` lists per replayed draw the islands total / excluded / sub-regions / near and the state (pending capture,
-//! read-back, analysis; ready; failed); with `shell_debug=2` (at the analysis) or at a dev capture, `GW2Graphics\debug\furmesh-<uvcrc>.txt`
+//! read-back, analysis; ready; failed); with `shell_debug=2` (at the analysis) or at a debug capture, `GW2Graphics\debug\furmesh-<uvcrc>.txt`
 //! (per island: triangles, uv box, 3D area share, elongation, taper, non-fur share, threshold, verdict) and `furisland-<uvcrc>.png` (the
 //! atlas with the islands painted: green fur, red excluded island, orange excluded sub-region, yellow near).
 
@@ -129,7 +129,7 @@ pub fn tris_from_so(raw: &[f32], n: usize, p00: f32, p11: f32) -> Result<Vec<Tri
     Ok(out)
 }
 
-/// The atlas-uv hash of a capture (the cache's content check; also the dev files' name). Positions animate, the uv do not.
+/// The atlas-uv hash of a capture (the cache's content check; also the debug files' name). Positions animate, the uv do not.
 pub fn uv_hash(t: &[Tri]) -> u32 {
     let mut b = Vec::with_capacity(t.len() * 24);
     for tri in t {
@@ -138,7 +138,7 @@ pub fn uv_hash(t: &[Tri]) -> u32 {
             b.extend_from_slice(&q[1].to_le_bytes());
         }
     }
-    crate::devshot::crc32(&[&b])
+    crate::debugshot::crc32(&[&b])
 }
 
 /// FNV-1a over the parts of a mesh key.
@@ -1592,7 +1592,7 @@ pub fn tri_bits(bits: &[u32], i: u32) -> u32 {
     bits.get((i / 16) as usize).map_or(0, |w| (w >> ((i % 16) * 2)) & 3)
 }
 
-// ---- dev files ------------------------------------------------------------------------------------------------------------------
+// ---- debug files ------------------------------------------------------------------------------------------------------------------
 
 /// `furmesh-<uvcrc>.txt`.
 pub fn dump_text(a: &Analysis, count: u32) -> String {
@@ -1778,7 +1778,7 @@ struct DumpItem {
     written: bool,
 }
 
-/// The newest analyses with their atlas (the dev capture writes the ones not yet written). At most DUMP_KEEP.
+/// The newest analyses with their atlas (the debug capture writes the ones not yet written). At most DUMP_KEEP.
 static DUMPS: Mutex<Vec<DumpItem>> = Mutex::new(Vec::new());
 const DUMP_KEEP: usize = 6;
 
@@ -1787,11 +1787,11 @@ fn write_dump(a: &Analysis, img: &Img, count: u32) -> Option<String> {
     let _ = std::fs::create_dir_all(&dir);
     let txt = dir.join(format!("furmesh-{:08x}.txt", a.uv_hash));
     let png = dir.join(format!("furisland-{:08x}.png", a.uv_hash));
-    let ok = std::fs::write(&txt, dump_text(a, count)).is_ok() & std::fs::write(&png, crate::devshot::encode_png_rgb8(img.w, img.h, &dump_png(a, img))).is_ok();
+    let ok = std::fs::write(&txt, dump_text(a, count)).is_ok() & std::fs::write(&png, crate::debugshot::encode_png_rgb8(img.w, img.h, &dump_png(a, img))).is_ok();
     ok.then(|| format!("furmesh-{:08x}.txt + furisland-{:08x}.png", a.uv_hash, a.uv_hash))
 }
 
-/// The dev capture (`status_shells=`): writes the kept analyses not yet written (txt + png), on a background thread. v14: and the TEXT
+/// The debug capture (`status_shells=`): writes the kept analyses not yet written (txt + png), on a background thread. v14: and the TEXT
 /// of EVERY finished analysis of this session (the PNG needs the atlas, kept only for the newest DUMP_KEEP): a mesh analysed early in
 /// the session (a charr arm) no longer leaves a stale `furmesh-*.txt` of an older version behind.
 pub fn dump_on_capture() {
@@ -2433,7 +2433,7 @@ impl IslandGpu {
                 release(res);
                 return 0;
             }
-            let st = crate::devshot::create_staging(dev, w, h, d.format);
+            let st = crate::debugshot::create_staging(dev, w, h, d.format);
             if st.is_null() {
                 release(res);
                 return 0;

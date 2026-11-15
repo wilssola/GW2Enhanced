@@ -359,7 +359,7 @@ fn base_values(g: &Gpu, ex: &Exposure) -> Vec<[f32; 4]> {
         for y in 0..d.Height as usize {
             let row = std::slice::from_raw_parts((m.pData as *const u8).add(y * m.RowPitch as usize) as *const u16, d.Width as usize * 4);
             for x in 0..d.Width as usize {
-                out.push([crate::devshot::f16_to_f32(row[x * 4]), crate::devshot::f16_to_f32(row[x * 4 + 1]), crate::devshot::f16_to_f32(row[x * 4 + 2]), crate::devshot::f16_to_f32(row[x * 4 + 3])]);
+                out.push([crate::debugshot::f16_to_f32(row[x * 4]), crate::debugshot::f16_to_f32(row[x * 4 + 1]), crate::debugshot::f16_to_f32(row[x * 4 + 2]), crate::debugshot::f16_to_f32(row[x * 4 + 3])]);
             }
         }
         g.ctx.Unmap(&st, 0);
@@ -475,7 +475,7 @@ fn light(g: &Gpu, n: usize, t0: &[[f32; 4]], inp: &Inputs) -> Vec<[f32; 4]> {
         for y in 0..n {
             let row = std::slice::from_raw_parts((m.pData as *const u8).add(y * m.RowPitch as usize) as *const u16, n * 4);
             for x in 0..n {
-                out.push([crate::devshot::f16_to_f32(row[x * 4]), crate::devshot::f16_to_f32(row[x * 4 + 1]), crate::devshot::f16_to_f32(row[x * 4 + 2]), crate::devshot::f16_to_f32(row[x * 4 + 3])]);
+                out.push([crate::debugshot::f16_to_f32(row[x * 4]), crate::debugshot::f16_to_f32(row[x * 4 + 1]), crate::debugshot::f16_to_f32(row[x * 4 + 2]), crate::debugshot::f16_to_f32(row[x * 4 + 3])]);
             }
         }
         c.Unmap(&st, 0);

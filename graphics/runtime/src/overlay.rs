@@ -18,7 +18,7 @@ use crate::config::{Config, HdrOutput};
 use gw2enhanced_core::i18n::tr;
 use gw2enhanced_core::trf;
 use crate::output::OutputMode;
-use crate::{ao, calib, d3d, datapath, depthstats, devshot, furmask, furpick, gate, halo, hdr10, hdr_shaders, log, output, photo, recorder, resolve, shaders, shafts, ssr, upgrade};
+use crate::{ao, calib, d3d, datapath, depthstats, debugshot, furmask, furpick, gate, halo, hdr10, hdr_shaders, log, output, photo, recorder, resolve, shaders, shafts, ssr, upgrade};
 
 pub const PAPER_WHITE_RANGE: (f32, f32) = (80.0, 400.0);
 pub const PEAK_RANGE: (f32, f32) = (400.0, 4000.0);
@@ -837,7 +837,7 @@ impl Overlay {
 
     fn sec_aa(&mut self, ui: &Ui) {
         help(ui, tr(
-            "These keys are read from config.ini (and hot reloaded with the dev flow): smaa, smaa_threshold, sharpen_strength, aniso_level, mip_bias. Edit the file and save, or use the dev hot reload.",
+            "These keys are read from config.ini (and hot reloaded with the debug mode): smaa, smaa_threshold, sharpen_strength, aniso_level, mip_bias. Edit the file and save, or use the debug mode hot reload.",
             "Estas chaves são lidas do config.ini (e recarregadas ao vivo no modo de depuração): smaa, smaa_threshold, sharpen_strength, aniso_level, mip_bias. Edite o arquivo e salve, ou use a recarga ao vivo do modo de depuração.",
         ));
         ui.text_wrapped(trf!("Anti-aliasing: {}", "Anti-aliasing: {}", crate::aa::status_text()));
@@ -1399,7 +1399,7 @@ impl Overlay {
             self.cfg.debug_view = resolve::set_debug_view(level.min(resolve::DEBUG_VIEW_MAX as usize) as u8);
         }
         help(ui, tr(
-            "The same switch as the checkboxes below (the highest level wins) and the config key debug_view, which the dev hot reload applies from outside. Never saved.",
+            "The same switch as the checkboxes below (the highest level wins) and the config key debug_view, which the debug mode hot reload applies from outside. Never saved.",
             "A mesma chave das caixas abaixo (vale o nível mais alto) e da chave debug_view do config, que a recarga ao vivo do modo de depuração aplica de fora. Nunca é salva.",
         ));
         let mut dbg = resolve::debug();
@@ -1482,38 +1482,38 @@ impl Overlay {
         ui.text_wrapped(trf!("Contact shadows: {}", "Sombras de contato: {}", crate::contact::status_text()));
         ui.text_wrapped(trf!("Aerial perspective: {}", "Perspectiva atmosférica: {}", crate::aerial::status_text()));
         ui.text_wrapped(trf!("Depth stats: {}", "Estatísticas de profundidade: {}", depthstats::status_text()));
-        ui.text_wrapped(trf!("Frame time: {}", "Tempo de quadro: {}", devshot::perf_status()));
+        ui.text_wrapped(trf!("Frame time: {}", "Tempo de quadro: {}", debugshot::perf_status()));
         ui.text(trf!("Copy format mismatches: {}", "Cópias com formato divergente: {}", d3d::copy_mismatches()));
         ui.text_wrapped(recorder::counters_text(d3d::hooks()));
         ui.separator();
         ui.text(tr("Debug mode (see docs/debug-mode.md)", "Modo de depuração (veja docs/debug-mode.md)"));
         if ui.button(tr("Save screenshot now", "Salvar imagem agora")) {
-            devshot::request_single();
+            debugshot::request_single();
         }
         ui.same_line();
         if ui.button(tr("Save screenshot pair now", "Salvar par de imagens agora")) {
-            devshot::request_pair();
+            debugshot::request_pair();
         }
-        let mut secs = devshot::capture_seconds() as i32;
+        let mut secs = debugshot::capture_seconds() as i32;
         if ui.slider(tr("Capture every (s, 0 = off)", "Capturar a cada (s, 0 = desligado)"), 0, 120, &mut secs) {
-            devshot::set_capture_seconds(secs.max(0) as u32);
-            self.cfg.dev_capture_seconds = devshot::capture_seconds();
+            debugshot::set_capture_seconds(secs.max(0) as u32);
+            self.cfg.debug_capture_seconds = debugshot::capture_seconds();
         }
-        let mut cmp = devshot::compare();
+        let mut cmp = debugshot::compare();
         if ui.checkbox(tr("Capture mod + vanilla pair", "Capturar par mod + vanilla"), &mut cmp) {
-            devshot::set_compare(cmp);
-            self.cfg.dev_compare = cmp;
+            debugshot::set_compare(cmp);
+            self.cfg.debug_compare = cmp;
         }
         help(ui, tr(
             "The screen flickers about 0.3 s per pair.",
             "A tela pisca cerca de 0.3 s a cada par.",
         ));
-        let mut hot = devshot::hot_reload();
+        let mut hot = debugshot::hot_reload();
         if ui.checkbox(tr("Hot reload config.ini", "Recarregar config.ini ao vivo"), &mut hot) {
-            devshot::set_hot_reload(hot);
-            self.cfg.dev_hot_reload = hot;
+            debugshot::set_hot_reload(hot);
+            self.cfg.debug_hot_reload = hot;
         }
-        ui.text_wrapped(trf!("Debug mode: {}", "Modo de depuração: {}", devshot::status()));
+        ui.text_wrapped(trf!("Debug mode: {}", "Modo de depuração: {}", debugshot::status()));
         if ui.button(tr("Dump frame", "Despejar quadro")) {
             recorder::request_dump();
             // Also arms the per-draw capture of the next frame (draws-<unix>.log).
@@ -1563,13 +1563,13 @@ impl Overlay {
                 }
             }
         });
-        // Dev flow: the back buffer copy is issued here, before the overlay is drawn (so the shot has no overlay).
-        devshot::on_frame();
-        if let Some((old, new)) = devshot::take_reload() {
+        // Debug mode: the back buffer copy is issued here, before the overlay is drawn (so the shot has no overlay).
+        debugshot::on_frame();
+        if let Some((old, new)) = debugshot::take_reload() {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let (merged, d) = devshot::merge(&self.cfg, &old, &new);
-                devshot::apply_live(&d.live, &merged);
-                devshot::log_reload(&d);
+                let (merged, d) = debugshot::merge(&self.cfg, &old, &new);
+                debugshot::apply_live(&d.live, &merged);
+                debugshot::log_reload(&d);
                 self.cfg = merged;
             }));
         }
@@ -1657,7 +1657,7 @@ pub fn install(_module: usize, cfg: Config, path: PathBuf) {
     PHOTO_KEY.store(pk, Ordering::Relaxed);
     PHOTO_MODS.store(pm, Ordering::Relaxed);
     let key_text = cfg.overlay_key.clone();
-    devshot::start(path.clone(), cfg.clone());
+    debugshot::start(path.clone(), cfg.clone());
     *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Overlay::new(cfg, path));
     log!("overlay: panel ready for the unified overlay (key {key_text})");
 }

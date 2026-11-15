@@ -1,6 +1,6 @@
-//! Dev feedback flow: periodic screenshots of the final picture (plus a vanilla comparison shot), image statistics,
-//! and live re-reading of `config.ini`. Everything is OFF by default (`dev_capture_seconds=0`, `dev_hot_reload=0`).
-//! See `docs/dev-flow.md`.
+//! Debug mode: periodic screenshots of the final picture (plus a vanilla comparison shot), image statistics,
+//! and live re-reading of `config.ini`. Everything is OFF by default (`debug_capture_seconds=0`, `debug_hot_reload=0`).
+//! See `docs/debug-mode.md`.
 //!
 //! # Capture
 //! `on_frame` runs once per present from the overlay's render loop (hudhook calls it BEFORE it draws the overlay, so
@@ -538,7 +538,7 @@ pub fn diff(old: &Config, new: &Config) -> Diff {
     macro_rules! live {
         ($($f:ident),*) => { $( if old.$f != new.$f { d.live.push(stringify!($f)); } )* };
     }
-    live!(enabled, paper_white_nits, peak_nits, sdr_gamma, bloom_strength, highlight_boost, ao_strength, ao_radius, halo_strength, halo_radius, ssr_strength, ssr_range, ssr_classes, ssr_smart, ssr_hue_filter, ssr_flatness, ssr_water_boost, water_depth_look, ssr_matte_cut, shafts_strength, shafts_length, contact_strength, contact_length, contact_sun, aerial_strength, aerial_distance, depth_unit, aniso_level, aniso_filters, mip_bias, smaa, smaa_threshold, sharpen_strength, autoexp_strength, autoexp_target, autoexp_range, adapt_up, adapt_down, localtone_strength, lens_strength, lens_threshold, lens_ghost, lens_streak_length, lens_max_size, lens_color_reject, grade_preset, grade_saturation, grade_contrast, grade_temperature, grade_tint, grade_vibrance, grade_shadows, grade_highlights, grade_lut, grade_lut_strength, fur_strength, fur_ps, fur_vs, fur_min_vcb, fur_debug, fur_uv, fur_occlusion, fur_amp, fur_scale, fur_length, fur_detail, fur_rim, fur_sss, fur_view, rim_strength, rim_width, subsurface_strength, rim_ps, rim_min_vcb, rim_debug, dev_capture_seconds, dev_compare, dev_hot_reload, debug_view, photo_hide_ui, calibration_pattern);
+    live!(enabled, paper_white_nits, peak_nits, sdr_gamma, bloom_strength, highlight_boost, ao_strength, ao_radius, halo_strength, halo_radius, ssr_strength, ssr_range, ssr_classes, ssr_smart, ssr_hue_filter, ssr_flatness, ssr_water_boost, water_depth_look, ssr_matte_cut, shafts_strength, shafts_length, contact_strength, contact_length, contact_sun, aerial_strength, aerial_distance, depth_unit, aniso_level, aniso_filters, mip_bias, smaa, smaa_threshold, sharpen_strength, autoexp_strength, autoexp_target, autoexp_range, adapt_up, adapt_down, localtone_strength, lens_strength, lens_threshold, lens_ghost, lens_streak_length, lens_max_size, lens_color_reject, grade_preset, grade_saturation, grade_contrast, grade_temperature, grade_tint, grade_vibrance, grade_shadows, grade_highlights, grade_lut, grade_lut_strength, fur_strength, fur_ps, fur_vs, fur_min_vcb, fur_debug, fur_uv, fur_occlusion, fur_amp, fur_scale, fur_length, fur_detail, fur_rim, fur_sss, fur_view, rim_strength, rim_width, subsurface_strength, rim_ps, rim_min_vcb, rim_debug, debug_capture_seconds, debug_compare, debug_hot_reload, debug_view, photo_hide_ui, calibration_pattern);
     d.live.extend(crate::shellfur::ShellCfg::changed(&old.shell, &new.shell));
     d.live.extend(crate::toggles::Toggles::changed(&old.toggles, &new.toggles));
     if old.hdr_output != new.hdr_output {
@@ -638,9 +638,9 @@ pub fn merge(cur: &Config, old: &Config, new: &Config) -> (Config, Diff) {
             "rim_ps" => c.rim_ps = new.rim_ps.clone(),
             "rim_min_vcb" => c.rim_min_vcb = new.rim_min_vcb,
             "rim_debug" => c.rim_debug = new.rim_debug,
-            "dev_capture_seconds" => c.dev_capture_seconds = new.dev_capture_seconds,
-            "dev_compare" => c.dev_compare = new.dev_compare,
-            "dev_hot_reload" => c.dev_hot_reload = new.dev_hot_reload,
+            "debug_capture_seconds" => c.debug_capture_seconds = new.debug_capture_seconds,
+            "debug_compare" => c.debug_compare = new.debug_compare,
+            "debug_hot_reload" => c.debug_hot_reload = new.debug_hot_reload,
             "debug_view" => c.debug_view = new.debug_view,
             "photo_hide_ui" => c.photo_hide_ui = new.photo_hide_ui,
             "calibration_pattern" => c.calibration_pattern = new.calibration_pattern,
@@ -823,10 +823,10 @@ pub fn apply_live(keys: &[&str], cfg: &Config) {
     if has("rim_ps") || has("rim_min_vcb") || has("rim_debug") {
         crate::furmask::configure_rim(&cfg.rim_ps, cfg.rim_min_vcb, cfg.rim_debug);
     }
-    if has("dev_capture_seconds") || has("dev_compare") || has("dev_hot_reload") {
-        set_capture_seconds(cfg.dev_capture_seconds);
-        set_compare(cfg.dev_compare);
-        set_hot_reload(cfg.dev_hot_reload);
+    if has("debug_capture_seconds") || has("debug_compare") || has("debug_hot_reload") {
+        set_capture_seconds(cfg.debug_capture_seconds);
+        set_compare(cfg.debug_compare);
+        set_hot_reload(cfg.debug_hot_reload);
     }
     if has("debug_view") {
         resolve::set_debug_view(cfg.debug_view);
@@ -914,9 +914,9 @@ fn next_id() -> u64 {
 
 /// Takes the dev settings of the config (start-up).
 pub fn configure(cfg: &Config) {
-    set_capture_seconds(cfg.dev_capture_seconds);
-    set_compare(cfg.dev_compare);
-    set_hot_reload(cfg.dev_hot_reload);
+    set_capture_seconds(cfg.debug_capture_seconds);
+    set_compare(cfg.debug_compare);
+    set_hot_reload(cfg.debug_hot_reload);
     photo::configure(cfg);
 }
 
@@ -948,7 +948,7 @@ fn force_off(now_ms: u64) -> bool {
 fn restore_now(why: &str) -> bool {
     let Some(s) = lock_saved().take() else { return false };
     s.restore(gate::set_user_enabled, output::set_levels);
-    log!("devshot: user values restored ({why}): enabled {}, paper white {:.0}, peak {:.0}", s.enabled, s.paper, s.peak);
+    log!("debugshot: user values restored ({why}): enabled {}, paper white {:.0}, peak {:.0}", s.enabled, s.paper, s.peak);
     true
 }
 
@@ -1080,7 +1080,7 @@ pub fn perf_status() -> String {
 // Depth telemetry (status_depth=)
 // ================================================================================================================
 
-/// Depth consumer bit of the dev capture (`ao::set_depth_consumer`): keeps the AO's depth capture running while a shot waits for the depth.
+/// Depth consumer bit of the debug capture (`ao::set_depth_consumer`): keeps the AO's depth capture running while a shot waits for the depth.
 /// Far above the bits of `ao.rs` (1..=128), see the test that keeps them apart.
 pub const DEPTH_FOR_DEV: u32 = 1 << 20;
 /// A shot waits at most this many presents for the depth of the light-adjust draw, then it goes ahead without it.
@@ -1170,7 +1170,7 @@ pub fn depth_status(data: &[f32], w: usize, h: usize) -> String {
     format!("valid min {}, p5 {}, p50 {}, p95 {}, max {}; sky/invalid {:.2} %; {tail}", sig6(min), sig6(p5), sig6(p50), sig6(p95), sig6(max), 100.0 * sky as f64 / n as f64)
 }
 
-/// What the dev capture does about the depth when a shot is due (pure: `depth_gate`).
+/// What the debug capture does about the depth when a shot is due (pure: `depth_gate`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DepthGate {
     /// A fresh read-back is there: take it.
@@ -1278,7 +1278,7 @@ fn attach_depth(text: &mut String, wanted: bool, depth: Option<DepthData>, note:
     }
 }
 
-/// Every present: an arm nobody answered (a pair that was cancelled, the dev flow switched off) is dropped after a while, so the depth
+/// Every present: an arm nobody answered (a pair that was cancelled, the debug mode switched off) is dropped after a while, so the depth
 /// capture of the AO does not stay on for good.
 fn depth_housekeeping(frame: u64) {
     if !DEPTH_ARMED.load(Relaxed) {
@@ -1397,7 +1397,7 @@ pub fn settings_text(label: &str, frame: u64, screen: (u32, u32), fmt: u32) -> S
         s.push('\n');
     };
     kv("capture", label.to_string());
-    kv("frame", format!("{frame} (presents since the dev flow started; resolved frames {})", resolve::frames_resolved()));
+    kv("frame", format!("{frame} (presents since the debug mode started; resolved frames {})", resolve::frames_resolved()));
     kv("screen", format!("{}x{}", screen.0, screen.1));
     kv("backbuffer_format", fmt_name(fmt));
     kv("output_mode", format!("{:?}", output::mode()));
@@ -1506,7 +1506,7 @@ pub fn settings_text(label: &str, frame: u64, screen: (u32, u32), fmt: u32) -> S
     kv("status_lens", crate::look::status_lens());
     kv("status_toggles", crate::toggles::status_text());
     kv("status_grade", crate::look::status_grade());
-    crate::exposure::probe_state(); // the dev capture may stall the GPU a moment for the 1x1 exposure state
+    crate::exposure::probe_state(); // the debug capture may stall the GPU a moment for the 1x1 exposure state
     kv("status_exposure", crate::exposure::status_text());
     kv("status_localtone", crate::exposure::status_local_text());
     kv("status_aniso", crate::aniso::status_text());
@@ -1631,7 +1631,7 @@ fn worker(rx: std::sync::mpsc::Receiver<Msg>, dir: PathBuf) {
         match r {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
-                log!("devshot: {e}");
+                log!("debugshot: {e}");
                 set_status(format!("error: {e}"));
             }
             Err(_) => set_status("error: the writer panicked"),
@@ -2193,7 +2193,7 @@ pub fn start(path: PathBuf, initial: Config) {
     let (tx, rx) = sync_channel::<Msg>(2);
     if TX.set(tx).is_ok() {
         let d = dir.clone();
-        let _ = std::thread::Builder::new().name("gw2graphics-devshot".into()).spawn(move || worker(rx, d));
+        let _ = std::thread::Builder::new().name("gw2graphics-debugshot".into()).spawn(move || worker(rx, d));
     }
     let _ = std::thread::Builder::new().name("gw2graphics-dev".into()).spawn(move || {
         let mut last_file = initial;
@@ -2233,7 +2233,7 @@ pub fn start(path: PathBuf, initial: Config) {
             }));
         }
     });
-    log!("devshot: started (capture every {} s, compare {}, hot reload {}, folder {})", capture_seconds(), compare(), hot_reload(), dir.display());
+    log!("debugshot: started (capture every {} s, compare {}, hot reload {}, folder {})", capture_seconds(), compare(), hot_reload(), dir.display());
 }
 
 fn watchdog_tick() {
@@ -2250,13 +2250,13 @@ pub fn log_reload(d: &Diff) {
         return;
     }
     if !d.live.is_empty() {
-        log!("devshot: config.ini changed, applied live: {}", d.live.join(", "));
+        log!("debugshot: config.ini changed, applied live: {}", d.live.join(", "));
     }
     for k in &d.ignored {
-        log!("devshot: config.ini key {k} changed but needs a restart; ignored");
+        log!("debugshot: config.ini key {k} changed but needs a restart; ignored");
     }
 }
 
 #[cfg(test)]
-#[path = "devshot_tests.rs"]
+#[path = "debugshot_tests.rs"]
 mod tests;

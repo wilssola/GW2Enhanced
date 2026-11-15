@@ -266,7 +266,7 @@ pub const MAX_FUR_TESTS: usize = 4;
 /// (`FD_TAG`), [19..22] tests 2..4 (like [0]), [22] their thresholds.
 pub const FD_LEN: usize = 3 + MAX_UV_RECTS + MAX_FUR_TESTS;
 /// Index of the draw tag: `.x` = what the mask writes into `b` for this draw (0 = 1.0, as before): `furprobe::tag_value` (the draw's
-/// index in the frame, for `shell_debug=2` and the dev capture's per-draw probe).
+/// index in the frame, for `shell_debug=2` and the debug capture's per-draw probe).
 pub const FD_TAG: usize = 2 + MAX_UV_RECTS;
 /// First of the extra tests (2..4) and the float4 of their thresholds.
 pub const FD_MORE: usize = FD_TAG + 1;
@@ -754,7 +754,7 @@ impl ShellCfg {
                 "# v14: an old saved 4096 reads as 0), shell_counts = index counts to take (17694) or leave out (-5214), comma-separated (empty = all; status_shells= lists the draws).\n",
                 "# shell_normal face (default) or TEXCOORDn (a vertex output with the normal), shell_unit 0 = auto (engine units per metre from the depth) or 0.01..1000,\n",
                 "# shell_debug 1 paints the shell pixels (red root .. yellow tip), 2 = a colour per fur draw (the legend and the per-draw texture probe are in\n",
-                "# status_shells=; the fur texels the discriminator removed turn black). All live with dev_hot_reload=1.\n",
+                "# status_shells=; the fur texels the discriminator removed turn black). All live with debug_hot_reload=1.\n",
                 "# Fur discriminator (only the texels that really are fur get fur: not the horns, claws, nose, lips; also the old fur look, the rim light and fur_debug):\n",
                 "# shell_fur_mask = off, or up to 4 tests separated by commas, ALL must say fur: t<slot 0..3>.<r|g|b|a|l|d|s|f> then < (fur below the\n",
                 "# threshold) or > (above), optionally the test's own threshold (t0.f>0.025; else shell_fur_threshold). d = local detail of .rg (a normal\n",
@@ -1639,7 +1639,7 @@ fn reasons_text(f: &Frame) -> String {
 pub fn status_text() -> String {
     let c = cfg();
     let stats = STATS_SHOW.lock().map(|g| g.clone()).unwrap_or_default();
-    // v9: a dev capture writes the island dumps of the newest analyses (furmesh-*.txt, furisland-*.png).
+    // v9: a debug capture writes the island dumps of the newest analyses (furmesh-*.txt, furisland-*.png).
     crate::furisland::dump_on_capture();
     let disc = format!(
         "{}; {}; {}; {}; {}",
@@ -2486,7 +2486,7 @@ pub unsafe fn on_fur_draw(ctx: Obj, call: Call, ps: u32, vs: Option<u32>, vcb0: 
 /// Vertex shaders already dumped (by hash).
 static DUMPED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
-/// Dev aid: the first time a vertex shader gets shells, its output signature and disassembly go to `GW2Graphics\debug\vs-<hash>.txt` (a
+/// Debug aid: the first time a vertex shader gets shells, its output signature and disassembly go to `GW2Graphics\debug\vs-<hash>.txt` (a
 /// background thread; D3DDisassemble is never run on the render thread). That is where the normal / tangent outputs (`shell_normal`)
 /// and the position math can be read. At most 32 files per session.
 fn dump_vs(vs_ptr: usize, hash: Option<u32>) {

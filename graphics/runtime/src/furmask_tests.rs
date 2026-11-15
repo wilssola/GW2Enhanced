@@ -1137,7 +1137,7 @@ fn fur_occlusion_0_bypasses_the_check_and_the_probe_counts_what_it_would_erase()
         DRAWN.store(true, Relaxed);
         set_occlusion(false);
         PROBE_TEXT.lock().unwrap().clear();
-        let first = probe_text(); // the dev capture asks for the probe
+        let first = probe_text(); // the debug capture asks for the probe
         assert!(first.contains("fur_occlusion 0") && first.contains("no probe yet"), "{first}");
         on_light_adjust(s.g.ctx.as_raw());
         let texels = |s: &Scene| s.texels(STATE.lock().unwrap().as_ref().unwrap());

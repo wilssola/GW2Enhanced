@@ -672,7 +672,7 @@ impl Exposure {
     }
 
     /// Reads the current state back (x = EV applied, y = measured log2 luminance, z = EV asked for, w = initialised).
-    /// A GPU stall: only for the dev capture.
+    /// A GPU stall: only for the debug capture.
     ///
     /// # Safety
     /// `dev` / `ctx` must be the live device and immediate context these objects belong to.
@@ -906,7 +906,7 @@ unsafe fn run_frame(ctx: Obj, dev: Obj, want_ae: bool, want_lt: bool, bad_scene:
     }
 }
 
-/// Dev capture: reads the state back (a small GPU stall) and caches it for `status_text`. Call on the render thread.
+/// Debug capture: reads the state back (a small GPU stall) and caches it for `status_text`. Call on the render thread.
 pub fn probe_state() {
     let _ = std::panic::catch_unwind(|| {
         let ctx = LAST_CTX.load(Relaxed) as Obj;
@@ -945,7 +945,7 @@ fn status_prefix(strength_now: f32) -> Option<String> {
     None
 }
 
-/// Overlay / dev capture line for the auto exposure: the current EV and the measured log-average (after `probe_state`).
+/// Overlay / debug capture line for the auto exposure: the current EV and the measured log-average (after `probe_state`).
 pub fn status_text() -> String {
     if let Some(s) = status_prefix(strength()) {
         return s;
@@ -957,13 +957,13 @@ pub fn status_text() -> String {
     let mode = if l & SEEN_SDR != 0 { "SDR clamp" } else { "HDR" };
     let depth = if l & SEEN_NO_DEPTH != 0 { ", sky NOT excluded (no depth)" } else { ", sky excluded" };
     if ev.is_nan() {
-        format!("applied ({mode}{depth}); EV not read yet (dev capture reads it)")
+        format!("applied ({mode}{depth}); EV not read yet (debug capture reads it)")
     } else {
         format!("applied ({mode}{depth}): EV {ev:+.2} (the scene asks {ask:+.2}), measured log-average luminance {:.3} (log2 {avg:.2}), target {:.2}, strength {:.2}", avg.exp2(), target(), strength())
     }
 }
 
-/// Overlay / dev capture line for the local tone mapping.
+/// Overlay / debug capture line for the local tone mapping.
 pub fn status_local_text() -> String {
     if let Some(s) = status_prefix(local_strength()) {
         return s;

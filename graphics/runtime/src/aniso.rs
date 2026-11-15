@@ -406,7 +406,7 @@ pub unsafe fn translate(smp: *const Obj, num: u32, out: &mut [Obj; 16]) -> bool 
     changed
 }
 
-/// Dev capture / overlay line.
+/// Debug capture / overlay line.
 pub fn status_text() -> String {
     let (l, b) = (level(), bias());
     if l < 2 && b == 0.0 {

@@ -174,12 +174,12 @@ pub struct Config {
     /// Paint the rim selection cyan in the light-adjust output.
     pub rim_debug: bool,
     pub overlay_key: String,
-    /// Dev feedback flow (all off by default): a screenshot (pair) every N seconds, 0 = off.
-    pub dev_capture_seconds: u32,
+    /// Debug mode (all off by default): a screenshot (pair) every N seconds, 0 = off.
+    pub debug_capture_seconds: u32,
     /// A periodic capture is a pair: the mod shot and a vanilla one (Enabled forced off for a moment).
-    pub dev_compare: bool,
+    pub debug_compare: bool,
     /// Re-read config.ini when it changes and apply the live keys.
-    pub dev_hot_reload: bool,
+    pub debug_hot_reload: bool,
     /// Debug view 0..5 (0 off, 1 boost / occlusion, 2 fill, 3 material classes, 4 sun, 5 reflectivity heat map): one more source of
     /// `resolve::debug_level()`, so the heat maps can be switched from outside. RUNTIME ONLY: parsed (hot reload applies it) but
     /// `to_ini` always writes 0 (a debug tint must never persist by accident) and the start ignores it.
@@ -278,9 +278,9 @@ impl Default for Config {
             rim_min_vcb: 4096,
             rim_debug: false,
             overlay_key: "Shift+End".to_string(),
-            dev_capture_seconds: 0,
-            dev_compare: true,
-            dev_hot_reload: false,
+            debug_capture_seconds: 0,
+            debug_compare: true,
+            debug_hot_reload: false,
             debug_view: 0,
             photo_key: "Ctrl+Shift+End".to_string(),
             photo_hide_ui: false,
@@ -467,9 +467,10 @@ impl Config {
                 "rim_min_vcb" => c.rim_min_vcb = num(v, 0.0, 1_048_576.0, d.rim_min_vcb as f32).round() as u32,
                 "rim_debug" => c.rim_debug = flag(v, d.rim_debug),
                 "overlay_key" if !v.is_empty() => c.overlay_key = v.to_string(),
-                "dev_capture_seconds" => c.dev_capture_seconds = num(v, 0.0, 3600.0, d.dev_capture_seconds as f32).round() as u32,
-                "dev_compare" => c.dev_compare = flag(v, d.dev_compare),
-                "dev_hot_reload" => c.dev_hot_reload = flag(v, d.dev_hot_reload),
+                // The dev_ names are what the debug mode keys were called before; old files keep working.
+                "debug_capture_seconds" | "dev_capture_seconds" => c.debug_capture_seconds = num(v, 0.0, 3600.0, d.debug_capture_seconds as f32).round() as u32,
+                "debug_compare" | "dev_compare" => c.debug_compare = flag(v, d.debug_compare),
+                "debug_hot_reload" | "dev_hot_reload" => c.debug_hot_reload = flag(v, d.debug_hot_reload),
                 "debug_view" => c.debug_view = num(v, 0.0, 5.0, 0.0).round() as u8,
                 "photo_key" if !v.is_empty() => c.photo_key = v.to_string(),
                 "photo_hide_ui" => c.photo_hide_ui = flag(v, d.photo_hide_ui),
@@ -623,7 +624,7 @@ impl Config {
 # fur_vs = optional vertex-shader hashes they must also use (empty = any), fur_min_vcb = smallest vertex constant buffer 0 in bytes
 # (4096 = skinned meshes only), fur_debug = 1 paints the selected pixels magenta in the screenshots.
 # The strands are anchored to the mesh uv: fur_uv = auto (the lowest TEXCOORD with 2 float components) or TEXCOORDn[.xy|.zw] to pick the
-# vertex-shader output that carries the base-texture uv (the line status_fur= of the dev capture says uv: ok / none).
+# vertex-shader output that carries the base-texture uv (the line status_fur= of the debug capture says uv: ok / none).
 ",
                 "fur_strength={}
 ",
@@ -638,7 +639,7 @@ impl Config {
                 "fur_uv={}
 ",
                 "# fur_occlusion 1 (default) = the occlusion check of the fur and rim masks: pixels covered by geometry drawn later (a hood over the head) are erased;\n",
-                "# 0 = bypassed, the masks stay as drawn (A/B switch, live). The line status_occlusion= of the dev capture counts what the check erases.\n",
+                "# 0 = bypassed, the masks stay as drawn (A/B switch, live). The line status_occlusion= of the debug capture counts what the check erases.\n",
                 "fur_occlusion={}\n",
                 "\n",
                 "# Fur look (docs/fur-look.md), how the fur looks where fur_strength switches it on (the pixels of the fur mask only; all live):\n",
@@ -728,14 +729,14 @@ impl Config {
                 "# Overlay hotkey: modifiers (Shift, Ctrl, Alt) + key (End, Insert, F1..F24, A..Z, 0..9).\n",
                 "overlay_key={}\n",
                 "\n",
-                "# Dev feedback flow (docs/dev-flow.md), all off by default: a screenshot into GW2Graphics\\dev every N seconds (0 = off, max 3600),\n",
-                "# as a pair (mod + vanilla comparison) when dev_compare=1, and re-reading this file live when it changes.\n",
-                "dev_capture_seconds={}\n",
-                "dev_compare={}\n",
-                "dev_hot_reload={}\n",
+                "# Debug mode (docs/debug-mode.md), all off by default: a screenshot into GW2Graphics\\dev every N seconds (0 = off, max 3600),\n",
+                "# as a pair (mod + vanilla comparison) when debug_compare=1, and re-reading this file live when it changes.\n",
+                "debug_capture_seconds={}\n",
+                "debug_compare={}\n",
+                "debug_hot_reload={}\n",
                 "\n",
-                "# Debug view 0..5 (docs/dev-flow.md): 0 = off, 1 = boost / occlusion, 2 = fill, 3 = material classes, 4 = sun, 5 = reflectivity heat map. The same as the debug switches of the\n",
-                "# overlay, so editing this line with dev_hot_reload=1 switches the view in the running game. NEVER saved: always written as 0, ignored at start.\n",
+                "# Debug view 0..5 (docs/debug-mode.md): 0 = off, 1 = boost / occlusion, 2 = fill, 3 = material classes, 4 = sun, 5 = reflectivity heat map. The same as the debug switches of the\n",
+                "# overlay, so editing this line with debug_hot_reload=1 switches the view in the running game. NEVER saved: always written as 0, ignored at start.\n",
                 "debug_view=0\n",
                 "\n",
                 "# Photo mode (docs/photo.md): the hotkey (same syntax as overlay_key) saves the current frame, full resolution, with the mod's effects, as PNG +\n",
@@ -743,7 +744,7 @@ impl Config {
                 "photo_key={}\n",
                 "photo_hide_ui={}\n",
             ),
-            self.enabled, hdr, fmt, self.paper_white_nits, self.peak_nits, self.bloom_strength, self.highlight_boost, self.ao_strength, self.ao_radius, self.halo_strength, self.halo_radius, self.ssr_strength, self.ssr_range, self.ssr_classes, self.ssr_smart, self.ssr_hue_filter, self.ssr_flatness, self.ssr_water_boost, self.water_depth_look, self.ssr_matte_cut, self.shafts_strength, self.shafts_length, self.contact_strength, self.contact_length, self.contact_sun, self.aerial_strength, self.aerial_distance, self.depth_unit, self.fur_strength, self.fur_ps, self.fur_vs, self.fur_min_vcb, self.fur_debug as u8, self.fur_uv, self.fur_occlusion, self.fur_amp, self.fur_scale, self.fur_length, self.fur_detail, self.fur_rim, self.fur_sss, self.rim_strength, self.rim_width, self.subsurface_strength, self.rim_ps, self.rim_min_vcb, self.rim_debug as u8, self.aniso_level, self.aniso_filters, self.mip_bias, self.smaa as u8, self.smaa_threshold, self.sharpen_strength, self.autoexp_strength, self.autoexp_target, self.autoexp_range, self.adapt_up, self.adapt_down, self.localtone_strength, self.lens_strength, self.lens_threshold, self.lens_ghost, self.lens_streak_length, self.lens_max_size, self.lens_color_reject, self.grade_preset, self.grade_saturation, self.grade_contrast, self.grade_temperature, self.grade_tint, self.grade_vibrance, self.grade_shadows, self.grade_highlights, self.grade_lut, self.grade_lut_strength, self.overlay_key, self.dev_capture_seconds, self.dev_compare as u8, self.dev_hot_reload as u8, self.photo_key, self.photo_hide_ui as u8
+            self.enabled, hdr, fmt, self.paper_white_nits, self.peak_nits, self.bloom_strength, self.highlight_boost, self.ao_strength, self.ao_radius, self.halo_strength, self.halo_radius, self.ssr_strength, self.ssr_range, self.ssr_classes, self.ssr_smart, self.ssr_hue_filter, self.ssr_flatness, self.ssr_water_boost, self.water_depth_look, self.ssr_matte_cut, self.shafts_strength, self.shafts_length, self.contact_strength, self.contact_length, self.contact_sun, self.aerial_strength, self.aerial_distance, self.depth_unit, self.fur_strength, self.fur_ps, self.fur_vs, self.fur_min_vcb, self.fur_debug as u8, self.fur_uv, self.fur_occlusion, self.fur_amp, self.fur_scale, self.fur_length, self.fur_detail, self.fur_rim, self.fur_sss, self.rim_strength, self.rim_width, self.subsurface_strength, self.rim_ps, self.rim_min_vcb, self.rim_debug as u8, self.aniso_level, self.aniso_filters, self.mip_bias, self.smaa as u8, self.smaa_threshold, self.sharpen_strength, self.autoexp_strength, self.autoexp_target, self.autoexp_range, self.adapt_up, self.adapt_down, self.localtone_strength, self.lens_strength, self.lens_threshold, self.lens_ghost, self.lens_streak_length, self.lens_max_size, self.lens_color_reject, self.grade_preset, self.grade_saturation, self.grade_contrast, self.grade_temperature, self.grade_tint, self.grade_vibrance, self.grade_shadows, self.grade_highlights, self.grade_lut, self.grade_lut_strength, self.overlay_key, self.debug_capture_seconds, self.debug_compare as u8, self.debug_hot_reload as u8, self.photo_key, self.photo_hide_ui as u8
         )
     }
 
@@ -1313,9 +1314,9 @@ subsurface_strength=nan");
             rim_min_vcb: 16000,
             rim_debug: true,
             overlay_key: "Ctrl+F9".to_string(),
-            dev_capture_seconds: 20,
-            dev_compare: false,
-            dev_hot_reload: true,
+            debug_capture_seconds: 20,
+            debug_compare: false,
+            debug_hot_reload: true,
             debug_view: 0, // runtime only: never written
             photo_key: "Ctrl+F10".to_string(),
             photo_hide_ui: true,
@@ -1360,21 +1361,25 @@ subsurface_strength=nan");
     }
 
     #[test]
-    fn dev_keys_default_off_parse_and_clamp() {
+    fn debug_keys_default_off_parse_and_clamp() {
         let d = Config::default();
-        assert_eq!((d.dev_capture_seconds, d.dev_compare, d.dev_hot_reload), (0, true, false));
+        assert_eq!((d.debug_capture_seconds, d.debug_compare, d.debug_hot_reload), (0, true, false));
         let c = Config::parse("");
-        assert_eq!((c.dev_capture_seconds, c.dev_compare, c.dev_hot_reload), (0, true, false));
+        assert_eq!((c.debug_capture_seconds, c.debug_compare, c.debug_hot_reload), (0, true, false));
+        let c = Config::parse("debug_capture_seconds=20\ndebug_compare=0\ndebug_hot_reload=1");
+        assert_eq!((c.debug_capture_seconds, c.debug_compare, c.debug_hot_reload), (20, false, true));
+        // The names these keys had before still work.
         let c = Config::parse("dev_capture_seconds=20\ndev_compare=0\ndev_hot_reload=1");
-        assert_eq!((c.dev_capture_seconds, c.dev_compare, c.dev_hot_reload), (20, false, true));
-        assert_eq!(Config::parse("dev_capture_seconds=99999").dev_capture_seconds, 3600);
-        assert_eq!(Config::parse("dev_capture_seconds=-5").dev_capture_seconds, 0);
-        assert_eq!(Config::parse("dev_capture_seconds=abc").dev_capture_seconds, 0);
-        assert_eq!(Config::parse("dev_capture_seconds=2.6").dev_capture_seconds, 3);
-        assert!(Config::parse("dev_compare=maybe").dev_compare);
-        assert!(!Config::parse("dev_hot_reload=maybe").dev_hot_reload);
-        let t = Config { dev_capture_seconds: 30, dev_hot_reload: true, ..Config::default() }.to_ini();
-        assert!(t.contains("dev_capture_seconds=30") && t.contains("dev_hot_reload=1") && t.contains("dev_compare=1"), "{t}");
+        assert_eq!((c.debug_capture_seconds, c.debug_compare, c.debug_hot_reload), (20, false, true));
+        assert!(!c.to_ini().contains("dev_"), "only the new names are written");
+        assert_eq!(Config::parse("debug_capture_seconds=99999").debug_capture_seconds, 3600);
+        assert_eq!(Config::parse("debug_capture_seconds=-5").debug_capture_seconds, 0);
+        assert_eq!(Config::parse("debug_capture_seconds=abc").debug_capture_seconds, 0);
+        assert_eq!(Config::parse("debug_capture_seconds=2.6").debug_capture_seconds, 3);
+        assert!(Config::parse("debug_compare=maybe").debug_compare);
+        assert!(!Config::parse("debug_hot_reload=maybe").debug_hot_reload);
+        let t = Config { debug_capture_seconds: 30, debug_hot_reload: true, ..Config::default() }.to_ini();
+        assert!(t.contains("debug_capture_seconds=30") && t.contains("debug_hot_reload=1") && t.contains("debug_compare=1"), "{t}");
     }
 
     #[test]

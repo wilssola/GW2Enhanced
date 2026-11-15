@@ -24,7 +24,7 @@ pub const DEFAULT_STRENGTH: f32 = 0.35;
 pub const DISTANCE_RANGE: (f32, f32) = (50.0, 5000.0);
 pub const DEFAULT_DISTANCE: f32 = 400.0;
 /// Metres per 1.0 of the engine's linear depth (`depth_unit`). The engine's full-size R32_FLOAT "linear depth" is
-/// NORMALISED, not in world units: the dev capture's `status_depth=` measured valid depths from about 0.0005 to 1 with
+/// NORMALISED, not in world units: the debug capture's `status_depth=` measured valid depths from about 0.0005 to 1 with
 /// the sky / far plane at exactly 1.0. So `metres = depth * depth_unit`, and `depth_unit` is the distance of the far
 /// plane. The default comes from real captures (docs/aerial.md "Depth unit"): a crouching charr (about 2 m
 /// visible height) covering 23 % of the screen height at depth 0.0089 is 8.7 m away (tan half fov 0.5, the mod's
@@ -137,7 +137,7 @@ pub fn blend_at(strength: f32, distance_m: f32, unit: f32, z: f32, ray: f32, fog
     b / (1.0 + (m - 1.0).max(0.0))
 }
 
-/// Overlay line / dev capture `status_aerial=`.
+/// Overlay line / debug capture `status_aerial=`.
 pub fn status_text() -> String {
     if strength() <= 0.0 {
         return "off (strength 0)".to_string();

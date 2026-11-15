@@ -2,9 +2,9 @@
 //! saved as sRGB PNG + a linear Radiance `.hdr` + the settings text into `GW2Graphics\photos`. Everything is visual-only; nothing
 //! here changes the picture the player plays with.
 //!
-//! The capture machinery is `devshot`'s (the same staging ring, background writer, pair state machine with its restore guarantees and
+//! The capture machinery is `debugshot`'s (the same staging ring, background writer, pair state machine with its restore guarantees and
 //! watchdog); this module holds the pure parts (Radiance codec, disk-space guard, names, the capture queue and its arbitration with the
-//! dev capture timer) and the optional UI-free scene grab (`grab_scene`, called from the pre-UI copy draw).
+//! debug capture timer) and the optional UI-free scene grab (`grab_scene`, called from the pre-UI copy draw).
 //!
 //! # Which picture
 //! The normal photo is a copy of the swapchain back buffer taken just BEFORE the overlay is drawn, i.e. exactly the final picture
@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 
 use crate::d3d::{Obj, release, vfn, vt};
-use crate::devshot::{self, PixFmt};
+use crate::debugshot::{self, PixFmt};
 use crate::hdr10;
 
 // ================================================================================================================
@@ -235,7 +235,7 @@ pub fn combo_down(held: impl Fn(i32) -> bool, key: u32, mods: u32) -> bool {
 }
 
 // ================================================================================================================
-// The capture queue and its arbitration with the dev capture
+// The capture queue and its arbitration with the debug capture
 // ================================================================================================================
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -284,7 +284,7 @@ impl PhotoQueue {
 /// What the capture step does with the head of the photo queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Plan {
-    /// No photo is queued: the dev capture logic goes on.
+    /// No photo is queued: the debug capture logic goes on.
     Idle,
     /// A photo is queued but cannot start yet (a pair or a scene grab is running, or the ring is busy): NOTHING else starts either, so
     /// the photo is not starved and two captures never run at once.
@@ -396,20 +396,20 @@ pub fn status_text() -> String {
 // ================================================================================================================
 
 /// Rows of linear BT.709 values relative to paper white (1.0 = paper white), `w * h * 3` floats, NaN -> 0, negative -> 0, capped at
-/// 65504. `scale` is the same multiplier as `devshot::convert` (scRGB: `80 / paper_white`; HDR10: the same, after the PQ decode).
+/// 65504. `scale` is the same multiplier as `debugshot::convert` (scRGB: `80 / paper_white`; HDR10: the same, after the PQ decode).
 pub fn linear_rows(data: &[u8], w: u32, h: u32, fmt: PixFmt, scale: f32) -> Option<Vec<f32>> {
     let (w, h) = (w as usize, h as usize);
-    let bpp = devshot::bytes_per_px(fmt);
+    let bpp = debugshot::bytes_per_px(fmt);
     if w == 0 || h == 0 || data.len() < w * h * bpp || !scale.is_finite() {
         return None;
     }
-    let lut8: Vec<f32> = (0..256).map(|i| devshot::srgb_decode(i as f32 / 255.0)).collect();
+    let lut8: Vec<f32> = (0..256).map(|i| debugshot::srgb_decode(i as f32 / 255.0)).collect();
     let lut10: Vec<f32> = if fmt == PixFmt::Rgb10A2 { (0..1024).map(|i| hdr10::pq_decode(i as f32 / 1023.0) / 80.0).collect() } else { Vec::new() };
     let mut out = Vec::with_capacity(w * h * 3);
     for i in 0..w * h {
         let o = i * bpp;
         let c = match fmt {
-            PixFmt::F16 => [0, 1, 2].map(|k| devshot::f16_to_f32(u16::from_le_bytes([data[o + k * 2], data[o + k * 2 + 1]]))),
+            PixFmt::F16 => [0, 1, 2].map(|k| debugshot::f16_to_f32(u16::from_le_bytes([data[o + k * 2], data[o + k * 2 + 1]]))),
             PixFmt::Bgra8 => [lut8[data[o + 2] as usize], lut8[data[o + 1] as usize], lut8[data[o] as usize]],
             PixFmt::Rgba8 => [lut8[data[o] as usize], lut8[data[o + 1] as usize], lut8[data[o + 2] as usize]],
             PixFmt::Rgb10A2 => {
@@ -424,7 +424,7 @@ pub fn linear_rows(data: &[u8], w: u32, h: u32, fmt: PixFmt, scale: f32) -> Opti
 
 /// 8-bit sRGB rows from `linear_rows` (paper white = 1.0, clipped).
 pub fn srgb8_rows(lin: &[f32]) -> Vec<u8> {
-    lin.iter().map(|v| (devshot::srgb_encode(*v) * 255.0 + 0.5) as u8).collect()
+    lin.iter().map(|v| (debugshot::srgb_encode(*v) * 255.0 + 0.5) as u8).collect()
 }
 
 // ---- the UI-free scene ------------------------------------------------------------------------------------------------------------
@@ -483,7 +483,7 @@ pub fn scene_to_scrgb_f16(data: &mut [u8], map: &SceneMap) {
     let (paper, peak) = if map.hdr { (map.paper, map.peak) } else { (80.0, 80.0) };
     for px in data.chunks_exact_mut(8) {
         let v = [0, 1, 2].map(|k| {
-            let x = devshot::f16_to_f32(u16::from_le_bytes([px[k * 2], px[k * 2 + 1]]));
+            let x = debugshot::f16_to_f32(u16::from_le_bytes([px[k * 2], px[k * 2 + 1]]));
             let x = if x.is_nan() { 0.0 } else { x.clamp(0.0, 65504.0) };
             if map.hdr { x } else { x.min(1.0) }
         });
@@ -513,15 +513,15 @@ pub fn save_files(dir: &Path, stem: &str, suffix: &str, w: u32, h: u32, lin: &[f
         Space::Low(free, need) => return Err(format!("skipped: only {} MB free on the drive, need more than {} MB", free / 1_048_576, need / 1_048_576)),
         Space::Unknown | Space::Ok => {}
     }
-    let png = devshot::encode_png_rgb8_text(w, h, &srgb8_rows(lin), Some(settings));
+    let png = debugshot::encode_png_rgb8_text(w, h, &srgb8_rows(lin), Some(settings));
     let png_path = dir.join(format!("{stem}{suffix}.png"));
     if png_path.exists() {
         return Err(format!("{} exists already, not overwritten", png_path.display()));
     }
-    devshot::write_atomic(&png_path, &png).map_err(|e| format!("png: {e}"))?;
+    debugshot::write_atomic(&png_path, &png).map_err(|e| format!("png: {e}"))?;
     let hdr_path = if hdr {
         let p = dir.join(format!("{stem}{suffix}.hdr"));
-        devshot::write_atomic(&p, &encode_radiance(w, h, lin)).map_err(|e| format!("hdr: {e}"))?;
+        debugshot::write_atomic(&p, &encode_radiance(w, h, lin)).map_err(|e| format!("hdr: {e}"))?;
         Some(p)
     } else {
         None
@@ -627,13 +627,13 @@ unsafe fn grab_inner(ctx: Obj) {
         if let Ok(mut s) = SCENE.try_lock() {
             if s.stage.as_ref().is_none_or(|g| g.device != dev as usize || g.w != d.width || g.h != d.height || g.fmt != d.format) {
                 s.stage = None;
-                let tex = devshot::create_staging(dev, d.width, d.height, d.format);
+                let tex = debugshot::create_staging(dev, d.width, d.height, d.format);
                 if !tex.is_null() {
                     s.stage = Some(Stage { device: dev as usize, w: d.width, h: d.height, fmt: d.format, tex });
                 }
             }
             if let Some(g) = s.stage.as_ref() {
-                devshot::copy_resource(ctx, g.tex, res);
+                debugshot::copy_resource(ctx, g.tex, res);
                 s.pending = Some((NOW.load(Relaxed), d.width, d.height, d.format));
                 SCENE_WANT.store(false, Relaxed);
             }
@@ -656,7 +656,7 @@ pub(crate) unsafe fn take_scene(ctx: Obj, frame: u64) -> Result<Option<SceneData
     let Ok(mut s) = SCENE.try_lock() else { return Ok(None) };
     let Some((at, w, h, fmt)) = s.pending else { return Ok(None) };
     let age = frame.saturating_sub(at);
-    if age < devshot::MIN_AGE {
+    if age < debugshot::MIN_AGE {
         return Ok(None);
     }
     let Some(g) = s.stage.as_ref() else {
@@ -664,12 +664,12 @@ pub(crate) unsafe fn take_scene(ctx: Obj, frame: u64) -> Result<Option<SceneData
         return Err("the scene staging texture is gone".to_string());
     };
     let bpp = if fmt == 10 { 8 } else { 4 };
-    match unsafe { devshot::read_texture(ctx, g.tex, 0x10_0000, w, h, bpp) } {
+    match unsafe { debugshot::read_texture(ctx, g.tex, 0x10_0000, w, h, bpp) } {
         Some(data) => {
             s.pending = None;
             Ok(Some(SceneData { data, w, h, fmt }))
         }
-        None if age > devshot::MAX_AGE => {
+        None if age > debugshot::MAX_AGE => {
             s.pending = None;
             Err("the GPU copy of the scene never finished".to_string())
         }

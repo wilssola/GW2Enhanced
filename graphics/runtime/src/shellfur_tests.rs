@@ -69,10 +69,10 @@ fn shell_keys_hot_reload_one_by_one() {
     }
     assert_eq!((cur.length, cur.counts.as_str(), cur.wind), (6.0, "17694", 0.9));
     assert!(KEYS.iter().all(|k| ShellCfg::is_key(k)) && !ShellCfg::is_key("fur_strength"));
-    // Through the dev flow's diff / merge.
+    // Through the debug mode's diff / merge.
     let old = crate::config::Config::default();
     let new = crate::config::Config::parse("shell_wind=0.6\nshell_debug=1");
-    let (m, d) = crate::devshot::merge(&old, &old, &new);
+    let (m, d) = crate::debugshot::merge(&old, &old, &new);
     assert_eq!(d.live, vec!["shell_wind", "shell_debug"]);
     assert_eq!((m.shell.wind, m.shell.debug), (0.6, 1));
 }
@@ -1011,7 +1011,7 @@ fn png(name: &str, px: &[[f32; 3]], w: u32, h: u32, crop: Option<(u32, u32, u32,
             }
         }
     }
-    let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{name}-v2.png")), crate::devshot::encode_png_rgb8(cw * z, ch * z, &rgb));
+    let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{name}-v2.png")), crate::debugshot::encode_png_rgb8(cw * z, ch * z, &rgb));
 }
 
 const W: u32 = 512;
@@ -1316,20 +1316,20 @@ fn shell_keys_apply_live_and_the_dev_capture_reports_them() {
     let _g = crate::testlock::lock();
     let old = crate::config::Config::default();
     let new = crate::config::Config::parse("fur_shells=12\nshell_length=3\nshell_counts=-5214");
-    let d = crate::devshot::diff(&old, &new);
+    let d = crate::debugshot::diff(&old, &new);
     assert_eq!(d.live, vec!["fur_shells", "shell_length", "shell_counts"]);
-    let (m, _) = crate::devshot::merge(&old, &old, &new);
-    crate::devshot::apply_live(&d.live, &m);
+    let (m, _) = crate::debugshot::merge(&old, &old, &new);
+    crate::debugshot::apply_live(&d.live, &m);
     let c = cfg();
     assert_eq!((c.shells, c.length, c.counts.as_str()), (12, 3.0, "-5214"));
     assert!(crate::ao::depth_consumers() & crate::ao::DEPTH_FOR_FUR != 0, "the shells read the linear depth");
-    let t = crate::devshot::settings_text("test", 7, (1920, 1080), 10);
+    let t = crate::debugshot::settings_text("test", 7, (1920, 1080), 10);
     for k in ["fur_shell=1\n", "fur_shells=12\n", "shell_length=3\n", "shell_counts=-5214\n", "shell_normal=face\n", "status_shells="] {
         assert!(t.contains(k), "{k} missing in\n{t}");
     }
     configure(&ShellCfg { on: 0, ..ShellCfg::default() });
     assert!(crate::ao::depth_consumers() & crate::ao::DEPTH_FOR_FUR == 0);
-    let t = crate::devshot::settings_text("test", 7, (1920, 1080), 10);
+    let t = crate::debugshot::settings_text("test", 7, (1920, 1080), 10);
     assert!(t.lines().any(|l| l.starts_with("status_shells=off")), "{t}");
 }
 
@@ -1583,7 +1583,7 @@ fn region_of(u: f32, v: f32) -> (f32, usize) {
 }
 
 /// The material of the coat at uv: (albedo, gloss alpha). Fur: the white coat, gloss 0.40..0.46 (v7: the 0.40..0.44 of the fur texels in
-/// every real charr atlas the dev captures wrote; v3 used 0.47..0.59 from the game's dat hair textures); horn grey, nose dark pink, claw
+/// every real charr atlas the debug captures wrote; v3 used 0.47..0.59 from the game's dat hair textures); horn grey, nose dark pink, claw
 /// the coat's colour, all glossy (0.86).
 fn material(u: f32, v: f32) -> ([f32; 3], f32) {
     let n = (((u * 157.0).sin() * (v * 113.0).cos()) * 0.5 + 0.5) * 0.12;
@@ -1740,7 +1740,7 @@ fn png3(name: &str, px: &[[f32; 3]], w: u32, h: u32, crop: Option<(u32, u32, u32
             }
         }
     }
-    let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{name}-v3.png")), crate::devshot::encode_png_rgb8(cw * z, ch * z, &rgb));
+    let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{name}-v3.png")), crate::debugshot::encode_png_rgb8(cw * z, ch * z, &rgb));
 }
 
 /// What the discriminator did in one render: strands rooted inside a region (must be none), the body pixels away from every region that
@@ -1864,7 +1864,7 @@ fn fur_discriminator_keys_parse_clamp_round_trip_and_the_constants() {
     assert!(t.contains("shell_uv_exclude=0.81 0.02 0.97 0.2; 0.1 0.6 0.2 0.7@17694\n"), "{t}");
     assert_eq!(crate::config::Config::parse(&t).shell, x);
     // Hot reload one by one.
-    let (m, dd) = crate::devshot::merge(&crate::config::Config::default(), &crate::config::Config::default(), &crate::config::Config::parse("shell_fur_threshold=0.5\nshell_uv_exclude=0 0 0.1 0.1"));
+    let (m, dd) = crate::debugshot::merge(&crate::config::Config::default(), &crate::config::Config::default(), &crate::config::Config::parse("shell_fur_threshold=0.5\nshell_uv_exclude=0 0 0.1 0.1"));
     assert_eq!(dd.live, vec!["shell_fur_threshold", "shell_uv_exclude"]);
     assert_eq!((m.shell.fur_threshold, m.shell.uv_exclude.as_str()), (0.5, "0 0 0.1 0.1"));
     // The constants: off = all zero; the per-draw rectangles; NaN-safe.
@@ -2642,7 +2642,7 @@ fn v7_the_gpu_coat_statistics_match_the_cpu_mirror() {
     assert!(t.contains("-> fur draw") && t.contains("gloss band"), "{t}");
 }
 
-/// Real texels measured on the dev captures' atlases (`GW2Graphics\debug\furtex-<crc>-rgb.png` / `-a.png`, the ~1024 level, 5x5 means):
+/// Real texels measured on the debug captures' atlases (`GW2Graphics\debug\furtex-<crc>-rgb.png` / `-a.png`, the ~1024 level, 5x5 means):
 /// the coat statistics of the body region (stand-in for the body draw's footprint: s0 = band share, median flatness; s1 = median
 /// gloss, saturation, value, hue) and the body fur's median texel, the claws' median and 75th-percentile-gloss texel (features: gloss,
 /// saturation, value, flatness; hue). docs/shell-fur.md "v7" has the whole table and how it was measured.

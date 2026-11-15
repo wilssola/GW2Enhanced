@@ -698,7 +698,7 @@ fn common_wait_text() -> Option<String> {
     }
 }
 
-/// Dev capture / overlay line of the lens effects.
+/// Debug capture / overlay line of the lens effects.
 pub fn status_lens() -> String {
     if !lens::on() {
         return "off (lens_strength 0)".to_string();
@@ -732,7 +732,7 @@ pub fn status_lens() -> String {
     }
 }
 
-/// Dev capture / overlay line of the colour grading (sliders and LUT).
+/// Debug capture / overlay line of the colour grading (sliders and LUT).
 pub fn status_grade() -> String {
     let g = grading::get();
     let lut = grading::lut_status_text();

@@ -506,7 +506,7 @@ pub fn note_swap() {
     SWAPS.fetch_add(1, Relaxed);
 }
 
-/// Overlay / dev capture line.
+/// Overlay / debug capture line.
 pub fn status_text() -> String {
     format!(
         "{} (twins {} created, {} kept original, {} failed; {} swaps; bound targets upgraded={:#04x} of {:#04x}, twin bound={})",

@@ -42,7 +42,7 @@
 //! later passes the read-only test too); the stamp is therefore blended with MIN (MAX for reversed Z, `stamp_blend_desc`; the mask
 //! itself is not blended), cleared to 2 (-1 for reversed Z) = nothing. Without that the stamp was the LAST fragment and the check
 //! erased the inside of every mesh that overlaps itself (the charr tail: only a band along the silhouette was left). `fur_occlusion=0`
-//! bypasses the check (A/B), and the dev capture's `status_occlusion=` reads the masks back once and emulates the check on the CPU
+//! bypasses the check (A/B), and the debug capture's `status_occlusion=` reads the masks back once and emulates the check on the CPU
 //! (`probe_counts`). The static `ps_mask` / `ps_rim` cannot read SV_Position (a pixel
 //! shader input must sit on the vertex shader's register), so they stamp -1 and their pixels are never erased; the shaders
 //! generated per vertex signature (`uv_ps_hlsl`, `z_ps_hlsl`) stamp.
@@ -1518,7 +1518,7 @@ unsafe fn fur_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], vs_hash: Option<u32>
         if fd.is_some() {
             FD_FRAME.store(true, Relaxed);
         }
-        // Per-draw tag in the mask's b (shell_debug=2 / the dev capture's per-draw probe, furprobe.rs): the draw's index in the frame.
+        // Per-draw tag in the mask's b (shell_debug=2 / the debug capture's per-draw probe, furprobe.rs): the draw's index in the frame.
         let mut fd = fd;
         if !HL_ACTIVE.load(Relaxed) && crate::furprobe::tagging() {
             let v = fd.get_or_insert([[0.0f32; 4]; crate::shellfur::FD_LEN]);
@@ -1604,7 +1604,7 @@ pub fn on_light_adjust(ctx: Obj) {
                 let check_fur = fur_on && !OCC_DONE.swap(true, Relaxed);
                 let check_rim = rim_on && !RIM_OCC_DONE.swap(true, Relaxed);
                 if let (true, Some(m)) = (check_fur || check_rim, g.as_mut()) {
-                    // The dev capture's diagnostic reads the masks BEFORE the check changes them (one stall, dev captures only).
+                    // The debug capture's diagnostic reads the masks BEFORE the check changes them (one stall, debug captures only).
                     // (only in a frame that collected its fur draws from the start: furprobe.rs; at most one frame later)
                     if crate::furprobe::collecting() && PROBE_WANT.swap(false, Relaxed) {
                         probe(m, ctx, check_fur, check_rim);
@@ -1687,20 +1687,20 @@ unsafe fn run_checks(m: &mut Mask, ctx: Obj, fur: bool, rim: bool) {
     unsafe { release(dev) };
 }
 
-// ---- dev capture diagnostic: status_occlusion= ---------------------------------------------------------------
+// ---- debug capture diagnostic: status_occlusion= ---------------------------------------------------------------
 
-/// The dev capture asked for the occlusion diagnostic: the next light-adjust draw that checks reads the masks, the z-stamps and the
+/// The debug capture asked for the occlusion diagnostic: the next light-adjust draw that checks reads the masks, the z-stamps and the
 /// engine's depth back (BEFORE the check), emulates the check on the CPU and leaves the result for `probe_text`.
 static PROBE_WANT: AtomicBool = AtomicBool::new(false);
 static PROBE_TEXT: Mutex<String> = Mutex::new(String::new());
 
-/// The dev capture's `status_occlusion=` line: the result of the last probe (a frame after the previous capture) and a request for
-/// the next one. Costs nothing outside the dev captures.
+/// The debug capture's `status_occlusion=` line: the result of the last probe (a frame after the previous capture) and a request for
+/// the next one. Costs nothing outside the debug captures.
 pub fn probe_text() -> String {
     PROBE_WANT.store(true, Relaxed);
     let t = PROBE_TEXT.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let state = format!("fur_occlusion {} ({})", OCC_ON.load(Relaxed) as u8, if OCC_ON.load(Relaxed) { "check on" } else { "check bypassed, the numbers say what it WOULD erase" });
-    if t.is_empty() { format!("{state}; no probe yet (requested now: the next dev capture reports the frame after this one)") } else { format!("{state}; {t}") }
+    if t.is_empty() { format!("{state}; no probe yet (requested now: the next debug capture reports the frame after this one)") } else { format!("{state}; {t}") }
 }
 
 /// One channel of a probe: the CPU emulation of `ps_occ_less` / `ps_occ_greater` on the read-back textures.
@@ -1824,15 +1824,15 @@ pub fn probe_extra(tol: f32, bias: [u32; 3], generated: u32, fallback: u32) -> S
     t
 }
 
-/// Copies `tex` (`w` x `h`, `fmt`, `bpp` bytes per texel) to a staging texture and maps it (waits for the GPU: dev captures only).
+/// Copies `tex` (`w` x `h`, `fmt`, `bpp` bytes per texel) to a staging texture and maps it (waits for the GPU: debug captures only).
 unsafe fn read_tex(dev: Obj, ctx: Obj, tex: Obj, w: u32, h: u32, fmt: u32, bpp: usize) -> Option<Vec<u8>> {
     unsafe {
-        let st = crate::devshot::create_staging(dev, w, h, fmt);
+        let st = crate::debugshot::create_staging(dev, w, h, fmt);
         if st.is_null() {
             return None;
         }
-        crate::devshot::copy_resource(ctx, st, tex);
-        let r = crate::devshot::read_texture(ctx, st, 0, w, h, bpp);
+        crate::debugshot::copy_resource(ctx, st, tex);
+        let r = crate::debugshot::read_texture(ctx, st, 0, w, h, bpp);
         release(st);
         r
     }
@@ -1894,7 +1894,7 @@ static DISC_PROBE: Mutex<String> = Mutex::new(String::new());
 pub fn discrim_probe_text() -> String {
     PROBE_WANT.store(true, Relaxed);
     let t = DISC_PROBE.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    if t.is_empty() { "discriminator probe: none yet (the next dev capture reports it)".to_string() } else { t }
+    if t.is_empty() { "discriminator probe: none yet (the next debug capture reports it)".to_string() } else { t }
 }
 
 /// The mouse position in the pixels of a `w` x `h` mask (the game window's client area scaled), `None` outside it or without a window.

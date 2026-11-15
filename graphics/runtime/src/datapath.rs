@@ -244,7 +244,7 @@ pub fn fur_look_cb_values(l: &FurLook, view_ok: bool) -> [[f32; 4]; 2] {
     [[c.amp, c.scale, c.length, c.detail], [c.rim, c.sss, if view_ok { f32::from(c.view) } else { 0.0 }, 1.0]]
 }
 
-/// One line for the overlay and the dev capture (`status_furlook=`): the six values and the view.
+/// One line for the overlay and the debug capture (`status_furlook=`): the six values and the view.
 pub fn fur_look_text() -> String {
     let l = fur_look();
     let view = match l.view {
@@ -362,7 +362,7 @@ pub fn effective_gain(slider: f32, headroom: f32) -> f32 {
 /// 1.75x at the default 2.5 with a headroom of 3.5, lights keep the full gain).
 pub const SURFACE_SHARE: f32 = 0.6;
 
-/// Overlay line / dev capture `status_highlight=`: the slider, the gain the shader really gets and the headroom it comes from.
+/// Overlay line / debug capture `status_highlight=`: the slider, the gain the shader really gets and the headroom it comes from.
 pub fn highlight_status_text() -> String {
     let slider = resolve::highlight();
     let (headroom, _) = output::shoulder_constants(output::paper_white(), output::peak());
@@ -608,8 +608,8 @@ unsafe fn bind_current(ctx: Obj) {
             crate::exposure::on_light_adjust(ctx, dev);
             // One-off depth diagnostic (overlay button "Log depth stats"; see depthstats.rs).
             crate::depthstats::on_light_adjust(ctx, dev);
-            // Dev capture: the engine's linear depth of this frame for `status_depth=` (only while a dev shot waits for it; see devshot.rs).
-            crate::devshot::on_light_adjust(ctx, dev);
+            // Debug capture: the engine's linear depth of this frame for `status_depth=` (only while a dev shot waits for it; see debugshot.rs).
+            crate::debugshot::on_light_adjust(ctx, dev);
         }
         release(dev);
         if ok {

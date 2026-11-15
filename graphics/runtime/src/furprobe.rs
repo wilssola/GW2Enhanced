@@ -1,6 +1,6 @@
 //! Per-draw fur probe (docs/shell-fur.md "v4: the evidence per draw"): which fur draw drew which pixel, what its textures really hold.
 //!
-//! WHY. v3's discriminator (`t0.a < 0.66`) changed nothing in the game: the dev capture said 0.5 % of the fur draws' pixels were "not fur",
+//! WHY. v3's discriminator (`t0.a < 0.66`) changed nothing in the game: the debug capture said 0.5 % of the fur draws' pixels were "not fur",
 //! so the horn, the claws and the nose have the gloss of the coat in the engine's composited 4096 atlas (the dat textures the threshold
 //! was measured on are not what is bound). Nothing on disk shows the bound atlas, so the mod reads it back itself.
 //!
@@ -15,7 +15,7 @@
 //! the legend (colour -> draw, its textures), per draw 16-bin histograms of t0.a, luminance, saturation and t1 detail, the values under
 //! the screen centre and the mouse, and PNGs in `GW2Graphics\debug\` (`furtex-<crc>-*.png`: the atlas colour, alpha and detail at the
 //! 1024 mip, written once per texture; `furprobe-uv-<crc>.png`: the atlas with every visible fur pixel plotted in its draw's colour and
-//! a cross at the centre / mouse uv). Dev captures only; the render thread pays the copies and one wait, never the decoding.
+//! a cross at the centre / mouse uv). Debug captures only; the render thread pays the copies and one wait, never the decoding.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use std::sync::Mutex;
@@ -544,7 +544,7 @@ fn f4(c: Option<[f32; 4]>, n: usize) -> String {
 pub fn report(draws: &[DrawMeta], tex: &[TexData], st: &[DrawStats], untagged: u64, pts: &[(String, u32, u32, PointInfo)], files: &[String]) -> String {
     let total: u64 = st.iter().map(|s| s.px).sum::<u64>() + untagged;
     let mut t = format!(
-        "per-draw probe ({} fur draws collected, {total} visible fur-draw px, shell_debug=2 colours; NOTE: measured in the frame right after the PREVIOUS dev capture, so it belongs to that capture's screenshot and to dev\\furprobe-last.txt, written with the PNGs):",
+        "per-draw probe ({} fur draws collected, {total} visible fur-draw px, shell_debug=2 colours; NOTE: measured in the frame right after the PREVIOUS debug capture, so it belongs to that capture's screenshot and to dev\\furprobe-last.txt, written with the PNGs):",
         draws.len()
     );
     for (d, s) in draws.iter().zip(st) {
@@ -780,7 +780,7 @@ pub fn push_draw(idx: u32, ps: u32, vs: Option<u32>, vcb0: u32, call: Call, shel
     }
 }
 
-/// Copies one level of `res` back (waits for the GPU; dev captures only). (w, h, raw bytes).
+/// Copies one level of `res` back (waits for the GPU; debug captures only). (w, h, raw bytes).
 pub(crate) unsafe fn read_level(dev: Obj, ctx: Obj, res: Obj, d: &Tex2dDesc, level: u32) -> Result<(u32, u32, Vec<u8>), String> {
     let (bpb, _) = fmt_kind(d.format).ok_or_else(|| format!("format {} not decodable", crate::passes::format_name(d.format)))?;
     let (w, h) = ((d.width >> level).max(1), (d.height >> level).max(1));
@@ -788,13 +788,13 @@ pub(crate) unsafe fn read_level(dev: Obj, ctx: Obj, res: Obj, d: &Tex2dDesc, lev
         return Err("level too small".into());
     }
     unsafe {
-        let st = crate::devshot::create_staging(dev, w, h, d.format);
+        let st = crate::debugshot::create_staging(dev, w, h, d.format);
         if st.is_null() {
             return Err("no staging texture".into());
         }
         let copy: unsafe extern "system" fn(Obj, Obj, u32, u32, u32, u32, Obj, u32, *const u32) = std::mem::transmute(vfn(ctx, vt::CTX_COPY_SUBRESOURCE_REGION));
         copy(ctx, st, 0, 0, 0, 0, res, level, std::ptr::null());
-        let r = if bpb > 0 { crate::devshot::read_texture(ctx, st, 0, w.div_ceil(4), h.div_ceil(4), bpb) } else { crate::devshot::read_texture(ctx, st, 0, w, h, 4) };
+        let r = if bpb > 0 { crate::debugshot::read_texture(ctx, st, 0, w.div_ceil(4), h.div_ceil(4), bpb) } else { crate::debugshot::read_texture(ctx, st, 0, w, h, 4) };
         release(st);
         r.map(|v| (w, h, v)).ok_or_else(|| "read-back failed".into())
     }
@@ -843,7 +843,7 @@ pub unsafe fn analyze(dev: Obj, ctx: Obj, texels: Vec<[u16; 4]>, stamp: Vec<f32>
             let mut raw512 = Vec::new();
             match unsafe { read_level(dev, ctx, r.res, &r.d, t.l512) } {
                 Ok((lw, lh, raw)) => {
-                    t.crc = crate::devshot::crc32(&[&raw]);
+                    t.crc = crate::debugshot::crc32(&[&raw]);
                     t.img512 = Img { w: lw, h: lh, px: Vec::new() };
                     raw512 = raw;
                 }
@@ -901,7 +901,7 @@ pub unsafe fn analyze(dev: Obj, ctx: Obj, texels: Vec<[u16; 4]>, stamp: Vec<f32>
 }
 
 fn write_png(path: &std::path::Path, w: u32, h: u32, rgb: &[u8]) -> bool {
-    std::fs::write(path, crate::devshot::encode_png_rgb8(w, h, rgb)).is_ok()
+    std::fs::write(path, crate::debugshot::encode_png_rgb8(w, h, rgb)).is_ok()
 }
 
 /// The PNGs (background thread): per texture once (`furtex-<crc>-rgb|a|detail.png`), the uv overlay per t0 every probe.
@@ -946,9 +946,9 @@ fn write_files(dir: &std::path::Path, tex: &[TexData], texels: &[[u16; 4]], stam
 pub fn report_text() -> String {
     let t = REPORT.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if BUSY.load(Relaxed) {
-        return "per-draw probe: computing (the next dev capture reports it)".to_string();
+        return "per-draw probe: computing (the next debug capture reports it)".to_string();
     }
-    if t.is_empty() { "per-draw probe: none yet (the next dev capture collects it)".to_string() } else { t }
+    if t.is_empty() { "per-draw probe: none yet (the next debug capture collects it)".to_string() } else { t }
 }
 
 #[cfg(test)]

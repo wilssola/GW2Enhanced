@@ -539,7 +539,7 @@ pub fn aerial_state() -> &'static str {
     }
 }
 
-/// Overlay line / dev capture `status_contact=`.
+/// Overlay line / debug capture `status_contact=`.
 pub fn status_text() -> String {
     if FAILED.load(Relaxed) {
         return "failed (see log), off".to_string();

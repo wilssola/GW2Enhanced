@@ -77,17 +77,17 @@ fn a_radiance_file_round_trips_and_has_a_valid_header() {
 fn halves_convert_both_ways() {
     for v in [0.0f32, 1.0, -1.0, 0.5, 2.5375, 1000.0, 65504.0, 6.1e-5, 1.0e-6, 0.333_333, 12.5] {
         let h = f32_to_f16(v);
-        let back = devshot::f16_to_f32(h);
+        let back = debugshot::f16_to_f32(h);
         assert!((back - v).abs() <= v.abs() * 1.0e-3 + 6.0e-8, "{v} -> {back}");
     }
     assert_eq!(f32_to_f16(1.0), 0x3c00);
     assert_eq!(f32_to_f16(-2.0), 0xc000);
     assert_eq!(f32_to_f16(1.0e9), 0x7c00, "overflow is infinity");
-    assert_eq!(devshot::f16_to_f32(f32_to_f16(f32::INFINITY)), f32::INFINITY);
-    assert!(devshot::f16_to_f32(f32_to_f16(f32::NAN)).is_nan());
+    assert_eq!(debugshot::f16_to_f32(f32_to_f16(f32::INFINITY)), f32::INFINITY);
+    assert!(debugshot::f16_to_f32(f32_to_f16(f32::NAN)).is_nan());
     // all finite halves survive a round trip
     for h in 0u16..0x7c00 {
-        assert_eq!(f32_to_f16(devshot::f16_to_f32(h)), h, "{h:#x}");
+        assert_eq!(f32_to_f16(debugshot::f16_to_f32(h)), h, "{h:#x}");
     }
 }
 
@@ -192,7 +192,7 @@ fn only_one_capture_at_a_time() {
 /// dev timer is never starved for good.
 #[test]
 fn photos_and_the_dev_timer_never_run_together_and_both_get_their_turn() {
-    use crate::devshot::{PairMachine, PairStep, capture_due};
+    use crate::debugshot::{PairMachine, PairStep, capture_due};
     let mut q = PhotoQueue::new();
     let mut m = PairMachine::new();
     let (mut now, mut frame) = (0u64, 0u64);
@@ -290,11 +290,11 @@ fn hdr10_pixels_decode_to_the_scrgb_primaries() {
     let red = hdr10::scrgb_to_pq([203.0 / 80.0, 0.0, 0.0]);
     let lin = linear_rows(&px(code(red[0]), code(red[1]), code(red[2])), 1, 1, PixFmt::Rgb10A2, 80.0 / 203.0).unwrap();
     assert!((lin[0] - 1.0).abs() < 0.02 && lin[1].abs() < 0.02 && lin[2].abs() < 0.02, "{lin:?}");
-    // the dev capture's statistics read the same format
-    let c = devshot::convert(&px(white, white, white).repeat(4), 2, 2, PixFmt::Rgb10A2, 80.0 / 203.0).unwrap();
+    // the debug capture's statistics read the same format
+    let c = debugshot::convert(&px(white, white, white).repeat(4), 2, 2, PixFmt::Rgb10A2, 80.0 / 203.0).unwrap();
     assert!((c.stats.mean_lum - 1.0).abs() < 0.02, "{}", c.stats.mean_lum);
-    assert_eq!(devshot::pixfmt(24), Some(PixFmt::Rgb10A2));
-    assert_eq!(devshot::bytes_per_px(PixFmt::Rgb10A2), 4);
+    assert_eq!(debugshot::pixfmt(24), Some(PixFmt::Rgb10A2));
+    assert_eq!(debugshot::bytes_per_px(PixFmt::Rgb10A2), 4);
 }
 
 #[test]

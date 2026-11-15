@@ -49,7 +49,7 @@ mod output;
 mod hdr10;
 mod calib;
 mod photo;
-mod devshot;
+mod debugshot;
 mod toggles;
 mod clampemu;
 #[cfg(test)]

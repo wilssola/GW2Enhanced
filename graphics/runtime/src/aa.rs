@@ -526,7 +526,7 @@ unsafe fn apply(ctx: Obj) -> Option<Obj> {
     }
 }
 
-/// Dev capture / overlay line.
+/// Debug capture / overlay line.
 pub fn status_text() -> String {
     let (a, b) = passes_for(smaa(), sharpen());
     if !a && !b {
