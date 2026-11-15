@@ -22,6 +22,17 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 # Query builder: every statement is built as (SQL with ? placeholders, values).
 sea-query = { version = "1.0.2", default-features = false, features = ["backend-sqlite", "derive"] }
 
+[features]
+# The daily jobs binary (src/bin/jobs.rs), run by GitHub Actions on the host.
+jobs = ["dep:ureq"]
+
+[[bin]]
+name = "jobs"
+required-features = ["jobs"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { version = "3", optional = true, features = ["json"] }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = { version = "0.8", features = ["d1"] }
 getrandom = { version = "0.2", features = ["js"] }
