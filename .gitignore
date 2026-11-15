@@ -9,3 +9,5 @@ __pycache__/
 .dev.vars
 *.orig
 *.removed
+# Release zips (scripts/package.ps1).
+/dist/
