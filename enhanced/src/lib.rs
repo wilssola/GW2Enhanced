@@ -29,6 +29,21 @@ use gw2enhanced_core::registry::{self, State};
 #[unsafe(no_mangle)]
 pub static GW2ENHANCED_DLL_MARKER: [u8; 24] = *b"GW2ENHANCED-DLL-MARKER!!";
 
+/// Lets the installer show which version and package this DLL is (read from the file, never loaded).
+#[used]
+#[unsafe(no_mangle)]
+pub static GW2ENHANCED_BUILD_INFO: [u8; gw2enhanced_core::release::BUILD_INFO_LEN] =
+    gw2enhanced_core::release::build_info(
+        match option_env!("GW2E_VERSION") {
+            Some(v) => v,
+            None => env!("CARGO_PKG_VERSION"),
+        },
+        match option_env!("GW2E_PACKAGE") {
+            Some(p) => p,
+            None => "",
+        },
+    );
+
 // The texture runtime counts the bytes the mod holds (shown in its panel).
 #[cfg(feature = "textures")]
 #[global_allocator]

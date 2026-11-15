@@ -16,27 +16,16 @@
 
 use std::fs;
 use std::io::{Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use gw2enhanced_core::registry::{self, State};
+use gw2enhanced_core::release::{
+    OWNER, PACKAGES, REPO, SIG_ASSET, SUMS_ASSET, asset_name, asset_url_ok, expected_sum, is_protected, safe_relative,
+};
 use hudhook::imgui::{Condition, Ui, WindowFlags};
-
-const OWNER: &str = "wilssola";
-const REPO: &str = "GW2Enhanced";
-
-/// The packages CI builds (one zip each per release, see README "Downloads").
-const PACKAGES: &[&str] = &[
-    "All",
-    "Translation",
-    "Translation-CPU",
-    "Translation-CUDA",
-    "Translation-DirectML",
-    "Textures",
-    "Graphics",
-];
 
 /// How long after the start the check runs: the game is busy loading before that.
 const CHECK_DELAY: Duration = Duration::from_secs(5);
@@ -50,11 +39,6 @@ const DATA_DIR: &str = "GW2Enhanced";
 const STAGE_DIR: &str = "update";
 const CLEANUP_LIST: &str = "update_cleanup.txt";
 const LOG_FILE: &str = "update_log.txt";
-const SUMS_ASSET: &str = "SHA256SUMS.txt";
-/// ed25519 signature of SHA256SUMS.txt (see `gw2enhanced_core::signed`): without a valid one nothing is installed.
-const SIG_ASSET: &str = "SHA256SUMS.txt.sig";
-/// Every asset is fetched through the GitHub API of this repository (never a url some JSON points elsewhere).
-const ASSET_URL_PREFIX: &str = "https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/";
 
 /// Size caps: the largest package (CUDA translator runtime) is well under this.
 const MAX_DOWNLOAD: u64 = 6 * 1024 * 1024 * 1024;
@@ -73,15 +57,6 @@ pub fn current_version() -> &'static str {
         .unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
-/// The asset url is this repository's release asset API (`.../releases/assets/<numeric id>`).
-fn asset_url_ok(url: &str) -> bool {
-    url.strip_prefix(ASSET_URL_PREFIX).is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
-}
-
-fn asset_name(package: &str, version: &str) -> String {
-    format!("GW2Enhanced-{package}-{}.zip", version.trim_start_matches('v'))
-}
-
 /// `Some(version)` (without `v`) when `tag` is newer than `current`. Build metadata (`+...`) never makes a release
 /// newer; a pre-release is older than its release.
 fn release_update(current: &str, tag: &str) -> Result<Option<String>, String> {
@@ -91,17 +66,6 @@ fn release_update(current: &str, tag: &str) -> Result<Option<String>, String> {
     let newer = self_update::version::bump_is_greater(current_order, version_order)
         .map_err(|_| format!("invalid version (release {tag:?}, this build {current:?})"))?;
     Ok(newer.then(|| version.to_string()))
-}
-
-/// The sum `SHA256SUMS.txt` (sha256sum format: `<hex>  <name>`, or `<hex> *<name>` in binary mode) lists for `name`.
-fn expected_sum(sums: &str, name: &str) -> Option<String> {
-    sums.lines().find_map(|line| {
-        let (sum, file) = line.trim().split_once(char::is_whitespace)?;
-        let file = file.trim().trim_start_matches('*');
-        let file = file.strip_prefix("./").unwrap_or(file);
-        (file == name && sum.len() == 64 && sum.bytes().all(|b| b.is_ascii_hexdigit()))
-            .then(|| sum.to_ascii_lowercase())
-    })
 }
 
 /// `check_updates` in `GW2Enhanced\config.ini` (`key=value` lines, `#`/`;` comments); on unless it says no.
@@ -119,64 +83,6 @@ fn updates_enabled(config: &str) -> bool {
         }
     }
     true
-}
-
-/// The zip entry name as a path relative to the game folder, or `None` when it is unsafe: absolute, with a drive or
-/// stream (`:`), with `.` / `..` parts, or with names Windows would change or treat as devices.
-fn safe_relative(name: &str) -> Option<PathBuf> {
-    if name.is_empty() || name.starts_with('/') || name.starts_with('\\') || name.contains(':') {
-        return None;
-    }
-    let parts: Vec<&str> = name.split(['/', '\\']).collect();
-    let mut out = PathBuf::new();
-    for (i, part) in parts.iter().enumerate() {
-        if part.is_empty() {
-            // Only a trailing separator (a directory entry) is fine.
-            if i == parts.len() - 1 && i > 0 {
-                continue;
-            }
-            return None;
-        }
-        if *part == "." || *part == ".." || part.ends_with('.') || part.ends_with(' ') {
-            return None;
-        }
-        if part.chars().any(|c| c.is_control() || matches!(c, '<' | '>' | '"' | '|' | '?' | '*')) {
-            return None;
-        }
-        let stem = part.split('.').next().unwrap_or("").to_ascii_uppercase();
-        let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-            || ((stem.starts_with("COM") || stem.starts_with("LPT"))
-                && stem.len() == 4
-                && stem.as_bytes()[3].is_ascii_digit());
-        if device {
-            return None;
-        }
-        out.push(part);
-    }
-    // Belt and braces: what Path makes of it must be plain names only.
-    if out.as_os_str().is_empty() || !out.components().all(|c| matches!(c, Component::Normal(_))) {
-        return None;
-    }
-    Some(out)
-}
-
-/// Files an update never writes even if a zip had them: the player's settings and collected/own translations, and
-/// the game's own files.
-fn is_protected(rel: &Path) -> bool {
-    let Some(name) = rel.file_name().and_then(|n| n.to_str()) else {
-        return true;
-    };
-    const NAMES: &[&str] = &[
-        "config.ini",
-        "local.jsonl",
-        "web_local.jsonl",
-        "discovered.jsonl",
-        "decrypted.jsonl",
-        "Gw2-64.exe",
-        "Gw2.dat",
-        "Local.dat",
-    ];
-    NAMES.iter().any(|n| name.eq_ignore_ascii_case(n))
 }
 
 /// `<path>.old`, or `<path>.<n>.old` when an earlier `.old` is still there and cannot be deleted (in use).
@@ -957,39 +863,10 @@ mod tests {
     }
 
     #[test]
-    fn asset_urls_must_be_this_repositorys_release_assets() {
-        assert!(asset_url_ok("https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/123456"));
-        assert!(!asset_url_ok("https://api.github.com/repos/someone/else/releases/assets/123456"));
-        assert!(!asset_url_ok("https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/12/../x"));
-        assert!(!asset_url_ok("https://evil.example/repos/wilssola/GW2Enhanced/releases/assets/1"));
-        assert!(!asset_url_ok("https://api.github.com/repos/wilssola/GW2Enhanced/releases/assets/"));
-    }
-
-    #[test]
-    fn asset_names_follow_the_release_layout() {
-        assert_eq!(asset_name("All", "1.4.0"), "GW2Enhanced-All-1.4.0.zip");
-        assert_eq!(asset_name("Translation-DirectML", "v2.0.1"), "GW2Enhanced-Translation-DirectML-2.0.1.zip");
-        assert!(PACKAGES.contains(&"Translation-CUDA"));
+    fn this_build_is_a_known_package() {
         if let Some(p) = package() {
             assert!(PACKAGES.contains(&p), "GW2E_PACKAGE={p} is not a known package");
         }
-    }
-
-    #[test]
-    fn sha256sums_are_parsed_in_text_and_binary_mode() {
-        let a = "a".repeat(64);
-        let b = "B".repeat(64);
-        let sums = format!(
-            "{a}  GW2Enhanced-All-1.0.0.zip\n{b} *GW2Enhanced-Graphics-1.0.0.zip\n\
-             {a}  ./GW2Enhanced-Textures-1.0.0.zip\r\nnot a line\nabc  GW2Enhanced-Translation-1.0.0.zip\n"
-        );
-        assert_eq!(expected_sum(&sums, "GW2Enhanced-All-1.0.0.zip"), Some(a.clone()));
-        assert_eq!(expected_sum(&sums, "GW2Enhanced-Graphics-1.0.0.zip"), Some("b".repeat(64)));
-        assert_eq!(expected_sum(&sums, "GW2Enhanced-Textures-1.0.0.zip"), Some(a));
-        // A short (bad) sum is not a sum; a name that is only a prefix is not a match.
-        assert_eq!(expected_sum(&sums, "GW2Enhanced-Translation-1.0.0.zip"), None);
-        assert_eq!(expected_sum(&sums, "GW2Enhanced-All-1.0.0"), None);
-        assert_eq!(expected_sum("", "x.zip"), None);
     }
 
     #[test]
@@ -999,43 +876,6 @@ mod tests {
         assert!(!updates_enabled("check_updates=false"));
         assert!(!updates_enabled("# comment\n Check_Updates = 0 \n"));
         assert!(updates_enabled("# check_updates=false\n;check_updates=false"));
-    }
-
-    #[test]
-    fn zip_paths_must_stay_inside_the_game_folder() {
-        assert_eq!(safe_relative("msimg32.dll"), Some(PathBuf::from("msimg32.dll")));
-        assert_eq!(
-            safe_relative("GW2Translated/translator/gw2translated-translator.exe"),
-            Some(PathBuf::from("GW2Translated").join("translator").join("gw2translated-translator.exe"))
-        );
-        assert_eq!(safe_relative("GW2Translated\\translator\\"), Some(PathBuf::from("GW2Translated").join("translator")));
-        for bad in [
-            "",
-            "../evil.dll",
-            "a/../../evil.dll",
-            "a/./b",
-            "/abs.dll",
-            "\\abs.dll",
-            "C:/Windows/evil.dll",
-            "C:evil.dll",
-            "file.txt:stream",
-            "a//b",
-            "trailing.",
-            "trailing ",
-            "NUL",
-            "con.txt",
-            "dir/COM1.dll",
-            "a*b",
-            "x\u{1}y",
-        ] {
-            assert_eq!(safe_relative(bad), None, "{bad:?}");
-        }
-        assert!(is_protected(Path::new("GW2Translated/config.ini")));
-        assert!(is_protected(Path::new("CONFIG.INI")));
-        assert!(is_protected(Path::new("GW2Translated/languages/pt-BR/local.jsonl")));
-        assert!(is_protected(Path::new("Gw2-64.exe")));
-        assert!(!is_protected(Path::new("GW2Translated/languages/pt-BR/dictionary.jsonl")));
-        assert!(!is_protected(Path::new("msimg32.dll")));
     }
 
     #[test]

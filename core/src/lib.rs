@@ -12,6 +12,7 @@ pub mod cache;
 pub mod module;
 pub mod pattern;
 pub mod registry;
+pub mod release;
 pub mod resolve;
 pub mod signed;
 pub mod site;
