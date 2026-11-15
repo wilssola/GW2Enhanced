@@ -250,7 +250,7 @@ pub fn load_settings(path: PathBuf) {
             log!("config: migrated settings.json");
         }
     } else if let Ok(t) = std::fs::read_to_string(&path) {
-        if let Some(v) = ini_get(&t, "remaster") {
+        if let Some(v) = ini_get(&t, "enabled").or_else(|| ini_get(&t, "remaster")) {
             ENABLED.store(!v.eq_ignore_ascii_case("false"), Ordering::Relaxed);
         }
         // composite scale is not a user option: 4x for the local player, 2x for others,
@@ -319,8 +319,8 @@ fn save_settings() {
             concat!(
                 "# GW2 Remastered — configuration\n",
                 "\n",
-                "# Serve the HD textures (also toggled in the overlay)\n",
-                "remaster={}\n",
+                "# Textures on: serve the HD textures (off = the game's original textures; also in the overlay)\n",
+                "enabled={}\n",
                 "\n",
                 "# 4x skin, face and armor for every player on screen (true) or only for\n",
                 "# your character (false, saves memory). Applies to characters loaded after the change.\n",
@@ -359,7 +359,7 @@ fn save_settings() {
             crate::diag::TERRAIN_HD.load(Ordering::Relaxed)
         );
         match std::fs::write(p, &body) {
-            Ok(()) => log!("config saved: remaster={}", enabled()),
+            Ok(()) => log!("config saved: enabled={}", enabled()),
             Err(e) => log!("config: could not save {}: {e}", p.display()),
         }
     }
@@ -552,9 +552,8 @@ impl Overlay {
 
     /// The panel's content, without a window around it (the unified overlay puts it in a tab).
     pub fn body(&mut self, ui: &Ui) {
-        self.folder_section(ui);
         let mut on = enabled();
-        if ui.checkbox(tr("HD textures###hd", "Texturas HD###hd"), &mut on) {
+        if ui.checkbox(tr("Textures on###hd", "Texturas ligadas###hd"), &mut on) {
             ENABLED.store(on, Ordering::Relaxed);
             *TOGGLED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
             save_settings();
@@ -562,15 +561,17 @@ impl Overlay {
             if !on {
                 crate::diag::drop_hd_cache();
             }
-            log!("overlay: remaster {}", if on { "ON" } else { "OFF" });
+            log!("overlay: textures {}", if on { "ON" } else { "OFF" });
         }
+        hint(ui, tr("Off: the game's original textures.", "Desligadas: as texturas originais do jogo."));
+        ui.separator();
+        self.folder_section(ui);
         let mut all = crate::composite::ALL_4X.load(Ordering::Relaxed);
         if ui.checkbox(tr("4x for all players###all4x", "4x para todos os jogadores###all4x"), &mut all) {
             crate::composite::ALL_4X.store(all, Ordering::Relaxed);
             save_settings();
             log!("overlay: 4x for every player {}", if all { "ON" } else { "OFF" });
         }
-        hint(ui, tr("HD off shows the original textures.", "Com o HD desligado, o jogo mostra as texturas originais."));
         hint(ui, tr(
             "4x for all players uses more memory and also applies after a map change.",
             "4x para todos os jogadores usa mais memória e também vale depois de trocar de mapa.",

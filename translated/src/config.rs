@@ -107,7 +107,7 @@ impl Default for Config {
 
 const KEYS: &[(&str, &str)] = &[
     ("language", "Translation language (folder in languages\\)"),
-    ("translate", "Apply the translation"),
+    ("enabled", "Translation on (off = the game's original text)"),
     ("autocollect", "Collect new texts into discovered.jsonl"),
     ("seed_decode", "Decrypt protected texts and write decrypted.jsonl"),
     (
@@ -197,7 +197,7 @@ impl Config {
     fn apply(&mut self, k: &str, v: &str) {
         match k {
             "language" if crate::paths::valid_language(v) => self.language = v.to_owned(),
-            "translate" => self.translate = parse_bool(v).unwrap_or(self.translate),
+            "enabled" | "translate" => self.translate = parse_bool(v).unwrap_or(self.translate),
             "autocollect" => self.autocollect = parse_bool(v).unwrap_or(self.autocollect),
             "seed_decode" => self.seed_decode = parse_bool(v).unwrap_or(self.seed_decode),
             "live_translate" => self.live_translate = parse_bool(v).unwrap_or(self.live_translate),
@@ -221,7 +221,7 @@ impl Config {
     fn value_of(&self, key: &str) -> String {
         match key {
             "language" => self.language.clone(),
-            "translate" => self.translate.to_string(),
+            "enabled" => self.translate.to_string(),
             "autocollect" => self.autocollect.to_string(),
             "seed_decode" => self.seed_decode.to_string(),
             "live_translate" => self.live_translate.to_string(),

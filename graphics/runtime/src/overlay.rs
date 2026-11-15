@@ -272,18 +272,20 @@ impl Overlay {
         let scale = furpick::ui_scale(ui.io().display_size[1]);
         // Negative item width: the widget takes the window width minus the label room, so labels are never cut.
         let _iw = ui.push_item_width(furpick::item_width(ui.window_size()[0], scale));
-        if section(ui, tr("General / HDR###sec-general", "Geral / HDR###sec-general"), true) {
-            // One switch for the whole graphics mod (saved as `enabled`): off stops the effects AND the float targets, HDR
-            // shaders and resolve, so it is also the A/B against the engine. The per-effect switches below are kept.
-            let mut on = self.cfg.enabled && !crate::toggles::master_off();
-            if ui.checkbox(tr("Graphics on", "Gráficos ligados"), &mut on) {
-                self.set_graphics_on(on);
-            }
-            help(ui, tr(
-            "Off: the game's own look (next frame). With HDR output the final conversion stays on (plain SDR brightness); a full revert of HDR output needs a restart.",
-            "Desligado: o visual original do jogo (já no próximo quadro). Com saída HDR, a conversão final continua ligada (brilho SDR simples); para desfazer a saída HDR por completo é preciso reiniciar.",
+        // One switch for the whole graphics mod (saved as `enabled`), first in the tab like the other features' switches:
+        // off stops the effects AND the float targets, HDR shaders and resolve, so it is also the A/B against the engine.
+        // The per-effect switches below are kept.
+        let mut on = self.cfg.enabled && !crate::toggles::master_off();
+        if ui.checkbox(tr("Graphics on", "Gráficos ligados"), &mut on) {
+            self.set_graphics_on(on);
+        }
+        help(ui, tr(
+            "Off: the game's original look, from the next frame. With HDR output the final conversion stays on (plain SDR brightness); a full revert of HDR output needs a restart.",
+            "Desligados: o visual original do jogo, já no próximo quadro. Com saída HDR, a conversão final continua ligada (brilho SDR simples); para desfazer a saída HDR por completo é preciso reiniciar.",
         ));
-            help(ui, &trf!("Effects: {}", "Efeitos: {}", crate::toggles::status_text()));
+        help(ui, &trf!("Effects: {}", "Efeitos: {}", crate::toggles::status_text()));
+        ui.separator();
+        if section(ui, tr("General / HDR###sec-general", "Geral / HDR###sec-general"), true) {
             self.sec_general(ui);
         }
         if section(ui, tr("Bloom + highlight###sec-bloom", "Bloom + realce###sec-bloom"), false) {

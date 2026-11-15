@@ -257,11 +257,13 @@ impl Overlay {
 
     /// The panel's content, without a window around it (the unified overlay puts it in a tab).
     pub fn body(&mut self, ui: &Ui) {
+        self.flag(ui, Flag::Translate, T::Translate);
+        hint(ui, i18n::tr("Off: the game's original text, live.", "Desligada: o texto original do jogo, na hora."));
+        ui.separator();
         self.language_picker(ui);
 
         ui.separator();
         ui.text(self.t(T::Options));
-        self.flag(ui, Flag::Translate, T::Translate);
         self.flag(ui, Flag::LiveTranslate, T::LiveTranslate);
         self.flag(ui, Flag::WebTranslate, T::WebTranslate);
         let mut collect = runtime::get(Flag::Autocollect) && runtime::get(Flag::SeedDecode);

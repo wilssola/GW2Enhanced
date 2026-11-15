@@ -51,7 +51,7 @@ impl Flag {
 
     fn key(self) -> &'static str {
         match self {
-            Flag::Translate => "translate",
+            Flag::Translate => "enabled",
             Flag::LiveTranslate => "live_translate",
             Flag::WebTranslate => "web_translate",
             Flag::Autocollect => "autocollect",
