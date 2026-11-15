@@ -1889,10 +1889,9 @@ unsafe fn probe_channel(m: &Mask, dev: Obj, ctx: Obj, rim: bool) -> String {
 /// The fur discriminator part of the last probe (`status_shells=`).
 static DISC_PROBE: Mutex<String> = Mutex::new(String::new());
 
-/// `status_shells=`: what the discriminator did in the frame of the last dev-capture probe and the uv at the centre / the mouse (asks
-/// for the next probe like `probe_text`).
+/// `status_shells=`: what the discriminator did in the frame of the last debug-capture probe and the uv at the centre / the mouse.
+/// It does not ask for a probe itself (the overlay shows this text every frame): the debug capture's `probe_text` does.
 pub fn discrim_probe_text() -> String {
-    PROBE_WANT.store(true, Relaxed);
     let t = DISC_PROBE.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if t.is_empty() { "discriminator probe: none yet (the next debug capture reports it)".to_string() } else { t }
 }

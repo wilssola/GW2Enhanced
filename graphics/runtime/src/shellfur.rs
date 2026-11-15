@@ -1639,8 +1639,8 @@ fn reasons_text(f: &Frame) -> String {
 pub fn status_text() -> String {
     let c = cfg();
     let stats = STATS_SHOW.lock().map(|g| g.clone()).unwrap_or_default();
-    // v9: a debug capture writes the island dumps of the newest analyses (furmesh-*.txt, furisland-*.png).
-    crate::furisland::dump_on_capture();
+    // The island dumps are written by the debug capture itself (debugshot), not by every look at this text (the overlay
+    // draws it each frame).
     let disc = format!(
         "{}; {}; {}; {}; {}",
         stats_text(&stats, Discrim::new(&c).sel.is_some()),
@@ -2491,6 +2491,10 @@ static DUMPED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 /// and the position math can be read. At most 32 files per session.
 fn dump_vs(vs_ptr: usize, hash: Option<u32>) {
     let Some(h) = hash else { return };
+    // Only in debug mode (periodic captures or hot reload) or with the shell debug view: no files otherwise.
+    if crate::debugshot::capture_seconds() == 0 && !crate::debugshot::hot_reload() && cfg().debug == 0 {
+        return;
+    }
     let Some(dir) = crate::grading::dir() else { return };
     {
         let mut d = DUMPED.lock().unwrap_or_else(|e| e.into_inner());

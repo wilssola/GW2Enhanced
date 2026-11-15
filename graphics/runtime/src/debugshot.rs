@@ -1493,6 +1493,8 @@ pub fn settings_text(label: &str, frame: u64, screen: (u32, u32), fmt: u32) -> S
             kv(k, v.to_string());
         }
     }
+    // A debug capture also writes the island dumps of the newest analyses (furmesh-*.txt, furisland-*.png).
+    crate::furisland::dump_on_capture();
     kv("status_shells", crate::shellfur::status_text());
     kv("status_bloom", crate::bloomfix::status_text());
     kv("status_ao", ao::status_text());
