@@ -227,7 +227,21 @@ impl CorrectionRequest {
 pub enum Sort {
     Worst,
     Best,
+    /// Newest current translation first.
     Recent,
+    /// Oldest current translation first.
+    Oldest,
+}
+
+impl Sort {
+    pub fn name(self) -> &'static str {
+        match self {
+            Sort::Worst => "worst",
+            Sort::Best => "best",
+            Sort::Recent => "recent",
+            Sort::Oldest => "oldest",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,14 +250,20 @@ pub struct TextsQuery {
     pub sort: Sort,
     /// Search text (English or translation), at most 100 chars.
     pub q: Option<String>,
-    /// Opaque cursor: the offset of the next page.
+    /// Rows skipped: `(page - 1) * limit`, or the old numeric `cursor`.
     pub offset: u32,
+    /// Rows per page, 1 to [`MAX_PAGE_SIZE`].
     pub limit: u32,
 }
 
-pub const PAGE_SIZE: u32 = 30;
-/// Deepest page served (keeps OFFSET scans cheap).
-pub const MAX_OFFSET: u32 = 3000;
+/// Default page size.
+pub const PAGE_SIZE: u32 = 20;
+/// Largest `limit`.
+pub const MAX_PAGE_SIZE: u32 = 100;
+/// Deepest row of the plain listing (more than every text the game has; the ordering is index-backed).
+pub const MAX_OFFSET: u32 = 2_000_000;
+/// Deepest row of a search: it scans for matches, so only its first pages are served.
+pub const MAX_SEARCH_OFFSET: u32 = 3000;
 
 /// Parses the query string pairs of `GET /v1/texts`.
 pub fn parse_texts_query<'a>(
@@ -257,6 +277,7 @@ pub fn parse_texts_query<'a>(
         offset: 0,
         limit: PAGE_SIZE,
     };
+    let (mut page, mut cursor) = (None, None);
     for (k, v) in pairs {
         match k {
             "lang" => q.lang = v.to_owned(),
@@ -265,6 +286,7 @@ pub fn parse_texts_query<'a>(
                     "worst" => Sort::Worst,
                     "best" => Sort::Best,
                     "recent" | "" => Sort::Recent,
+                    "oldest" => Sort::Oldest,
                     _ => return Err(ApiError::bad("bad_sort")),
                 }
             }
@@ -274,11 +296,12 @@ pub fn parse_texts_query<'a>(
                     q.q = Some(t.chars().take(100).collect());
                 }
             }
-            "cursor" if !v.is_empty() => {
-                q.offset = v.parse().map_err(|_| ApiError::bad("bad_cursor"))?;
-                if q.offset > MAX_OFFSET {
-                    return Err(ApiError::bad("bad_cursor"));
-                }
+            "cursor" if !v.is_empty() => cursor = Some(small_number(v).ok_or_else(|| ApiError::bad("bad_cursor"))?),
+            "page" if !v.is_empty() => page = Some(small_number(v).filter(|p| *p >= 1).ok_or_else(|| ApiError::bad("bad_page"))?),
+            "limit" if !v.is_empty() => {
+                q.limit = small_number(v)
+                    .filter(|n| (1..=MAX_PAGE_SIZE).contains(n))
+                    .ok_or_else(|| ApiError::bad("bad_limit"))?
             }
             _ => {}
         }
@@ -286,7 +309,42 @@ pub fn parse_texts_query<'a>(
     if !validate::lang_allowed(&q.lang, allowed_langs) {
         return Err(ApiError::bad("unsupported_lang"));
     }
+    // `page` wins over the old numeric `cursor` (an offset).
+    let offset = match (page, cursor) {
+        (Some(p), _) => (p as u64 - 1) * q.limit as u64,
+        (None, Some(c)) => c as u64,
+        (None, None) => 0,
+    };
+    let max = if q.q.is_some() { MAX_SEARCH_OFFSET } else { MAX_OFFSET };
+    if offset > max as u64 {
+        return Err(ApiError::bad(if page.is_some() { "bad_page" } else { "bad_cursor" }));
+    }
+    q.offset = offset as u32;
     Ok(q)
+}
+
+/// A plain decimal number of at most 7 digits, without sign or leading zeros.
+fn small_number(v: &str) -> Option<u32> {
+    if v.is_empty() || v.len() > 7 || !v.bytes().all(|b| b.is_ascii_digit()) || (v.len() > 1 && v.starts_with('0')) {
+        return None;
+    }
+    v.parse().ok()
+}
+
+/// Edge-cache key of a `GET /v1/texts` answer: the canonical URL of the page (so extra or reordered parameters
+/// cannot multiply cache entries), or `None` for searches, which are never cached.
+pub fn texts_cache_key(origin: &str, q: &TextsQuery) -> Option<String> {
+    if q.q.is_some() {
+        return None;
+    }
+    Some(format!(
+        "{}/v1/texts?lang={}&sort={}&offset={}&limit={}",
+        origin.trim_end_matches('/'),
+        q.lang,
+        q.sort.name(),
+        q.offset,
+        q.limit
+    ))
 }
 
 /// Escapes `%`, `_` and `\` for `LIKE ... ESCAPE '\'`.
@@ -415,8 +473,42 @@ mod tests {
         .unwrap();
         assert_eq!((q.sort, q.q.as_deref(), q.offset), (Sort::Worst, Some("sword"), 30));
         assert!(parse_texts_query([("lang", "pt-BR"), ("sort", "x")], LANGS).is_err());
-        assert!(parse_texts_query([("lang", "pt-BR"), ("cursor", "999999")], LANGS).is_err());
+        let err = |pairs: &[(&str, &str)]| parse_texts_query(pairs.iter().copied(), LANGS).unwrap_err().code;
+        assert_eq!(err(&[("lang", "pt-BR"), ("q", "a"), ("cursor", "3001")]), "bad_cursor", "searches stop early");
+        assert_eq!(err(&[("lang", "pt-BR"), ("cursor", "2000001")]), "bad_cursor");
+        for bad in ["0", "-1", "x", "01", "12345678", "1.5"] {
+            assert_eq!(err(&[("lang", "pt-BR"), ("page", bad)]), "bad_page", "{bad}");
+        }
+        for bad in ["0", "101", "-5", "020", "abc"] {
+            assert_eq!(err(&[("lang", "pt-BR"), ("limit", bad)]), "bad_limit", "{bad}");
+        }
+        // Page 11452 of 20 is a deep but valid plain page; the same page of a search is not.
+        let q = parse_texts_query([("lang", "pt-BR"), ("sort", "oldest"), ("page", "11452"), ("limit", "20")], LANGS).unwrap();
+        assert_eq!((q.sort, q.offset, q.limit), (Sort::Oldest, 229_020, 20));
+        assert_eq!(err(&[("lang", "pt-BR"), ("q", "a"), ("page", "200"), ("limit", "20")]), "bad_page");
+        assert_eq!(err(&[("lang", "pt-BR"), ("page", "20002"), ("limit", "100")]), "bad_page");
+        let q = parse_texts_query([("lang", "pt-BR"), ("page", "3"), ("cursor", "7"), ("limit", "50")], LANGS).unwrap();
+        assert_eq!(q.offset, 100, "page wins over cursor");
+        let q = parse_texts_query([("lang", "pt-BR")], LANGS).unwrap();
+        assert_eq!((q.sort, q.offset, q.limit), (Sort::Recent, 0, PAGE_SIZE));
         assert!(parse_texts_query([("sort", "best")], LANGS).is_err());
         assert_eq!(like_pattern("50%_a\\"), "%50\\%\\_a\\\\%");
+    }
+
+    #[test]
+    fn texts_cache_key_is_canonical_and_skips_searches() {
+        let key = |pairs: &[(&str, &str)]| {
+            texts_cache_key("https://x.dev/", &parse_texts_query(pairs.iter().copied(), LANGS).unwrap())
+        };
+        let a = key(&[("lang", "pt-BR"), ("sort", "best"), ("page", "3"), ("limit", "50")]);
+        assert_eq!(a.as_deref(), Some("https://x.dev/v1/texts?lang=pt-BR&sort=best&offset=100&limit=50"));
+        // Same page asked another way, or with junk parameters: same entry.
+        assert_eq!(key(&[("limit", "50"), ("junk", "1"), ("cursor", "100"), ("sort", "best"), ("lang", "pt-BR")]), a);
+        assert_ne!(key(&[("lang", "pt-BR"), ("sort", "worst"), ("page", "3"), ("limit", "50")]), a);
+        assert_eq!(
+            key(&[("lang", "pt-BR")]).as_deref(),
+            Some("https://x.dev/v1/texts?lang=pt-BR&sort=recent&offset=0&limit=20")
+        );
+        assert_eq!(key(&[("lang", "pt-BR"), ("q", "sword")]), None);
     }
 }

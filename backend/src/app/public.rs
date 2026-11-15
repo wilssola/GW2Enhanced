@@ -143,7 +143,10 @@ struct TrOut {
     score: f64,
 }
 
-/// `GET /v1/texts?lang=&sort=worst|best|recent&q=&cursor=`
+/// `GET /v1/texts?lang=&sort=recent|oldest|best|worst&page=&limit=&q=` (`cursor=` is the old offset form).
+///
+/// Pages without `q` are cached at the edge for [`TEXTS_CACHE_SECS`] under a canonical URL, so walking deep pages
+/// again does not re-read D1.
 pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
     let url = req.url()?;
     let pairs: Vec<(String, String)> = url
@@ -153,6 +156,13 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
     let tq = api::parse_texts_query(pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())), &ctx.langs())?;
     if let Ok(who) = ctx.client(req) {
         ensure_rate(ctx, &ratelimit::READS, &who.ip, 1.0).await?;
+    }
+    let cache_key = api::texts_cache_key(&url.origin().ascii_serialization(), &tq);
+    let cache = Cache::default();
+    if let Some(k) = &cache_key {
+        if let Ok(Some(hit)) = cache.get(k, false).await {
+            return Ok(hit);
+        }
     }
     #[derive(Deserialize)]
     struct Row {
@@ -164,6 +174,7 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
         Sort::Worst => ListSort::Worst,
         Sort::Best => ListSort::Best,
         Sort::Recent => ListSort::Recent,
+        Sort::Oldest => ListSort::Oldest,
     };
     let pattern = tq.q.as_deref().map(api::like_pattern);
     let rows: Vec<Row> = ctx
@@ -197,9 +208,42 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
             json!({ "text_key": r.key, "en": r.en, "ids": game_ids, "current": current, "alternatives": alternatives })
         })
         .collect();
-    let next = more.then(|| (tq.offset + tq.limit).to_string());
-    json(200, &json!({ "lang": tq.lang, "items": items, "next_cursor": next }))
+    let max = if tq.q.is_some() { api::MAX_SEARCH_OFFSET } else { api::MAX_OFFSET };
+    let next_offset = tq.offset + tq.limit;
+    let more = more && next_offset <= max;
+    let next = more.then(|| next_offset.to_string());
+    // Every sort lists the same texts, so the cached count of texts with a translation is the total. Searches
+    // have no total.
+    let total = match tq.q {
+        Some(_) => Value::Null,
+        None => {
+            let stats = match super::jobs::cached_stats(ctx, &tq.lang).await? {
+                Some(v) => v,
+                None => super::jobs::compute_stats(ctx, &tq.lang).await?,
+            };
+            stats.get("translated").cloned().unwrap_or(Value::Null)
+        }
+    };
+    let mut r = json(
+        200,
+        &json!({
+            "lang": tq.lang, "sort": tq.sort.name(), "page": tq.offset / tq.limit + 1, "limit": tq.limit,
+            "offset": tq.offset, "total": total, "more": more, "items": items, "next_cursor": next
+        }),
+    )?;
+    if let Some(k) = cache_key {
+        r.headers_mut()
+            .set("cache-control", &format!("public, max-age=0, s-maxage={TEXTS_CACHE_SECS}"))?;
+        if let Ok(copy) = r.cloned() {
+            // A failed cache write only costs the next reader a D1 query.
+            let _ = cache.put(&k, copy).await;
+        }
+    }
+    Ok(r)
 }
+
+/// How long the edge keeps a page of `GET /v1/texts` (votes show up in the list after at most this long).
+pub const TEXTS_CACHE_SECS: u32 = 300;
 
 /// `POST /v1/votes`
 pub async fn vote(req: &mut Request, ctx: &Ctx) -> HResult {

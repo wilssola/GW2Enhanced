@@ -9,6 +9,7 @@ use super::*;
 fn db() -> Connection {
     let c = Connection::open_in_memory().unwrap();
     c.execute_batch(include_str!("../../migrations/0001_init.sql")).unwrap();
+    c.execute_batch(include_str!("../../migrations/0002_list_indexes.sql")).unwrap();
     c
 }
 
@@ -371,4 +372,101 @@ fn no_uploads_for_a_text_the_server_ai_translated() {
         exec(&c, &q);
     }
     assert_eq!(count(&c, "SELECT count(*) FROM translations WHERE lang = 'es'"), 1);
+}
+
+/// (text key, score, up, down, updated_at) of listed texts, with ties on every sort key.
+const LISTED: [(&str, f64, i64, i64, &str); 7] = [
+    ("00000000000000000000000000000001", 0.5, 3, 1, "2026-01-02T00:00:00Z"),
+    ("00000000000000000000000000000002", 0.5, 3, 1, "2026-01-01T00:00:00Z"),
+    ("00000000000000000000000000000003", 0.0, 0, 0, "2026-01-02T00:00:00Z"),
+    ("00000000000000000000000000000004", 0.0, 0, 6, "2026-01-03T00:00:00Z"),
+    ("00000000000000000000000000000005", 0.0, 0, 0, "2026-01-01T00:00:00Z"),
+    ("00000000000000000000000000000006", 0.9, 9, 0, "2026-01-02T00:00:00Z"),
+    ("00000000000000000000000000000007", 0.2, 1, 1, "2026-01-04T00:00:00Z"),
+];
+
+fn listing_db() -> Connection {
+    let c = db();
+    let mut all: Vec<(&str, f64, i64, i64, &str, &str, &str)> =
+        LISTED.iter().map(|&(k, s, u, d, t)| (k, s, u, d, t, "trusted", "pt-BR")).collect();
+    // Never listed: an untrusted text, and a translation in another language.
+    all.push(("00000000000000000000000000000008", 1.0, 50, 0, "2026-01-09T00:00:00Z", "pending", "pt-BR"));
+    all.push(("00000000000000000000000000000009", 1.0, 50, 0, "2026-01-09T00:00:00Z", "trusted", "es"));
+    for (k, score, up, down, at, state, lang) in all {
+        c.execute(
+            "INSERT INTO texts (key, en, state, created_at) VALUES (?1, 'en ' || ?1, ?2, 'c')",
+            rusqlite::params![k, state],
+        )
+        .unwrap();
+        exec(
+            &c,
+            &current_upsert(&CurrentRow { text_key: k, lang, translation_id: k, score, up, down, now: at }),
+        );
+    }
+    c
+}
+
+fn listed_keys(c: &Connection, sort: ListSort, limit: u64, offset: u64) -> Vec<String> {
+    rows(c, &list_texts("pt-BR", sort, None, limit, offset))
+        .iter()
+        .map(|r| text(&r[0]).to_owned())
+        .collect()
+}
+
+#[test]
+fn listing_orders_by_sort_key_then_text_key_and_pages_by_offset() {
+    let c = listing_db();
+    let expect = |sort: ListSort| -> Vec<String> {
+        let mut v = LISTED.to_vec();
+        v.sort_by(|a, b| {
+            let o = match sort {
+                ListSort::Recent => b.4.cmp(a.4).then(b.0.cmp(a.0)),
+                ListSort::Oldest => a.4.cmp(b.4).then(a.0.cmp(b.0)),
+                ListSort::Best => b.1.partial_cmp(&a.1).unwrap().then(b.0.cmp(a.0)),
+                ListSort::Worst => (b.3 - b.2).cmp(&(a.3 - a.2)).then(b.0.cmp(a.0)),
+            };
+            o
+        });
+        v.iter().map(|r| r.0.to_owned()).collect()
+    };
+    for sort in [ListSort::Recent, ListSort::Oldest, ListSort::Best, ListSort::Worst] {
+        let all = listed_keys(&c, sort, 100, 0);
+        assert_eq!(all, expect(sort), "{sort:?}");
+        // Pages of 3 put back together give the whole list; past the end is empty.
+        let mut paged = Vec::new();
+        for p in 0..3 {
+            let page = listed_keys(&c, sort, 3, p * 3);
+            assert_eq!(page.len(), if p < 2 { 3 } else { 1 }, "{sort:?} page {p}");
+            paged.extend(page);
+        }
+        assert_eq!(paged, all, "{sort:?}");
+        assert!(listed_keys(&c, sort, 3, 7).is_empty());
+        assert!(listed_keys(&c, sort, 3, 2_000_000).is_empty());
+    }
+    // The examples the tie-breaks are about.
+    let best = listed_keys(&c, ListSort::Best, 3, 0);
+    assert_eq!(best[1..], [LISTED[1].0.to_owned(), LISTED[0].0.to_owned()], "equal scores: text key");
+    assert_eq!(listed_keys(&c, ListSort::Worst, 1, 0), [LISTED[3].0.to_owned()], "most down votes first");
+    assert_eq!(listed_keys(&c, ListSort::Oldest, 2, 0), [LISTED[1].0.to_owned(), LISTED[4].0.to_owned()]);
+}
+
+#[test]
+fn listing_reads_an_index_in_order_without_sorting() {
+    let c = listing_db();
+    for (sort, index) in [
+        (ListSort::Recent, "current_updated"),
+        (ListSort::Oldest, "current_updated"),
+        (ListSort::Best, "current_score"),
+        (ListSort::Worst, "current_net"),
+    ] {
+        let (sql, v) = list_texts("pt-BR", sort, None, 20, 4000);
+        assert!(sql.contains("FROM \"current\" AS \"c\" CROSS JOIN \"texts\" AS \"t\" WHERE"), "{sql}");
+        let plan: Vec<String> = rows(&c, &(format!("EXPLAIN QUERY PLAN {sql}"), v))
+            .iter()
+            .map(|r| text(&r[3]).to_owned())
+            .collect();
+        let plan = plan.join(" | ");
+        assert!(plan.contains(index), "{sort:?}: {plan}");
+        assert!(!plan.contains("TEMP B-TREE"), "{sort:?} sorts: {plan}");
+    }
 }

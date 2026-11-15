@@ -804,24 +804,51 @@ pub enum ListSort {
     Worst,
     Best,
     Recent,
+    Oldest,
 }
 
-/// Texts for `GET /v1/texts`: with a current translation, or (when `search`
-/// is set) any trusted text whose English or current translation matches.
+/// `down - up` of the current translation; the `current_net` index is on this exact expression.
+fn net_votes() -> Expr {
+    Expr::col((C, Current::Down)).sub(Expr::col((C, Current::Up)))
+}
+
+/// Texts for `GET /v1/texts`, one page (`limit` rows after `offset`).
+///
+/// Without `search`: the texts with a current translation, ordered by one sort key and then the text key, each
+/// sort walking one index of `current` from its `lang` end (`current_updated`, `current_score`, `current_net`, see
+/// migration 0002), so no page needs a sort of the whole table:
+/// - `Recent`: `updated_at` newest first; `Oldest`: oldest first;
+/// - `Best`: score (Wilson lower bound) highest first;
+/// - `Worst`: down minus up votes, highest first.
+///
+/// With `search` (a `LIKE` pattern): any trusted text whose English or current translation matches, in a similar
+/// order; this scans, so callers only serve its first pages (`api::MAX_SEARCH_OFFSET`).
 pub fn list_texts(lang: &str, sort: ListSort, search: Option<&str>, limit: u64, offset: u64) -> Q {
     let mut s = Query::select();
     s.column((T, Texts::Key))
         .column((T, Texts::En))
         .expr_as(Expr::col((C, Current::TranslationId)), Alias::new("cur"));
-    let on_current = Cond::all()
-        .add(Expr::col((C, Current::TextKey)).equals((T, Texts::Key)))
-        .add(Expr::col((C, Current::Lang)).eq(lang));
     match search {
         None => {
-            s.from_as(Texts::Table, T)
-                .join_as(JoinType::InnerJoin, Current::Table, C, on_current);
+            // `current` drives the join (in SQLite a CROSS JOIN keeps the written table order, so the planner never
+            // starts at `texts`), read in index order. The join condition is in WHERE: CROSS JOIN takes no ON.
+            s.from_as(Current::Table, C)
+                .join_as(JoinType::CrossJoin, Texts::Table, T, Cond::all())
+                .and_where(Expr::col((T, Texts::Key)).equals((C, Current::TextKey)))
+                .and_where(Expr::col((C, Current::Lang)).eq(lang))
+                .and_where(Expr::col((T, Texts::State)).eq("trusted"));
+            let (key, dir): (Expr, Order) = match sort {
+                ListSort::Recent => (Expr::col((C, Current::UpdatedAt)), Order::Desc),
+                ListSort::Oldest => (Expr::col((C, Current::UpdatedAt)), Order::Asc),
+                ListSort::Best => (Expr::col((C, Current::Score)), Order::Desc),
+                ListSort::Worst => (net_votes(), Order::Desc),
+            };
+            s.order_by_expr(key, dir.clone()).order_by((C, Current::TextKey), dir);
         }
         Some(pattern) => {
+            let on_current = Cond::all()
+                .add(Expr::col((C, Current::TextKey)).equals((T, Texts::Key)))
+                .add(Expr::col((C, Current::Lang)).eq(lang));
             s.from_as(Texts::Table, T)
                 .join_as(JoinType::LeftJoin, Current::Table, C, on_current)
                 .join_as(
@@ -834,40 +861,21 @@ pub fn list_texts(lang: &str, sort: ListSort, search: Option<&str>, limit: u64, 
                     Cond::any()
                         .add(Expr::col((T, Texts::En)).like(sea_query::LikeExpr::new(pattern).escape('\\')))
                         .add(Expr::col((X, Translations::Tr)).like(sea_query::LikeExpr::new(pattern).escape('\\'))),
-                );
+                )
+                .and_where(Expr::col((T, Texts::State)).eq("trusted"));
+            let updated = || Func::coalesce([Expr::col((C, Current::UpdatedAt)), Expr::col((T, Texts::CreatedAt))]);
+            match sort {
+                ListSort::Worst => s.order_by_expr(Func::coalesce([net_votes(), Expr::val(0)]).into(), Order::Desc),
+                ListSort::Best => s.order_by_expr(
+                    Func::coalesce([Expr::col((C, Current::Score)), Expr::val(-1)]).into(),
+                    Order::Desc,
+                ),
+                ListSort::Recent => s.order_by_expr(updated().into(), Order::Desc),
+                ListSort::Oldest => s.order_by_expr(updated().into(), Order::Asc),
+            };
+            s.order_by((T, Texts::Key), Order::Asc);
         }
     }
-    s.and_where(Expr::col((T, Texts::State)).eq("trusted"));
-    match sort {
-        ListSort::Worst => s
-            .order_by_expr(
-                Func::coalesce([
-                    Expr::col((C, Current::Down)).sub(Expr::col((C, Current::Up))),
-                    Expr::val(0),
-                ])
-                .into(),
-                Order::Desc,
-            )
-            .order_by_expr(
-                Func::coalesce([Expr::col((C, Current::Score)), Expr::val(1)]).into(),
-                Order::Asc,
-            )
-            .order_by((C, Current::UpdatedAt), Order::Desc),
-        ListSort::Best => s
-            .order_by_expr(
-                Func::coalesce([Expr::col((C, Current::Score)), Expr::val(-1)]).into(),
-                Order::Desc,
-            )
-            .order_by_expr(
-                Func::coalesce([Expr::col((C, Current::Up)), Expr::val(0)]).into(),
-                Order::Desc,
-            )
-            .order_by((C, Current::UpdatedAt), Order::Desc),
-        ListSort::Recent => s.order_by_expr(
-            Func::coalesce([Expr::col((C, Current::UpdatedAt)), Expr::col((T, Texts::CreatedAt))]).into(),
-            Order::Desc,
-        ),
-    };
     s.limit(limit).offset(offset);
     sqlite(&s)
 }
