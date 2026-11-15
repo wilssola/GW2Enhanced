@@ -58,11 +58,25 @@ pub async fn rate(ctx: &Ctx, limit: &Limit, ip_hash: &str, cost: f64) -> Result<
 /// 429 with `Retry-After` when over the limit.
 pub async fn ensure_rate(ctx: &Ctx, limit: &Limit, ip_hash: &str, cost: f64) -> std::result::Result<(), Fail> {
     let d = rate(ctx, limit, ip_hash, cost).await?;
-    if d.allowed {
-        return Ok(());
+    if d.allowed { Ok(()) } else { ensure_rate_denied(d.retry_after) }
+}
+
+/// The read limit of public lists: like [`ensure_rate`], but a failing bucket (D1 out of its daily write quota, or
+/// down) lets the read through. A read must not depend on a write.
+pub async fn ensure_read_rate(ctx: &Ctx, limit: &Limit, ip_hash: &str, cost: f64) -> std::result::Result<(), Fail> {
+    match rate(ctx, limit, ip_hash, cost).await {
+        Ok(d) if !d.allowed => ensure_rate_denied(d.retry_after),
+        Ok(_) => Ok(()),
+        Err(e) => {
+            console_warn!("read limit skipped: {e}");
+            Ok(())
+        }
     }
-    let mut r = Response::from_json(&json!({"error": "rate_limited", "retry_after": d.retry_after}))?.with_status(429);
-    r.headers_mut().set("retry-after", &d.retry_after.to_string())?;
+}
+
+fn ensure_rate_denied(retry_after: u64) -> std::result::Result<(), Fail> {
+    let mut r = Response::from_json(&json!({"error": "rate_limited", "retry_after": retry_after}))?.with_status(429);
+    r.headers_mut().set("retry-after", &retry_after.to_string())?;
     super::apply_headers(&mut r, crate::headers::Kind::Json)?;
     Err(Fail::Response(r))
 }

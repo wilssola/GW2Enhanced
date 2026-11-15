@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use worker::*;
 
-use super::db::{self, ensure_not_banned, ensure_rate};
+use super::db::{self, ensure_not_banned, ensure_rate, ensure_read_rate};
 use super::external::verify_turnstile;
 use super::{Ctx, Fail, HResult, api_err, apply_headers, body, json};
 use crate::api::{self, CorrectionRequest, Sort, VoteRequest};
@@ -154,15 +154,16 @@ pub async fn texts(req: &mut Request, ctx: &Ctx) -> HResult {
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
     let tq = api::parse_texts_query(pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())), &ctx.langs())?;
-    if let Ok(who) = ctx.client(req) {
-        ensure_rate(ctx, &ratelimit::READS, &who.ip, 1.0).await?;
-    }
     let cache_key = api::texts_cache_key(&url.origin().ascii_serialization(), &tq);
     let cache = Cache::default();
     if let Some(k) = &cache_key {
         if let Ok(Some(hit)) = cache.get(k, false).await {
             return Ok(hit);
         }
+    }
+    // Only a miss costs D1, so only a miss is counted.
+    if let Ok(who) = ctx.client(req) {
+        ensure_read_rate(ctx, &ratelimit::READS, &who.ip, 1.0).await?;
     }
     #[derive(Deserialize)]
     struct Row {
