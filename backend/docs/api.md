@@ -1,6 +1,6 @@
 # Backend API (v1)
 
-Server: `https://app.gw2enhanced.workers.dev` (Cloudflare Worker in Rust, see the [README](../README.md)).
+Server: `https://gw2enhanced.wilssola.dev` (Cloudflare Worker in Rust, see the [README](../README.md)).
 Storage: D1 (all records) + R2 (published dictionary releases and backups).
 
 Nothing sent by the mod or by the site is trusted: there is no authentication,

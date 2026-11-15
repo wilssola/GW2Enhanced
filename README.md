@@ -166,7 +166,7 @@ Your settings (`config.ini`) and your own translations are never touched. To tur
   model, on NVIDIA through CUDA or on any DirectX 12 card through DirectML). It needs the English client. Map dialogue
   is translated ahead of time, and the result is shown as soon as it is ready. The Trading Post, Gem Store and Wizard's
   Vault pages are translated the same way.
-- **The community website** ([app.gw2enhanced.workers.dev](https://app.gw2enhanced.workers.dev)) shows every text with
+- **The community website** ([gw2enhanced.wilssola.dev](https://gw2enhanced.wilssola.dev)) shows every text with
   its translation and alternatives. Anyone can vote a translation up or down or suggest a better one, without an
   account (a Cloudflare Turnstile check, one vote per IP per translation). The best-voted reviewed translation becomes
   the current one.
@@ -258,7 +258,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and open a *Graphics calibration report* 
 
 - [Contributing guide](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Getting help](SUPPORT.md) ·
   [Security policy](SECURITY.md)
-- Translations are improved by voting and suggesting on the [website](https://app.gw2enhanced.workers.dev).
+- Translations are improved by voting and suggesting on the [website](https://gw2enhanced.wilssola.dev).
 
 ## Credits
 

@@ -1,7 +1,7 @@
 # Getting help
 
 - **Installing and using the mod:** start with the [README](README.md) ("Installing", "Updates") and the website
-  https://app.gw2enhanced.workers.dev.
+  https://gw2enhanced.wilssola.dev.
 - **Something broke or looks wrong:** open an issue with the matching template (Bug report, Graphics calibration
   report, Feature request). Logs are off by default, so first turn on **Logs** for the feature involved in the
   overlay's Health tab, reproduce the problem, then attach that log (`GW2Translated\`, `GW2Remastered\`,

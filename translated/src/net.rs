@@ -14,7 +14,7 @@ use windows_sys::Win32::Networking::WinHttp::{
 };
 
 /// The project's server (`backend/`).
-pub const HOST: &str = "app.gw2enhanced.workers.dev";
+pub const HOST: &str = "gw2enhanced.wilssola.dev";
 
 /// Largest response body kept for a POST (bytes).
 const MAX_RESPONSE: usize = 64 * 1024;

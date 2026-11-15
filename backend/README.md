@@ -196,7 +196,7 @@ frame-ancestors 'none'; base-uri 'none'`. Turnstile needs only `challenges.cloud
 `Authorization: Bearer $ADMIN_TOKEN` (≥ 16 chars; admin is disabled when unset).
 
 ```sh
-A="Authorization: Bearer $ADMIN_TOKEN"; H=https://app.gw2enhanced.workers.dev
+A="Authorization: Bearer $ADMIN_TOKEN"; H=https://gw2enhanced.wilssola.dev
 curl -H "$A" $H/v1/admin/translations/<id>                                  # details + reporter/voter hashes
 curl -H "$A" -X POST $H/v1/admin/translations/<id>/hide -d '{"reason":"troll"}'
 curl -H "$A" -X POST $H/v1/admin/translations/<id>/unhide
@@ -268,12 +268,12 @@ bun wrangler secret put IP_SALT
 
 # 5. Deploy (wrangler runs worker-build), then build the first release
 bun wrangler deploy
-curl -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://app.gw2enhanced.workers.dev/v1/admin/releases/pt-BR/build
+curl -H "Authorization: Bearer $ADMIN_TOKEN" -X POST https://gw2enhanced.wilssola.dev/v1/admin/releases/pt-BR/build
 ```
 
-The Worker (`app`) is served at `https://app.gw2enhanced.workers.dev` (workers.dev hostnames are
-`<worker>.<account subdomain>.workers.dev`; the account subdomain is `gw2enhanced`). For a fixed hostname add a custom domain in
-`wrangler.toml` `routes`.
+The Worker (`gw2enhanced`) is served at `https://gw2enhanced.wilssola.dev` (custom domain in `wrangler.toml` `routes`) and at
+`https://gw2enhanced.wilssola.workers.dev` (workers.dev hostnames are `<worker>.<account subdomain>.workers.dev`; the account
+subdomain is `wilssola`).
 
 Local run: `bun run migrate:local && bun wrangler dev`
 (`bun wrangler dev --test-scheduled`, then `curl "http://localhost:8787/__scheduled?cron=*/5+*+*+*+*"`).

@@ -35,7 +35,7 @@ the Graphics docs ([graphics/docs/debug-mode.md](graphics/docs/debug-mode.md) an
 
 ### Translation (pt-BR)
 
-- Vote and suggest better translations on the website: https://app.gw2enhanced.workers.dev
+- Vote and suggest better translations on the website: https://gw2enhanced.wilssola.dev
 - Turn on the optional text sending in the overlay (Translation tab): the texts you see help the community dictionary.
 - Report wrong or awkward translations of the interface and systems with the **Bug report** template.
 

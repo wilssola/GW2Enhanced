@@ -1,15 +1,14 @@
 # GW2 Enhanced backend (Rust, workers-rs). See README.md for deploy steps.
-name = "app"
+name = "gw2enhanced"
 main = "build/index.js"
 compatibility_date = "2026-10-01"
-# Cloudflare account "GW2Enhanced" (deploys never go to another account by accident).
-account_id = "3d18070b6522eece5d92058a9efa41bf"
+# The Cloudflare account (deploys never go to another account by accident).
+account_id = "d6a80bf381ccfa399e11f6ba29667c5a"
 
-# Served at https://app.gw2enhanced.workers.dev (worker `app` on the account subdomain `gw2enhanced`;
-# workers.dev URLs are always <worker>.<account subdomain>.workers.dev).
+# Served at https://gw2enhanced.wilssola.dev (custom domain, zone on the account) and at
+# https://gw2enhanced.wilssola.workers.dev (worker `gw2enhanced` on the account subdomain `wilssola`).
 workers_dev = true
-# Custom domain instead / as well (needs a zone on the account):
-# routes = [{ pattern = "api.example.com", custom_domain = true }]
+routes = [{ pattern = "gw2enhanced.wilssola.dev", custom_domain = true }]
 
 [build]
 command = "cargo install -q worker-build --version ~0.8 && worker-build --release"
@@ -31,13 +30,13 @@ NIM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 REVIEW_BATCH = "200"
 TURNSTILE_SITE_KEY = "0x4AAAAAAGCQe1NPM2l91Efk"
 # Optional: only accept Turnstile tokens issued for this hostname.
-TURNSTILE_HOSTNAME = "app.gw2enhanced.workers.dev"
+TURNSTILE_HOSTNAME = "gw2enhanced.wilssola.dev"
 DOWNLOAD_URL = "https://github.com/wilssola/GW2Enhanced/releases/latest/download"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "gw2enhanced"
-database_id = "f3ceb6c1-9476-4971-b098-4eddc75fc8ef"
+database_id = "a3eb4cd3-c55f-4521-a5b7-4a6326740b13"
 migrations_dir = "migrations"
 
 [[r2_buckets]]

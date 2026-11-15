@@ -4,7 +4,7 @@
 #
 # Secrets (environment "production"):
 #   CLOUDFLARE_API_TOKEN   same token as the deploy (D1:Edit and Workers R2 Storage:Edit are what this uses)
-#   CLOUDFLARE_ACCOUNT_ID  3d18070b6522eece5d92058a9efa41bf
+#   CLOUDFLARE_ACCOUNT_ID  d6a80bf381ccfa399e11f6ba29667c5a
 #   RELEASE_SIGNING_KEY    the dictionary manifest signing key (same value as the Worker secret of that name)
 name: backend-jobs
 

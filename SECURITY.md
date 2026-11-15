@@ -27,7 +27,7 @@ you prefer otherwise.
 - **Updates:** the in-game updater and the launcher only install releases whose `SHA256SUMS.txt` carries a valid
   ed25519 signature from the project's release key. Any way to make them install something else is critical.
 - **Dictionary releases:** the website signs every dictionary release; bypassing that check is in scope.
-- **Website/API** (`app.gw2enhanced.workers.dev`): injection, authentication or rate-limit bypass, exposure of
+- **Website/API** (`gw2enhanced.wilssola.dev`): injection, authentication or rate-limit bypass, exposure of
   stored data (player IP addresses are only stored as salted hashes), cross-site scripting.
 - **The mod in the game process:** memory-safety bugs reachable from game data, the network or config files.
 
