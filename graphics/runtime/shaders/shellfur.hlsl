@@ -509,7 +509,8 @@ cbuffer shell_ps : register(b0)
     float4 q3; // x root device-depth tolerance, y / z the linear-depth fallback of the root test (relative, absolute normalised),
                // w v8: the fragment test's absolute tolerance in metres (FRAG_TOL_M; its relative part is q1.y)
     float4 q4; // v8, this draw's depth bias (its rasterizer state): x DepthBias in depth units, y SlopeScaledDepthBias, z DepthBiasClamp
-               // (0 = none), w unused
+               // (0 = none), w v18: 1 = the draw's atlas is a proven charr atlas (shellfur::mixed_flag; ft_mixed_weight)
+
 };
 
 // shell_uv_exclude on the fragment's OWN mesh uv (= its root's: the shells share the base triangle's uv): 0 inside a rectangle, 1
@@ -712,6 +713,19 @@ float ft_draw_weight(float4 s0)
     return smoothstep(0.40, 0.60, s0.x) * smoothstep(0.03, 0.05, s0.y);
 }
 
+// v18, a MIXED draw: a draw of an atlas that another draw of the same character proved charr fur (q4.w = 1, furselect.rs), whose
+// footprint is only partly fur (a body drawn with its armour: bare arms, legs, tail beside the armour pieces) and so fails the draw
+// test above. It gets fur where its texels are fur: some of its footprint in the gloss band (shellfur::MIXED_BAND), then per texel
+// the band itself and the gloss test against the fur's own gloss (its coat medians are the armour's; shellfur::MIXED_COAT_GLOSS).
+// Mirror: shellfur::mixed_weight / strand_weight.
+float ft_mixed_weight(float4 s0)
+{
+    if (!(s0.z >= 16.0))
+        return 0.0;
+    return smoothstep(0.04, 0.08, s0.x);
+}
+static const float MIXED_COAT_GLOSS = 0.44;
+
 // One texel at a strand's root: 1 = fur, 0 = horn / claw / fang / lips / gums. s0 / s1 = the draw's coat statistics (medians over its
 // uv footprint: s1 = gloss, saturation, value, hue). Every test is RELATIVE to the draw's own coat, so a coat of any colour keeps its
 // strands (shellfur::texel_weight is the mirror; the thresholds are measured on 11 real charr atlases, docs/shell-fur.md "v7"):
@@ -750,7 +764,9 @@ float strand_fur(float2 uv, float near_part)
     float4 s0 = coat_stats.Load(int3(rec, 0, 0));
     float4 s1 = coat_stats.Load(int3(rec, 1, 0));
     float w = ft_draw_weight(s0);
-    if (!(w > 0.0) || q2.w < 0.5)
+    float wm = q4.w > 0.5 ? ft_mixed_weight(s0) : 0.0;
+    bool mixed = wm > w;
+    if (!mixed && (!(w > 0.0) || q2.w < 0.5))
         return w;
     float4 ft;
     float hue;
@@ -758,6 +774,14 @@ float strand_fur(float2 uv, float near_part)
         return 0.0;
     if (near_part > 0.5 && near_part < 1.5)
         ft_near(atlas, uv, ft);
+    if (mixed)
+    {
+        float band = ft_box(0.33, 0.50, 0.02, ft.x);
+        if (q2.w < 0.5)
+            return wm * band;
+        float4 s1m = float4(MIXED_COAT_GLOSS, s1.yzw);
+        return wm * band * ft_texel_weight(ft, hue, s0, s1m, false);
+    }
     return w * ft_texel_weight(ft, hue, s0, s1, !(near_part > 1.5));
 }
 

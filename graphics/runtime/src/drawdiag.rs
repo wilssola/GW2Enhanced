@@ -658,7 +658,7 @@ pub(crate) unsafe fn buffer_width(buf: Obj) -> u32 {
 }
 
 /// Slot signature + resource pointer of the SRV `view` (a 2D texture; other resources keep fmt 0 and size 0).
-unsafe fn srv_info(slot: usize, view: Obj) -> (TexSig, usize) {
+pub(crate) unsafe fn srv_info(slot: usize, view: Obj) -> (TexSig, usize) {
     let mut sig = TexSig { slot: slot as u8, fmt: 0, w: 0, h: 0, mips: 0 };
     unsafe {
         let mut res: Obj = std::ptr::null_mut();

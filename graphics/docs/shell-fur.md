@@ -1247,6 +1247,69 @@ capture.
 **What to check in the game (v17).** First person and a close camera turning around: the arms' / chest's fur stays. Third person as
 v16. The overlay switches: each effect off / on live; "All effects off" for an A/B.
 
+## v18: every charr, not only the shaders of one charr (`fur_auto`)
+
+**Seen in the game on v17.** NPC charr without fur: an armoured charr in a city (fur painted on its head and neck, no strands), an
+NPC charr soldier (bare fur-textured arms, tail and head), and a partly armoured charr with a striped coat that had
+strands on its HEAD ONLY: legs, paws, shoulders, arms and chest bare although they show fur skin. **Causes (code).** Two gates,
+each enough to leave a charr bare:
+
+1. **`fur_ps` is a list of pixel-shader hashes taken from the draws of one charr** (`1d50763f, e0189185, 5d00827f`). `on_ps_set`
+   marks a draw as fur only when its pixel shader is in that list, and nothing else ever sees it (no counter, no log). The engine has
+   many permutations of its skinned character shader (the draw dumps on disk show 38 skinned pairs: `3c3a91ca` also runs `bfabb6fe`
+   and `5b124fd7`, `a5c9d651` runs `81f4607a`, `0d12c4bb` six others, `edcb8734` two, all sampling the same BC3 + BC5 composite
+   shape). A charr whose body or head is drawn with another permutation (another armour set, dye channel count or skinning variant)
+   never reached the fur mask.
+2. **The draw test refuses a body drawn with its armour.** `ft_draw_weight` asks that 40..60 % of a draw's uv footprint lie in the fur
+   gloss band. A charr is drawn as several draws on ONE composite atlas (head, body, arms, legs, tail: the per-draw probe shows every
+   draw of a character on the same `t0`), and a partly armoured body draw holds the armour pieces and the bare fur skin together: its
+   footprint is mostly armour, so the WHOLE draw gets no strands, no old fur look and no rim. The head, a draw of its own and all
+   fur, passes: exactly "fur on the head only". v17's open item "a charr's thigh smooth" is the same case.
+
+**Fix: select by what every charr draw shares (`src/furselect.rs`, `fur_auto=1`, the default).**
+* **The material shape, any pixel shader.** A skinned draw (vertex cb 0 >= 4096 bytes: the bone palette) whose pixel shader is NOT
+  in `fur_ps` is a candidate when it samples a character composite: `t0` BC3 (colour + gloss alpha) >= 512 and `t1` BC5 (normal map)
+  >= 128 (`admit`). A rigid draw (the 208-byte NPC bodies) is a candidate only on a proven atlas (below): its shape alone is every
+  static prop's. A candidate goes to the fur mask and is recorded for the shells like a `fur_ps` draw; the draw test decides what it
+  gets, as for every draw (human composites: 0..30 % in the band, refused; they were already candidates through `5d00827f`).
+* **The atlas proof.** The shells' per-draw statistics are read back a few frames later (`read_stats`). An atlas (`t0`) with a draw
+  of strict weight >= 0.5 is a PROVEN charr atlas (`Book`, held 600 frames after the last proving readback, so the body keeps it
+  while the head is off screen). A human composite never proves (its best skin draw is 30 % in the band: weight 0).
+* **Mixed draws.** A draw of a proven atlas that fails the draw test gets `q4.w = 1` (`shellfur::mixed_flag`) and the strand shader's
+  `ft_mixed_weight`: 4..8 % of its footprint in the band is enough (`MIXED_BAND`; hair cards and armour pieces of the same atlas are
+  0..2 %), then per texel the band itself (`ft_box(0.33, 0.50)`) and the gloss test against the fur's own gloss 0.44
+  (`MIXED_COAT_GLOSS`; the draw's median is the armour's). The colour tests (keratin, red) are off there: their reference, the
+  draw's coat, is the armour; claws keep the gloss test and the island analysis. A full fur draw is unchanged (the strict weight wins).
+  The skin pass uses the same `strand_fur`, so the old fur look and the rim follow.
+* **Not admitted again.** A candidate atlas measured as not fur is skipped by the content rule for 600 frames, then measured again
+  (`RECHECK_FRAMES`), so crowds of humans do not fill the 256 records.
+
+**Diagnostics (gw2graphics_log.txt, `furselect:` lines, at most 96 a session).** Once per draw group (pixel shader, vertex shader,
+`t0` / `t1`, verdict): `furselect: skinned draw ps .. vs .. vcb0 .. count .. t0 fmt F WxH t1 fmt F WxH -> admitted by the content
+rule ... / t0 is not a BC3 colour + gloss texture / no normal map at t1 / atlas measured as not fur / ...`, and for `fur_ps` draws
+left out `-> rejected by fur_min_vcb / fur_vs`. Once per atlas verdict: `furselect: atlas X proven charr fur ... / not proven fur
+(best draw weight, best gloss band share, the index counts of its draws)`. `status_fur=` adds `fur_auto: N draws of other shaders
+admitted by the content rule, M skinned draws refused by their textures, K skipped (atlas measured as not fur); P proven charr
+atlases`.
+
+**Tests (`furselect_tests.rs`).** The shape rule (composites of every size and view format in, BC1 / BC7 / missing normal / tiny
+out, rigid only on a proven atlas); the proof (a charr atlas with head 100 % + body 25 % + hair 2 % proven, a human composite at 30 %
+not; skipped, then measured again after `RECHECK_FRAMES`; the proof holds while only the body is seen and expires after
+`PROOF_FRAMES`; no footprint / no atlas say nothing; the book bounded and pruned); the strand weight mirror (`strand_weight`): a
+25 % body draw gets 0 without the proof (v17), > 0.95 on its fur texels with it, < 0.01 on glossy and matte armour and on a flat
+horn texel, with and without the texel tests; a full fur draw keeps its v17 weight; the shader carries the mirror's constants;
+`fur_auto` parses, saves, defaults to 1.
+
+**Not verified in the game (needs a session).** (1) That the bodies of the NPC charr above are drawn on the same atlas as their head
+(the per-draw probe shows it for the player and the crowd; an NPC whose head and body use separate textures gets no proof from its
+head). (2) That their bodies' pixel shaders bind the BC3 + BC5 shape (the log line of each refused skinned group says what they bind
+instead). (3) That a mixed body draw has its fur in the gloss band like every measured charr atlas, and that leather armour with
+fur-like gloss on a proven atlas stays clear (it would get strands: the flatness test is the only other guard there). (4) The cost
+in a crowd (`status_perf=` with `fur_auto=1` vs `0`). **What to do in the game:** stand 2..5 m from each of those charr with
+`debug_hot_reload=1` (and `debug_capture_seconds=20` for `status_fur=` / `status_shells=`), then look at gw2graphics_log.txt: a
+`proven charr fur` line for its atlas and `admitted` lines for its draws = selected; the `-> ...` reason of a `skinned draw` line
+says which gate still refuses it. `fur_auto=0` gives v17 back for an A/B.
+
 ## Which draws: the selector and the evidence
 
 The fur selector `fur_ps=1d50763f,e0189185,5d00827f` (verified magenta) picks the charr's skin AND its cloth armour (same pixel shader). What the
@@ -1289,7 +1352,9 @@ only that mesh, `-5214` leaves one out) or narrow by `shell_vs` / `shell_ps`.
 | `shell_debug` | 0 / 1 / 2 | 0 | 1 paints the shell pixels red (root) .. yellow (tip); 2 = a colour per fur draw (v4) |
 | `shell_detail` | 0..1 | 0.7 (new) | over the body a strand only paints where the surface looks like its root: eyes, nose, markings, horns stay clear; 0 = v1 |
 | `shell_clump` | 0..1 | 0.5 (new) | clumping: strands pulled towards a shared point and leaning the same way (0.5 = the v1 pull + a slight lean) |
-| `shell_fur_mask` / `shell_fur_threshold` / `shell_fur_soft` / `shell_uv_exclude` | see v3, v5, v7 | `t0.a<, t0.f>0.025` (v5; was `t0.a<`) / 0.66 / 0.05 / empty | the mask's texture tests (old fur look, rim, `fur_debug`); for the shells (v7) `off` turns the per-strand texel tests off (the draw test stays) |
+| `fur_auto` | 0 / 1 | 1 (v18) | the content rule: skinned character-composite draws of any pixel shader are tested too; draws of a proven charr atlas that are only partly fur get fur on their fur texels; 0 = `fur_ps` only |
+| `shell_fur_mask` / `shell_fur_threshold` / `shell_fur_soft` / `shell_uv_exclude` |
+ see v3, v5, v7 | `t0.a<, t0.f>0.025` (v5; was `t0.a<`) / 0.66 / 0.05 / empty | the mask's texture tests (old fur look, rim, `fur_debug`); for the shells (v7) `off` turns the per-strand texel tests off (the draw test stays) |
 
 Shells need the fur mask: `fur_ps` non-empty and `fur_strength` > 0 (the strands scale with it). Mod disabled by the user (vanilla emulation),
 the fur selector window's highlight, `fur_shell=0`, `fur_shells=0`: nothing recorded, `t24` / `b13` unbound: bit-identical to the old output (tested).

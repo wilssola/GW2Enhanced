@@ -44,7 +44,7 @@ fn shell_keys_default_parse_clamp_and_round_trip() {
     assert_eq!(c, ShellCfg { unit: 0.0, ..ShellCfg::default() });
     assert_eq!(crate::config::Config::parse("shell_unit=abc").shell.unit, 0.0);
     // The ini block: every key once, with its comment, and it parses back to the same values.
-    let x = ShellCfg { on: 0, shells: 12, length: 2.5, density: 600.0, thickness: 0.4, root_dark: 0.5, wind: 0.1, lod: 12.0, rim: 0.5, ps: "aabbccdd".into(), vs: "11223344".into(), min_vcb: 208, counts: "-5214".into(), normal: "texcoord2".into(), unit: 1.0, debug: 1, detail: 0.4, clump: 0.2, fur_mask: "t2.l>".into(), fur_threshold: 0.3, fur_soft: 0.08, uv_exclude: "0.1 0.2 0.3 0.4; 0.5 0.6 0.7 0.8@17694".into() };
+    let x = ShellCfg { on: 0, shells: 12, length: 2.5, density: 600.0, thickness: 0.4, root_dark: 0.5, wind: 0.1, lod: 12.0, rim: 0.5, ps: "aabbccdd".into(), vs: "11223344".into(), min_vcb: 208, counts: "-5214".into(), normal: "texcoord2".into(), unit: 1.0, debug: 1, detail: 0.4, clump: 0.2, fur_mask: "t2.l>".into(), fur_threshold: 0.3, fur_soft: 0.08, uv_exclude: "0.1 0.2 0.3 0.4; 0.5 0.6 0.7 0.8@17694".into(), auto: 0 };
     let t = crate::config::Config { shell: x.clone(), ..crate::config::Config::default() }.to_ini();
     for k in KEYS {
         assert_eq!(t.lines().filter(|l| l.starts_with(&format!("{k}="))).count(), 1, "{k} once in\n{t}");

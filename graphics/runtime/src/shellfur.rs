@@ -180,6 +180,10 @@ pub struct ShellCfg {
     /// `shell_uv_exclude`: up to 16 rectangles of the mesh uv (the engine's uv of the fur draw) without fur, `u0 v0 u1 v1` each, `;`
     /// between them, an optional `@count` limits one to the draw with that index count. Soft edge `UV_FEATHER`.
     pub uv_exclude: String,
+    /// `fur_auto` 0/1 (1, v18): the content rule of furselect.rs: skinned draws of OTHER pixel shaders than `fur_ps` that sample a
+    /// character composite (BC3 colour + BC5 normal) also go to the fur mask and the shells, where the draw test decides; draws on a
+    /// proven charr atlas that are only partly fur (skin + armour) get fur on their fur texels. 0 = only the `fur_ps` draws (v17).
+    pub auto: u8,
 }
 
 pub const SHELLS_DEFAULT: u32 = 16;
@@ -233,14 +237,15 @@ impl Default for ShellCfg {
             fur_threshold: FUR_THRESHOLD_DEFAULT,
             fur_soft: FUR_SOFT_DEFAULT,
             uv_exclude: String::new(),
+            auto: 1,
         }
     }
 }
 
 /// Every key, in the order of config.ini.
-pub const KEYS: [&str; 22] = [
+pub const KEYS: [&str; 23] = [
     "fur_shell", "fur_shells", "shell_length", "shell_density", "shell_thickness", "shell_root_dark", "shell_wind", "shell_lod_distance", "shell_rim", "shell_ps", "shell_vs", "shell_min_vcb",
-    "shell_counts", "shell_normal", "shell_unit", "shell_debug", "shell_detail", "shell_clump", "shell_fur_mask", "shell_fur_threshold", "shell_fur_soft", "shell_uv_exclude",
+    "shell_counts", "shell_normal", "shell_unit", "shell_debug", "shell_detail", "shell_clump", "shell_fur_mask", "shell_fur_threshold", "shell_fur_soft", "shell_uv_exclude", "fur_auto",
 ];
 
 // ---- the fur discriminator (v3): which texels of a fur draw are fur (not horn, claw, nose, lips) -------------------------------
@@ -706,6 +711,7 @@ impl ShellCfg {
             "shell_fur_threshold" => self.fur_threshold = num(v, 0.0, 1.0, d.fur_threshold),
             "shell_fur_soft" => self.fur_soft = num(v, FUR_SOFT_RANGE.0, FUR_SOFT_RANGE.1, d.fur_soft),
             "shell_uv_exclude" => self.uv_exclude = uv_rects_text(&parse_uv_rects(&clean(v))),
+            "fur_auto" => self.auto = num(v, 0.0, 1.0, d.auto as f32).round() as u8,
             _ => return false,
         }
         true
@@ -737,6 +743,7 @@ impl ShellCfg {
             fur_threshold: clamp_or(self.fur_threshold, (0.0, 1.0), d.fur_threshold),
             fur_soft: clamp_or(self.fur_soft, FUR_SOFT_RANGE, d.fur_soft),
             uv_exclude: uv_rects_text(&parse_uv_rects(&self.uv_exclude)),
+            auto: self.auto.min(1),
         }
     }
 
@@ -763,6 +770,9 @@ impl ShellCfg {
                 "# strand at its own root uv against the draw's own coat (flat horn, glossy / tan claws, fang, red lips; any coat colour; no extra line is\n",
                 "# needed); off = only the draw test (charr skin draws, not armour / human skin). shell_fur_threshold 0..1 (0.66), shell_fur_soft 0.01..0.5\n",
                 "# (0.05). shell_uv_exclude (normally empty) = mesh-uv rectangles without fur, \"u0 v0 u1 v1\" separated by ; (@count = one draw only).\n",
+                "# fur_auto 1 (default) = every charr, not only the fur_ps shaders: skinned draws of any pixel shader that sample a character composite\n",
+                "# (BC3 colour + BC5 normal) are tested too, and the draws of an atlas proven charr fur (head, body, arms, tail of one character) get fur on\n",
+                "# their fur texels even when the draw is half armour; the log says per draw group and per atlas why (furselect: lines). 0 = fur_ps only.\n",
                 "fur_shell={}\n",
                 "fur_shells={}\n",
                 "shell_length={}\n",
@@ -785,9 +795,10 @@ impl ShellCfg {
                 "shell_fur_threshold={}\n",
                 "shell_fur_soft={}\n",
                 "shell_uv_exclude={}\n",
+                "fur_auto={}\n",
             ),
             self.on, self.shells, self.length, self.density, self.thickness, self.root_dark, self.wind, self.lod, self.rim, self.ps, self.vs, self.min_vcb, self.counts, self.normal, self.unit, self.debug, self.detail, self.clump,
-            self.fur_mask, self.fur_threshold, self.fur_soft, self.uv_exclude
+            self.fur_mask, self.fur_threshold, self.fur_soft, self.uv_exclude, self.auto
         )
     }
 
@@ -797,7 +808,7 @@ impl ShellCfg {
         macro_rules! c {
             ($($f:ident => $k:expr),*) => { $( if a.$f != b.$f { v.push($k); } )* };
         }
-        c!(on => "fur_shell", shells => "fur_shells", length => "shell_length", density => "shell_density", thickness => "shell_thickness", root_dark => "shell_root_dark", wind => "shell_wind", lod => "shell_lod_distance", rim => "shell_rim", ps => "shell_ps", vs => "shell_vs", min_vcb => "shell_min_vcb", counts => "shell_counts", normal => "shell_normal", unit => "shell_unit", debug => "shell_debug", detail => "shell_detail", clump => "shell_clump", fur_mask => "shell_fur_mask", fur_threshold => "shell_fur_threshold", fur_soft => "shell_fur_soft", uv_exclude => "shell_uv_exclude");
+        c!(on => "fur_shell", shells => "fur_shells", length => "shell_length", density => "shell_density", thickness => "shell_thickness", root_dark => "shell_root_dark", wind => "shell_wind", lod => "shell_lod_distance", rim => "shell_rim", ps => "shell_ps", vs => "shell_vs", min_vcb => "shell_min_vcb", counts => "shell_counts", normal => "shell_normal", unit => "shell_unit", debug => "shell_debug", detail => "shell_detail", clump => "shell_clump", fur_mask => "shell_fur_mask", fur_threshold => "shell_fur_threshold", fur_soft => "shell_fur_soft", uv_exclude => "shell_uv_exclude", auto => "fur_auto");
         v
     }
 
@@ -826,6 +837,7 @@ impl ShellCfg {
             "shell_fur_threshold" => self.fur_threshold = new.fur_threshold,
             "shell_fur_soft" => self.fur_soft = new.fur_soft,
             "shell_uv_exclude" => self.uv_exclude = new.uv_exclude.clone(),
+            "fur_auto" => self.auto = new.auto,
             _ => {}
         }
     }
@@ -1195,7 +1207,52 @@ pub fn ps_rect_values(d: &Discrim, count: u32) -> [[f32; 4]; 1 + MAX_UV_RECTS] {
     o
 }
 
+/// v18: `q4.w` of the strand / skin pixel shader: 1 when the record's atlas is a proven charr atlas (furselect.rs), so a draw that is
+/// only partly fur (skin + armour in one draw) gets fur on its fur texels (`ft_mixed_weight`); 0 = the draw test alone (v17).
+pub fn mixed_flag(atlas: usize) -> f32 {
+    if auto_configured() && crate::furselect::proven(atlas) { 1.0 } else { 0.0 }
+}
+
+/// The share of a mixed draw's footprint in the gloss band from which it gets fur (`ft_mixed_weight`: 0 below MIXED_BAND.0, 1 above
+/// MIXED_BAND.1): a body draw of a partly armoured charr (bare arms, legs, tail beside the armour) is 10..40 % in the band, a pure
+/// armour or hair-card draw of the same atlas 0..2 % (the measured player draws: 17694 hair cards 2 %, armour 0..2 %).
+pub const MIXED_BAND: (f32, f32) = (0.04, 0.08);
+/// The coat gloss a mixed draw's texels are compared with (the glossy test): its own median is the armour's, so the fur's measured
+/// gloss (0.40..0.44 in every charr atlas) is used instead.
+pub const MIXED_COAT_GLOSS: f32 = 0.44;
+
+/// Mirror of `ft_mixed_weight`: the draw weight of a draw of a proven charr atlas.
+#[allow(dead_code)] // the CPU mirror (tests)
+pub fn mixed_weight(s0: [f32; 4]) -> f32 {
+    if !(s0[2] >= 16.0) {
+        return 0.0;
+    }
+    smooth(MIXED_BAND.0, MIXED_BAND.1, s0[0])
+}
+
+/// Mirror of `strand_fur` (without the island bits: `near` and the limb flag off): the weight of a strand rooted at a texel with the
+/// features `ft` / `hue`, of a draw with the coat statistics `s0` / `s1`; `mixed` = the record's `q4.w` (its atlas is proven).
+#[allow(dead_code)] // the CPU mirror (tests)
+pub fn strand_weight(ft: [f32; 4], hue: f32, s0: [f32; 4], s1: [f32; 4], texel_tests: bool, mixed: bool) -> f32 {
+    let w = draw_weight(s0);
+    let wm = if mixed { mixed_weight(s0) } else { 0.0 };
+    if wm > w {
+        // the fur texels of a mixed draw: in the gloss band, the gloss test against the fur's own gloss, no colour tests
+        let band = bx(GLOSS_BAND.0, GLOSS_BAND.1, 0.02, ft[0]);
+        if !texel_tests {
+            return wm * band;
+        }
+        let s1m = [MIXED_COAT_GLOSS, s1[1], s1[2], s1[3]];
+        return wm * band * texel_weight_opt(ft, hue, s0, s1m, false);
+    }
+    if !(w > 0.0) || !texel_tests {
+        return w;
+    }
+    w * texel_weight(ft, hue, s0, s1)
+}
+
 /// The strand pixel shader's whole `b0`: `rects[0]` = q2 (rectangles, feather, the record index, the texel tests on), `ext` = q3.
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PsCb {
@@ -1475,6 +1532,8 @@ static CFG: Mutex<Option<ShellCfg>> = Mutex::new(None);
 static SEL: Mutex<Option<Selector>> = Mutex::new(None);
 /// The shells are wanted (fur_shell 1, fur_shells > 0): one atomic per fur draw when off.
 static ON: AtomicBool = AtomicBool::new(false);
+/// `fur_auto` (v18, furselect.rs).
+static AUTO: AtomicBool = AtomicBool::new(true);
 /// The strand pixel shader and the unit measurement's pixel shader.
 static PS_BLOB: OnceLock<Result<PsBlobs, String>> = OnceLock::new();
 
@@ -1495,7 +1554,18 @@ static START: OnceLock<std::time::Instant> = OnceLock::new();
 /// Tests only: the shells use the per-triangle unit guess (the first version) instead of the frame's measured unit.
 pub(crate) static FORCE_TRI: AtomicBool = AtomicBool::new(false);
 
+/// The content rule of furselect.rs is wanted: `fur_auto` 1 and the shells can run (the draw test that decides lives in their statistics
+/// pass: without the shells a candidate of another shader would get the old fur look untested).
+pub fn auto_on() -> bool {
+    AUTO.load(Relaxed) && ON.load(Relaxed) && !FAILED.load(Relaxed) && crate::toggles::on(crate::toggles::Fx::Shells) && matches!(PS_BLOB.get(), Some(Ok(_)))
+}
+
+pub fn auto_configured() -> bool {
+    AUTO.load(Relaxed)
+}
+
 pub fn cfg() -> ShellCfg {
+
     CFG.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default()
 }
 
@@ -1503,6 +1573,7 @@ pub fn cfg() -> ShellCfg {
 pub fn configure(c: &ShellCfg) {
     let c = c.clamped();
     ON.store(c.on != 0 && c.shells > 0, Relaxed);
+    AUTO.store(c.auto != 0, Relaxed);
     *SEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Selector::new(&c));
     *DISCRIM.lock().unwrap_or_else(|e| e.into_inner()) = Discrim::new(&c);
     crate::furprobe::set_debug2(c.debug == 2);
@@ -2333,6 +2404,9 @@ impl Shell {
                     }
                     unmap(ctx, self.stat_stage[j], 0);
                     self.stat_staged[j] = false;
+                    // v18: the per-atlas proof of the content rule (furselect.rs).
+                    let book: Vec<(usize, u32, [f32; 4])> = out.iter().map(|d| (d.atlas, d.count, d.s0)).collect();
+                    crate::furselect::note_stats(&book);
                     if let Ok(mut g) = STATS_SHOW.try_lock() {
                         *g = out;
                     }
@@ -3359,7 +3433,8 @@ unsafe fn replay(s: &mut Shell, dev: Obj, ctx: Obj, dsrv: Obj, c: &ShellCfg, dep
             let mut rects = ps_rect_values(&disc, r.call.count());
             rects[0][2] = i as f32;
             rects[0][3] = if texel_tests { 1.0 } else { 0.0 };
-            let bias = ps_bias_values(&r.rsd, s.dev_depth_fmt(r.depth));
+            let mut bias = ps_bias_values(&r.rsd, s.dev_depth_fmt(r.depth));
+            bias[3] = mixed_flag(r.tex0 as usize);
             if !write_cb(ctx, s.cb_ps, &PsCb { base: ps_base, rects, ext: ps_ext, bias }) {
                 continue; // never draw a record without its exclusions
             }
@@ -3400,7 +3475,8 @@ unsafe fn replay(s: &mut Shell, dev: Obj, ctx: Obj, dsrv: Obj, c: &ShellCfg, dep
                 let mut rects = ps_rect_values(&disc, r.call.count());
                 rects[0][2] = i as f32;
                 rects[0][3] = if texel_tests { 1.0 } else { 0.0 };
-                let bias = ps_bias_values(&r.rsd, s.dev_depth_fmt(r.depth));
+                let mut bias = ps_bias_values(&r.rsd, s.dev_depth_fmt(r.depth));
+                bias[3] = mixed_flag(r.tex0 as usize);
                 if !write_cb(ctx, s.cb_ps, &PsCb { base: ps_base, rects, ext: ps_ext, bias }) {
                     continue;
                 }

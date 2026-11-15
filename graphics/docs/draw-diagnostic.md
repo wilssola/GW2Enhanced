@@ -357,6 +357,11 @@ The strands are now procedural noise in the MESH UV space, so they are glued to 
    several with commas (the skin shader and the fur-bearing armour parts are usually different draws).
 5. When the magenta covers exactly the charr, set `fur_debug=0` and `fur_strength` to taste and look at the fur.
 
+Since `fur_auto=1` (the default, `docs/shell-fur.md` "v18") the list is no longer the only way in: skinned draws of ANY pixel shader that
+sample a character composite (`t0` BC3, `t1` BC5) are candidates too, and the shells' draw test decides; with `fur_debug=1` those
+candidates are painted magenta as well (other races' composites included: the magenta shows the candidates, not the fur). Why a
+skinned draw near a charr was left out is in gw2graphics_log.txt (`furselect:` lines, one per draw group and per atlas).
+
 ### The overlay's fur section and shader picker (in game, no file editing)
 
 Overlay (Shift+Home), Graphics tab > section **Fur (charr)**: `fur_strength` slider, **Show selection in magenta** (`fur_debug`), **Min vertex cb**

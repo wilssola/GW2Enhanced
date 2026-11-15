@@ -16,6 +16,11 @@
 //!   restores everything. Because it runs before the engine's draw, the depth buffer holds exactly the geometry
 //!   drawn earlier in the pass, so the character is occluded correctly by what was drawn before it;
 //! * `light_adjust_hdr.hlsl` reads the mask as `t20` (`on_light_adjust` binds it) and applies `fur_look` only there.
+//! * v18 (`fur_auto`, furselect.rs): a draw whose pixel shader is NOT in `fur_ps` is still taken when the content rule says it is a
+//!   charr candidate (skinned, a BC3 colour + BC5 normal composite bound, its atlas not measured as not fur); the shells' draw test
+//!   then decides as for every draw. Refused skinned draws and `fur_ps` draws left out by `fur_vs` / `fur_min_vcb` are logged once
+//!   per draw group.
+
 //!
 //! THE MESH UV. The mask target is R16G16B16A16_UNORM: a = the mask, rg = frac of the mesh uv, b = 1 when rg is valid. The strands
 //! of `fur_look` are procedural noise in that uv space, so they stay glued to the mesh. The uv comes from the vertex shader of the
@@ -389,6 +394,11 @@ static MIN_VCB: AtomicU32 = AtomicU32::new(DEFAULT_MIN_VCB);
 static MATCH: AtomicBool = AtomicBool::new(false);
 /// Hash of that pixel shader (valid while `MATCH`).
 static CUR_PS: AtomicU32 = AtomicU32::new(0);
+/// v18 (`fur_auto`, furselect.rs): the bound pixel shader is NOT in `fur_ps`, but its draws may still be charr draws by the content rule
+/// (checked at the draw: skinned, a character composite bound, the atlas not measured as not fur).
+static AUTO_MATCH: AtomicBool = AtomicBool::new(false);
+/// Hash of that pixel shader (valid while `AUTO_MATCH`).
+static AUTO_PS: AtomicU32 = AtomicU32::new(0);
 /// The mask must be cleared by the next masked draw (a new frame started).
 static FRESH: AtomicBool = AtomicBool::new(true);
 /// At least one draw went into the mask this frame.
@@ -621,6 +631,7 @@ pub fn frame_begin() {
     RIM_OCC_DONE.store(false, Relaxed);
     OCC_LAST.store(OCC_CUR.swap(OCC_NONE, Relaxed), Relaxed);
     RIM_OCC_LAST.store(RIM_OCC_CUR.swap(OCC_NONE, Relaxed), Relaxed);
+    crate::furselect::frame_begin();
     // The per-draw probe (furprobe.rs): a frame that starts with a probe pending collects its fur draws' textures and tags the mask.
     crate::furprobe::frame_begin(PROBE_WANT.load(Relaxed));
 }
@@ -649,13 +660,15 @@ pub fn status_text() -> String {
         return "compiling the mask shader".to_string();
     }
     format!(
-        "{} draws masked last frame ({} had a fur_ps shader, {} of those rejected by fur_vs / fur_min_vcb), {}, {}",
+        "{} draws masked last frame ({} had a fur_ps shader, {} of those rejected by fur_vs / fur_min_vcb; {}), {}, {}",
         LAST_DRAWS.load(Relaxed),
         LAST_CAND.load(Relaxed),
         LAST_REJ.load(Relaxed),
+        crate::furselect::status_text(crate::shellfur::auto_on()),
         uv_text(LAST_DRAWS.load(Relaxed), LAST_UV.load(Relaxed)),
         occ_text(OCC_LAST.load(Relaxed), &OCC_WHY)
     )
+
 }
 
 /// `uv: ok (TEXCOORD0.xy)` when every masked draw carried the mesh uv, `uv: partial a/b (why)`, `uv: none (why)`.
@@ -1304,6 +1317,9 @@ pub fn on_ps_set(ctx: Obj, ps: Obj) {
         if RIM_MATCH.load(Relaxed) {
             RIM_MATCH.store(false, Relaxed);
         }
+        if AUTO_MATCH.load(Relaxed) {
+            AUTO_MATCH.store(false, Relaxed);
+        }
         return;
     }
     if ignoring() || recorder::game_context() != ctx as usize {
@@ -1320,8 +1336,14 @@ pub fn on_ps_set(ctx: Obj, ps: Obj) {
         if let (true, Some(h)) = (mr, hash) {
             RIM_CUR_PS.store(h, Relaxed);
         }
+        // v18: any other pixel shader is a content-rule candidate (decided per draw in `fur_draw`).
+        let ma = want_fur && !hl && !m && hash.is_some() && crate::shellfur::auto_on();
+        if let (true, Some(h)) = (ma, hash) {
+            AUTO_PS.store(h, Relaxed);
+        }
         MATCH.store(m, Relaxed);
         RIM_MATCH.store(mr, Relaxed);
+        AUTO_MATCH.store(ma, Relaxed);
     });
 }
 
@@ -1329,14 +1351,17 @@ pub fn on_ps_set(ctx: Obj, ps: Obj) {
 /// into the mask through `issue` (the original draw call with the same arguments). One atomic load for every other draw;
 /// never unwinds; the engine's draw is NOT issued here.
 pub fn before_draw(ctx: Obj, issue: &dyn Fn(), call: crate::shellfur::Call) {
-    if !MATCH.load(Relaxed) && !RIM_MATCH.load(Relaxed) {
+    if !MATCH.load(Relaxed) && !RIM_MATCH.load(Relaxed) && !AUTO_MATCH.load(Relaxed) {
         return;
     }
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe { before_draw_inner(ctx, issue, call) }));
 }
 
 unsafe fn before_draw_inner(ctx: Obj, issue: &dyn Fn(), call: crate::shellfur::Call) {
-    let fur = MATCH.load(Relaxed) && wanted();
+    let listed = MATCH.load(Relaxed) && wanted();
+    // v18: a draw of another pixel shader, judged by the content rule (`fur_draw`); never together with the picker's highlight.
+    let auto = !listed && AUTO_MATCH.load(Relaxed) && wanted() && !HL_ACTIVE.load(Relaxed) && crate::shellfur::auto_on();
+    let fur = listed || auto;
     let rim = RIM_MATCH.load(Relaxed) && wanted_rim();
     if ignoring() || recorder::game_context() != ctx as usize || !(shaders::substitution_enabled() && gate::user_enabled()) || !(fur || rim) {
         return;
@@ -1355,7 +1380,7 @@ unsafe fn before_draw_inner(ctx: Obj, issue: &dyn Fn(), call: crate::shellfur::C
     let (vs_hash, vcb0, vs_ptr) = unsafe { read_draw(ctx) };
     if fur {
         if let Some(Ok(blob)) = BLOB.get() {
-            unsafe { fur_draw(ctx, issue, blob, vs_hash, vcb0, vs_ptr, call) };
+            unsafe { fur_draw(ctx, issue, blob, vs_hash, vcb0, vs_ptr, call, auto) };
         }
     }
     if rim {
@@ -1435,11 +1460,69 @@ unsafe fn rim_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], rim_blob: &[u8], vs_
     }
 }
 
-/// The fur channel of a draw about to be issued (the original body of `before_draw_inner`).
-unsafe fn fur_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], vs_hash: Option<u32>, vcb0: u32, vs_ptr: usize, call: crate::shellfur::Call) {
-    let ps_hash = CUR_PS.load(Relaxed);
-    CUR_CAND.fetch_add(1, Relaxed);
-    let ok = if HL_ACTIVE.load(Relaxed) {
+/// (t0 view pointer = the atlas identity the shells record, t0, t1) of the pixel shader of the draw about to be issued.
+///
+/// # Safety
+/// `ctx` must be a live `ID3D11DeviceContext`.
+unsafe fn ps_textures(ctx: Obj) -> (usize, Option<crate::furselect::Tex>, Option<crate::furselect::Tex>) {
+    unsafe {
+        let mut v: [Obj; 2] = [std::ptr::null_mut(); 2];
+        let get_srv: unsafe extern "system" fn(Obj, u32, u32, *mut Obj) = std::mem::transmute(vfn(ctx, vt::CTX_PS_GET_SRVS));
+        get_srv(ctx, 0, 2, v.as_mut_ptr());
+        let atlas = v[0] as usize;
+        let mut t = [None, None];
+        for (k, p) in v.into_iter().enumerate() {
+            if !p.is_null() {
+                let (sig, _) = crate::drawdiag::srv_info(k, p);
+                t[k] = Some(crate::furselect::Tex { fmt: sig.fmt, w: sig.w, h: sig.h });
+                release(p);
+            }
+        }
+        (atlas, t[0], t[1])
+    }
+}
+
+/// v18, the content rule (`fur_auto`, furselect.rs) for a draw whose pixel shader is not in `fur_ps`: a character composite bound and
+/// skinned (or on a proven charr atlas), its atlas not measured as not fur. `Err` = why not; every skinned refusal is logged once per
+/// draw group.
+unsafe fn auto_admit(ctx: Obj, ps: u32, vs: Option<u32>, vcb0: u32, count: u32) -> bool {
+    // Rigid draws (every static prop) only on a proven atlas: one SRV read before anything else.
+    let (atlas, t0, t1) = unsafe { ps_textures(ctx) };
+    let proven = crate::furselect::proven(atlas);
+    if vcb0 < crate::furselect::MIN_SKINNED_VCB && !proven {
+        return false;
+    }
+    if let Err(why) = crate::furselect::admit(vcb0, t0, t1, proven) {
+        crate::furselect::count(crate::furselect::Outcome::Shape);
+        crate::furselect::log_draw(false, ps, vs, vcb0, count, t0, t1, why);
+        return false;
+    }
+    if let Err(why) = crate::furselect::verdict(atlas) {
+        crate::furselect::count(crate::furselect::Outcome::Atlas);
+        crate::furselect::log_draw(false, ps, vs, vcb0, count, t0, t1, why);
+        return false;
+    }
+    crate::furselect::count(crate::furselect::Outcome::Admitted);
+    crate::furselect::log_draw(false, ps, vs, vcb0, count, t0, t1, "admitted by the content rule (fur_auto): masked, recorded for the shells, the draw test decides");
+    true
+}
+
+/// The fur channel of a draw about to be issued (the original body of `before_draw_inner`). `auto` = its pixel shader is not in
+/// `fur_ps`: the content rule decides (v18).
+#[allow(clippy::too_many_arguments)]
+unsafe fn fur_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], vs_hash: Option<u32>, vcb0: u32, vs_ptr: usize, call: crate::shellfur::Call, auto: bool) {
+    if auto {
+        if !unsafe { auto_admit(ctx, AUTO_PS.load(Relaxed), vs_hash, vcb0, call.count()) } {
+            return;
+        }
+    }
+    let ps_hash = if auto { AUTO_PS.load(Relaxed) } else { CUR_PS.load(Relaxed) };
+    if !auto {
+        CUR_CAND.fetch_add(1, Relaxed);
+    }
+    let ok = if auto {
+        true
+    } else if HL_ACTIVE.load(Relaxed) {
         // The picker's group: shaders and (when it has one) the size of the first bound texture, no vcb / fur_vs rule.
         let key = *HL.lock().unwrap_or_else(|e| e.into_inner());
         key.is_some_and(|k| {
@@ -1451,6 +1534,12 @@ unsafe fn fur_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], vs_hash: Option<u32>
     };
     if !ok {
         CUR_REJ.fetch_add(1, Relaxed);
+        if !HL_ACTIVE.load(Relaxed) {
+            // v18: why a fur_ps draw was left out (once per draw group): fur_vs or fur_min_vcb.
+            let (_, t0, t1) = unsafe { ps_textures(ctx) };
+            let why = if vcb0 < MIN_VCB.load(Relaxed) { "rejected by fur_min_vcb" } else { "rejected by fur_vs" };
+            crate::furselect::log_draw(true, ps_hash, vs_hash, vcb0, call.count(), t0, t1, why);
+        }
         return;
     }
     let uv = uv_shader_for(vs_ptr);

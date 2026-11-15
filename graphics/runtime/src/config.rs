@@ -1303,6 +1303,7 @@ subsurface_strength=nan");
                 fur_threshold: 0.4,
                 fur_soft: 0.1,
                 uv_exclude: "0.1 0.2 0.3 0.4; 0.5 0.5 0.6 0.7@17694".to_string(),
+                auto: 0,
             },
             toggles: { let mut t = crate::toggles::Toggles::default(); t.0[3] = false; t },
             hdr_upgrade: false,
