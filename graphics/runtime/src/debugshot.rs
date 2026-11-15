@@ -1082,7 +1082,7 @@ pub fn perf_status() -> String {
 
 /// Depth consumer bit of the debug capture (`ao::set_depth_consumer`): keeps the AO's depth capture running while a shot waits for the depth.
 /// Far above the bits of `ao.rs` (1..=128), see the test that keeps them apart.
-pub const DEPTH_FOR_DEV: u32 = 1 << 20;
+pub const DEPTH_FOR_DEBUG: u32 = 1 << 20;
 /// A shot waits at most this many presents for the depth of the light-adjust draw, then it goes ahead without it.
 pub const DEPTH_WAIT_FRAMES: u64 = 12;
 /// A depth read-back older than this many presents does not belong to the picture of a shot any more.
@@ -1216,7 +1216,7 @@ fn lock_depth() -> std::sync::MutexGuard<'static, DepthSlot> {
 fn disarm(d: &mut DepthSlot) {
     d.armed_at = None;
     DEPTH_ARMED.store(false, Relaxed);
-    crate::ao::set_depth_consumer(DEPTH_FOR_DEV, false);
+    crate::ao::set_depth_consumer(DEPTH_FOR_DEBUG, false);
 }
 
 /// A debug shot of the mod is about to be issued at present `frame`: gets its depth ready (`st.depth`), or says why there is none
@@ -1245,7 +1245,7 @@ fn prepare_depth_with(st: &mut State, frame: u64, enabled: bool) -> bool {
             d.why.clear();
             d.armed_at = Some(frame);
             DEPTH_ARMED.store(true, Relaxed);
-            crate::ao::set_depth_consumer(DEPTH_FOR_DEV, true);
+            crate::ao::set_depth_consumer(DEPTH_FOR_DEBUG, true);
             false
         }
         DepthGate::Wait => false,
@@ -1315,7 +1315,7 @@ unsafe fn depth_capture(ctx: Obj, dev: Obj) {
         Err(e) => {
             d.why = e;
             DEPTH_ARMED.store(false, Relaxed);
-            crate::ao::set_depth_consumer(DEPTH_FOR_DEV, false);
+            crate::ao::set_depth_consumer(DEPTH_FOR_DEBUG, false);
         }
     }
 }

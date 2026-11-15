@@ -473,7 +473,7 @@ fn photo_and_hdr_keys_hot_reload_as_documented() {
 }
 
 #[test]
-fn photo_files_are_never_touched_by_the_dev_retention() {
+fn photo_files_are_never_touched_by_the_debug_retention() {
     let n = names(&["gw2-20261105-143012.png", "gw2-20261105-143012.hdr", "gw2-20261105-143012.txt", "gw2-20261105-143012-mod.png", "shot-100.png", "shot-200.png", "pair-5-mod.png"]);
     for prefix in ["shot-", "pair-"] {
         for keep in 0..3 {
@@ -484,7 +484,7 @@ fn photo_files_are_never_touched_by_the_dev_retention() {
 }
 
 #[test]
-fn a_photo_pair_has_the_same_restore_guarantees_as_a_dev_pair() {
+fn a_photo_pair_has_the_same_restore_guarantees_as_a_debug_pair() {
     // The photo pair IS the debug pair machine: forced -> exactly one ending step -> restored, within the watchdog time, for every schedule.
     for &(dt, settle_ms) in &[(16u64, 0u64), (33, 700), (200, 99_999), (1_000, 0)] {
         let mut m = PairMachine::new();
@@ -602,7 +602,7 @@ fn write_atomic_replaces_and_leaves_no_temp() {
 
 #[test]
 fn the_writer_makes_a_pair_with_stable_paths_and_prunes() {
-    let dir = std::env::temp_dir().join(format!("gw2g_dev_pair_{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("gw2g_debug_pair_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut pending = None;
     let img = |v: f32| f16_image(&[[v; 3]; 16]);
@@ -726,7 +726,7 @@ fn workbench_keys_hot_reload_through_diff_merge_and_apply_live() {
 }
 
 #[test]
-fn fur_occlusion_hot_reloads_like_the_fur_look_and_the_dev_text_reports_it() {
+fn fur_occlusion_hot_reloads_like_the_fur_look_and_the_debug_text_reports_it() {
     let _g = crate::testlock::lock();
     let keep = crate::furmask::occlusion();
     crate::furmask::set_occlusion(true);
@@ -751,7 +751,7 @@ fn fur_occlusion_hot_reloads_like_the_fur_look_and_the_dev_text_reports_it() {
 }
 
 #[test]
-fn the_dev_text_echoes_the_workbench_values() {
+fn the_debug_text_echoes_the_workbench_values() {
     let _g = crate::testlock::lock();
     let keep = crate::datapath::fur_look();
     crate::datapath::set_fur_look(&crate::datapath::FurLook { amp: 0.41, scale: 1.5, length: 7.0, detail: 0.5, rim: 0.75, sss: 1.25, view: 0 });
@@ -1009,7 +1009,7 @@ fn prepare_depth_arms_waits_takes_and_gives_up_and_always_disarms() {
     // The first call asks the light-adjust draw of the next frame for the depth and tells the AO to capture it.
     assert!(!prepare_depth_with(&mut st, 100, true), "the shot waits");
     assert!(DEPTH_ARMED.load(Relaxed));
-    assert_ne!(crate::ao::depth_consumers() & DEPTH_FOR_DEV, 0, "the AO's depth capture runs while the shot waits");
+    assert_ne!(crate::ao::depth_consumers() & DEPTH_FOR_DEBUG, 0, "the AO's depth capture runs while the shot waits");
     assert!(!prepare_depth_with(&mut st, 101, true), "still waiting");
     // The light-adjust draw answers (simulated): a read-back of the frame the shot is taken in.
     lock_depth().shot = Some((102, DepthData { w: 2, h: 1, data: vec![1.0, 2.0] }));
@@ -1018,7 +1018,7 @@ fn prepare_depth_arms_waits_takes_and_gives_up_and_always_disarms() {
     assert_eq!((d.w, d.h, d.data), (2, 1, vec![1.0, 2.0]));
     assert!(st.depth_note.is_none());
     assert!(!DEPTH_ARMED.load(Relaxed), "disarmed after the hand-over");
-    assert_eq!(crate::ao::depth_consumers() & DEPTH_FOR_DEV, 0);
+    assert_eq!(crate::ao::depth_consumers() & DEPTH_FOR_DEBUG, 0);
     assert!(lock_depth().shot.is_none(), "taken once");
     // Nobody answers: it waits, then gives up with the reason the light-adjust draw left.
     assert!(!prepare_depth_with(&mut st, 200, true));
@@ -1029,7 +1029,7 @@ fn prepare_depth_arms_waits_takes_and_gives_up_and_always_disarms() {
     assert!(prepare_depth_with(&mut st, 200 + DEPTH_WAIT_FRAMES + 1, true), "gives up");
     assert!(st.depth.is_none());
     assert!(st.depth_note.as_deref().is_some_and(|n| n.contains("no linear depth at the light-adjust draw")), "{:?}", st.depth_note);
-    assert!(!DEPTH_ARMED.load(Relaxed) && crate::ao::depth_consumers() & DEPTH_FOR_DEV == 0, "the AO is released on every path");
+    assert!(!DEPTH_ARMED.load(Relaxed) && crate::ao::depth_consumers() & DEPTH_FOR_DEBUG == 0, "the AO is released on every path");
     // Without a reason from the draw the note still says why.
     assert!(!prepare_depth_with(&mut st, 300, true));
     assert!(prepare_depth_with(&mut st, 300 + DEPTH_WAIT_FRAMES + 1, true));
@@ -1043,19 +1043,19 @@ fn prepare_depth_arms_waits_takes_and_gives_up_and_always_disarms() {
     depth_housekeeping(500 + DEPTH_WAIT_FRAMES * 4);
     assert!(DEPTH_ARMED.load(Relaxed), "not yet");
     depth_housekeeping(500 + DEPTH_WAIT_FRAMES * 4 + 1);
-    assert!(!DEPTH_ARMED.load(Relaxed) && crate::ao::depth_consumers() & DEPTH_FOR_DEV == 0);
+    assert!(!DEPTH_ARMED.load(Relaxed) && crate::ao::depth_consumers() & DEPTH_FOR_DEBUG == 0);
     reset();
 }
 
 #[test]
 fn the_depth_consumer_bit_is_its_own() {
-    assert_eq!(DEPTH_FOR_DEV.count_ones(), 1);
-    assert!(!crate::ao::ALL_DEPTH_CONSUMERS.contains(&DEPTH_FOR_DEV), "no other depth user may share the bit");
-    assert!(crate::ao::ALL_DEPTH_CONSUMERS.iter().all(|b| b & DEPTH_FOR_DEV == 0));
+    assert_eq!(DEPTH_FOR_DEBUG.count_ones(), 1);
+    assert!(!crate::ao::ALL_DEPTH_CONSUMERS.contains(&DEPTH_FOR_DEBUG), "no other depth user may share the bit");
+    assert!(crate::ao::ALL_DEPTH_CONSUMERS.iter().all(|b| b & DEPTH_FOR_DEBUG == 0));
 }
 
 #[test]
-fn a_dev_shot_of_the_mod_gets_the_depth_and_everything_else_does_not() {
+fn a_debug_shot_of_the_mod_gets_the_depth_and_everything_else_does_not() {
     let depth = || Some(DepthData { w: 1, h: 1, data: vec![2.0] });
     let mut t = String::from("a=1\n");
     assert!(attach_depth(&mut t, true, depth(), None).is_some() && t == "a=1\n", "the numbers are made by the writer");
