@@ -538,7 +538,7 @@ pub fn diff(old: &Config, new: &Config) -> Diff {
     macro_rules! live {
         ($($f:ident),*) => { $( if old.$f != new.$f { d.live.push(stringify!($f)); } )* };
     }
-    live!(enabled, paper_white_nits, peak_nits, sdr_gamma, bloom_strength, highlight_boost, ao_strength, ao_radius, halo_strength, halo_radius, ssr_strength, ssr_range, ssr_classes, ssr_smart, ssr_hue_filter, ssr_flatness, ssr_water_boost, water_depth_look, ssr_matte_cut, shafts_strength, shafts_length, contact_strength, contact_length, contact_sun, aerial_strength, aerial_distance, depth_unit, aniso_level, aniso_filters, mip_bias, smaa, smaa_threshold, sharpen_strength, autoexp_strength, autoexp_target, autoexp_range, adapt_up, adapt_down, localtone_strength, lens_strength, lens_threshold, lens_ghost, lens_streak_length, grade_preset, grade_saturation, grade_contrast, grade_temperature, grade_tint, grade_vibrance, grade_shadows, grade_highlights, grade_lut, grade_lut_strength, fur_strength, fur_ps, fur_vs, fur_min_vcb, fur_debug, fur_uv, fur_occlusion, fur_amp, fur_scale, fur_length, fur_detail, fur_rim, fur_sss, fur_view, rim_strength, rim_width, subsurface_strength, rim_ps, rim_min_vcb, rim_debug, dev_capture_seconds, dev_compare, dev_hot_reload, debug_view, photo_hide_ui, calibration_pattern);
+    live!(enabled, paper_white_nits, peak_nits, sdr_gamma, bloom_strength, highlight_boost, ao_strength, ao_radius, halo_strength, halo_radius, ssr_strength, ssr_range, ssr_classes, ssr_smart, ssr_hue_filter, ssr_flatness, ssr_water_boost, water_depth_look, ssr_matte_cut, shafts_strength, shafts_length, contact_strength, contact_length, contact_sun, aerial_strength, aerial_distance, depth_unit, aniso_level, aniso_filters, mip_bias, smaa, smaa_threshold, sharpen_strength, autoexp_strength, autoexp_target, autoexp_range, adapt_up, adapt_down, localtone_strength, lens_strength, lens_threshold, lens_ghost, lens_streak_length, lens_max_size, lens_color_reject, grade_preset, grade_saturation, grade_contrast, grade_temperature, grade_tint, grade_vibrance, grade_shadows, grade_highlights, grade_lut, grade_lut_strength, fur_strength, fur_ps, fur_vs, fur_min_vcb, fur_debug, fur_uv, fur_occlusion, fur_amp, fur_scale, fur_length, fur_detail, fur_rim, fur_sss, fur_view, rim_strength, rim_width, subsurface_strength, rim_ps, rim_min_vcb, rim_debug, dev_capture_seconds, dev_compare, dev_hot_reload, debug_view, photo_hide_ui, calibration_pattern);
     d.live.extend(crate::shellfur::ShellCfg::changed(&old.shell, &new.shell));
     d.live.extend(crate::toggles::Toggles::changed(&old.toggles, &new.toggles));
     if old.hdr_output != new.hdr_output {
@@ -606,6 +606,8 @@ pub fn merge(cur: &Config, old: &Config, new: &Config) -> (Config, Diff) {
             "lens_threshold" => c.lens_threshold = new.lens_threshold,
             "lens_ghost" => c.lens_ghost = new.lens_ghost,
             "lens_streak_length" => c.lens_streak_length = new.lens_streak_length,
+            "lens_max_size" => c.lens_max_size = new.lens_max_size,
+            "lens_color_reject" => c.lens_color_reject = new.lens_color_reject,
             "grade_preset" => c.grade_preset = new.grade_preset.clone(),
             "grade_saturation" => c.grade_saturation = new.grade_saturation,
             "grade_contrast" => c.grade_contrast = new.grade_contrast,
@@ -782,6 +784,12 @@ pub fn apply_live(keys: &[&str], cfg: &Config) {
     }
     if has("lens_streak_length") {
         crate::lens::set_streak_length(cfg.lens_streak_length);
+    }
+    if has("lens_max_size") {
+        crate::lens::set_max_size(cfg.lens_max_size);
+    }
+    if has("lens_color_reject") {
+        crate::lens::set_color_reject(cfg.lens_color_reject);
     }
     if ["grade_saturation", "grade_contrast", "grade_temperature", "grade_tint", "grade_vibrance", "grade_shadows", "grade_highlights"].iter().any(|k| has(k)) {
         crate::grading::set(cfg.grade());
@@ -1443,6 +1451,8 @@ pub fn settings_text(label: &str, frame: u64, screen: (u32, u32), fmt: u32) -> S
     kv("lens_threshold", format!("{}", crate::lens::threshold()));
     kv("lens_ghost", format!("{}", crate::lens::ghost()));
     kv("lens_streak_length", format!("{}", crate::lens::streak_length()));
+    kv("lens_max_size", format!("{}", crate::lens::max_size()));
+    kv("lens_color_reject", format!("{}", crate::lens::color_reject()));
     let g = crate::grading::get();
     kv("grade_saturation", format!("{}", g.saturation));
     kv("grade_contrast", format!("{}", g.contrast));

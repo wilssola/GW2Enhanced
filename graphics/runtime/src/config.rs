@@ -108,6 +108,11 @@ pub struct Config {
     pub lens_ghost: f32,
     /// Length of the horizontal streak (1 = a sixth of the picture width each side).
     pub lens_streak_length: f32,
+    /// Largest diameter of a lens source as a share of the picture height; bigger bright areas (glowing creatures, bright walls)
+    /// are not sources. 0 = no size test.
+    pub lens_max_size: f32,
+    /// How much brighter a saturated cool (blue, cyan, violet, green) source must be: 0 = colour ignored .. 1.
+    pub lens_color_reject: f32,
     /// Colour grading (docs/grading.md): a preset name applied at load before the individual keys (empty = none).
     pub grade_preset: String,
     pub grade_saturation: f32,
@@ -238,6 +243,8 @@ impl Default for Config {
             lens_threshold: crate::lens::DEFAULT_THRESHOLD,
             lens_ghost: crate::lens::DEFAULT_GHOST,
             lens_streak_length: crate::lens::DEFAULT_LENGTH,
+            lens_max_size: crate::lens::DEFAULT_MAX_SIZE,
+            lens_color_reject: crate::lens::DEFAULT_COLOR_REJECT,
             grade_preset: String::new(),
             grade_saturation: 1.0,
             grade_contrast: 1.0,
@@ -424,6 +431,8 @@ impl Config {
                 "lens_threshold" => c.lens_threshold = num(v, 1.2, 8.0, d.lens_threshold),
                 "lens_ghost" => c.lens_ghost = num(v, 0.0, 0.5, d.lens_ghost),
                 "lens_streak_length" => c.lens_streak_length = num(v, 0.25, 2.0, d.lens_streak_length),
+                "lens_max_size" => c.lens_max_size = num(v, 0.0, 0.2, d.lens_max_size),
+                "lens_color_reject" => c.lens_color_reject = num(v, 0.0, 1.0, d.lens_color_reject),
                 "grade_saturation" => c.grade_saturation = num(v, 0.0, 2.0, d.grade_saturation),
                 "grade_contrast" => c.grade_contrast = num(v, 0.5, 1.5, d.grade_contrast),
                 "grade_temperature" => c.grade_temperature = num(v, -1.0, 1.0, d.grade_temperature),
@@ -686,13 +695,18 @@ impl Config {
                 "localtone_strength={}\n",
                 "\n",
                 "# Lens effects (docs/lens.md), on the 3D scene before the UI, HDR output only: horizontal streaks and a soft glare from HDR highlights, and\n",
-                "# subtle ghost flares for VERY bright point sources only. lens_strength 0..1 (0.35 = default, 0 = off, bit-identical, no passes),\n",
+                "# subtle ghost flares for VERY bright point sources only. lens_strength 0..1 (0.15 = default, 0 = off, bit-identical, no passes),\n",
                 "# lens_threshold 1.2..8 (4 = default: energy above this many times paper white of the scene before the highlight boost; white sand never\n",
-                "# triggers), lens_ghost 0..0.5 (0.15 = default, 0 = no ghosts), lens_streak_length 0.25..2 (1 = default). Never saturated blue, adds at most 0.6 of paper white.\n",
+                "# triggers), lens_ghost 0..0.5 (0.05 = default, 0 = no ghosts), lens_streak_length 0.25..2 (0.6 = default). Never saturated blue, adds at most 0.6 of paper white.\n",
+                "# Only compact light sources count: lens_max_size 0..0.2 (0.04 = default) is the largest source diameter as a share of the picture\n",
+                "# height; bigger bright areas (glowing creatures, bright walls) get no flare, 0 = no size test. lens_color_reject 0..1 (0.5 = default):\n",
+                "# saturated blue / cyan / violet / green glows need up to 1 + 4 x this times the threshold (white and warm lights are not affected).\n",
                 "lens_strength={}\n",
                 "lens_threshold={}\n",
                 "lens_ghost={}\n",
                 "lens_streak_length={}\n",
+                "lens_max_size={}\n",
+                "lens_color_reject={}\n",
                 "\n",
                 "# Colour grading (docs/grading.md), on the 3D scene before the UI (never the UI), all neutral by default (= off, bit-identical).\n",
                 "# grade_preset = Original | Warm cinematic | Cool | Vivid | Soft (applied at load when set; the keys below override it).\n",
@@ -729,7 +743,7 @@ impl Config {
                 "photo_key={}\n",
                 "photo_hide_ui={}\n",
             ),
-            self.enabled, hdr, fmt, self.paper_white_nits, self.peak_nits, self.bloom_strength, self.highlight_boost, self.ao_strength, self.ao_radius, self.halo_strength, self.halo_radius, self.ssr_strength, self.ssr_range, self.ssr_classes, self.ssr_smart, self.ssr_hue_filter, self.ssr_flatness, self.ssr_water_boost, self.water_depth_look, self.ssr_matte_cut, self.shafts_strength, self.shafts_length, self.contact_strength, self.contact_length, self.contact_sun, self.aerial_strength, self.aerial_distance, self.depth_unit, self.fur_strength, self.fur_ps, self.fur_vs, self.fur_min_vcb, self.fur_debug as u8, self.fur_uv, self.fur_occlusion, self.fur_amp, self.fur_scale, self.fur_length, self.fur_detail, self.fur_rim, self.fur_sss, self.rim_strength, self.rim_width, self.subsurface_strength, self.rim_ps, self.rim_min_vcb, self.rim_debug as u8, self.aniso_level, self.aniso_filters, self.mip_bias, self.smaa as u8, self.smaa_threshold, self.sharpen_strength, self.autoexp_strength, self.autoexp_target, self.autoexp_range, self.adapt_up, self.adapt_down, self.localtone_strength, self.lens_strength, self.lens_threshold, self.lens_ghost, self.lens_streak_length, self.grade_preset, self.grade_saturation, self.grade_contrast, self.grade_temperature, self.grade_tint, self.grade_vibrance, self.grade_shadows, self.grade_highlights, self.grade_lut, self.grade_lut_strength, self.overlay_key, self.dev_capture_seconds, self.dev_compare as u8, self.dev_hot_reload as u8, self.photo_key, self.photo_hide_ui as u8
+            self.enabled, hdr, fmt, self.paper_white_nits, self.peak_nits, self.bloom_strength, self.highlight_boost, self.ao_strength, self.ao_radius, self.halo_strength, self.halo_radius, self.ssr_strength, self.ssr_range, self.ssr_classes, self.ssr_smart, self.ssr_hue_filter, self.ssr_flatness, self.ssr_water_boost, self.water_depth_look, self.ssr_matte_cut, self.shafts_strength, self.shafts_length, self.contact_strength, self.contact_length, self.contact_sun, self.aerial_strength, self.aerial_distance, self.depth_unit, self.fur_strength, self.fur_ps, self.fur_vs, self.fur_min_vcb, self.fur_debug as u8, self.fur_uv, self.fur_occlusion, self.fur_amp, self.fur_scale, self.fur_length, self.fur_detail, self.fur_rim, self.fur_sss, self.rim_strength, self.rim_width, self.subsurface_strength, self.rim_ps, self.rim_min_vcb, self.rim_debug as u8, self.aniso_level, self.aniso_filters, self.mip_bias, self.smaa as u8, self.smaa_threshold, self.sharpen_strength, self.autoexp_strength, self.autoexp_target, self.autoexp_range, self.adapt_up, self.adapt_down, self.localtone_strength, self.lens_strength, self.lens_threshold, self.lens_ghost, self.lens_streak_length, self.lens_max_size, self.lens_color_reject, self.grade_preset, self.grade_saturation, self.grade_contrast, self.grade_temperature, self.grade_tint, self.grade_vibrance, self.grade_shadows, self.grade_highlights, self.grade_lut, self.grade_lut_strength, self.overlay_key, self.dev_capture_seconds, self.dev_compare as u8, self.dev_hot_reload as u8, self.photo_key, self.photo_hide_ui as u8
         )
     }
 
@@ -1239,6 +1253,8 @@ subsurface_strength=nan");
             lens_threshold: 4.0,
             lens_ghost: 0.3,
             lens_streak_length: 1.5,
+            lens_max_size: 0.07,
+            lens_color_reject: 0.8,
             grade_preset: "Cool".to_string(),
             grade_saturation: 1.3,
             grade_contrast: 1.1,

@@ -117,6 +117,8 @@ pub fn init() {
     lens::set_threshold(cfg.lens_threshold);
     lens::set_ghost(cfg.lens_ghost);
     lens::set_streak_length(cfg.lens_streak_length);
+    lens::set_max_size(cfg.lens_max_size);
+    lens::set_color_reject(cfg.lens_color_reject);
     grading::init(&data, cfg.grade(), &cfg.grade_lut, cfg.grade_lut_strength);
     look::init();
     datapath::set_fur(cfg.fur_strength);

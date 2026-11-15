@@ -599,6 +599,14 @@ impl Overlay {
         if ui.slider("Streak length", ln::LENGTH_RANGE.0, ln::LENGTH_RANGE.1, &mut l) {
             self.cfg.lens_streak_length = ln::set_streak_length(l);
         }
+        let (mut z, mut c) = (self.cfg.lens_max_size, self.cfg.lens_color_reject);
+        if ui.slider("Largest source size (share of height)", ln::MAX_SIZE_RANGE.0, ln::MAX_SIZE_RANGE.1, &mut z) {
+            self.cfg.lens_max_size = ln::set_max_size(z);
+        }
+        if ui.slider("Reject coloured glows", ln::COLOR_REJECT_RANGE.0, ln::COLOR_REJECT_RANGE.1, &mut c) {
+            self.cfg.lens_color_reject = ln::set_color_reject(c);
+        }
+        help(ui, "Only compact light sources (fire, lamps, candles, the sun) get a flare: a bright area bigger than the largest source size (a glowing creature, a bright wall) gets none, 0 = no size test. Saturated blue, cyan, violet or green glows must be brighter (up to 1 + 4 x the reject value times the threshold); white and warm lights are not affected.");
         help(ui, "Strength 0 turns the whole feature off (no passes). Horizontal streaks and a soft glare from HDR highlights above the threshold (measured before the highlight boost, so white sand and snow never trigger); ghost flares only for very bright point sources (2x the threshold), 0 = no ghosts. Warm white, never blue; adds at most 0.6 of paper white. HDR output only. Applies live; Save keeps it.");
         ui.text_wrapped(format!("Status: {}", crate::look::status_lens()));
     }
