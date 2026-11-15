@@ -119,7 +119,7 @@ $target = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).targe
 if ($LASTEXITCODE) { throw 'cargo metadata failed' }
 $release = Join-Path $target 'release'
 
-$tools = @('-p', 'gw2translated-installer')
+$tools = @('-p', 'gw2enhanced-installer')
 if ($needTranslator) { $tools += '-p', 'gw2translated-translator' }
 Invoke-Checked 'cargo build (installer, translator)' { cargo build --release --locked @tools }
 
