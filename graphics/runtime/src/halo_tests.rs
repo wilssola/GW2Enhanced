@@ -277,6 +277,19 @@ fn a_bright_neutral_spot_on_a_mid_bright_area_glows_but_full_screen_white_does_n
 }
 
 #[test]
+fn a_sunlit_white_character_on_a_dark_floor_makes_no_glow() {
+    let Some(g) = gpu() else { return };
+    // A white coat / armour in the sun (slightly warm, up to 1.4x paper white), character-sized, on a dark wooden floor:
+    // a lit surface, not a light. It must not get an aura; a lamp of the same size and place still glows.
+    let body = |c: [f32; 3]| move |x: usize, y: usize| if (50..80).contains(&x) && (30..100).contains(&y) { c } else { [0.2, 0.15, 0.1] };
+    let lit = run_halo(&g, &scene(&g, body([1.4, 1.3, 1.15])), 2.0);
+    let lamp = run_halo(&g, &scene(&g, body([4.0, 3.2, 2.0])), 2.0);
+    println!("halo sunlit white body: max {}, lamp-bright body: max {}", lit.max_lum(), lamp.max_lum());
+    assert!(lit.max_lum() < 1e-3, "a sunlit white character glows: {}", lit.max_lum());
+    assert!(lamp.max_lum() > 0.1, "a lamp-bright area must still glow: {}", lamp.max_lum());
+}
+
+#[test]
 fn the_radius_widens_the_halo() {
     let Some(g) = gpu() else { return };
     let s = scene(&g, block2(ORANGE));

@@ -11,7 +11,9 @@
 //
 // Source energy of a pixel (linear light, m = largest channel, chroma = (max - min) / max):
 //   e = max(m - 0.6, 0) * saturate(2 * chroma)                 saturated bright things (fire, lamps, magic)
-//     + max(m - max(0.9, 1.6 * local_mean), 0)                 small bright neutral spots; big areas (sky) do not
+//     + max(m - max(1.6, 1.6 * local_mean), 0)                 bright neutral spots above 1.6x paper white; a sunlit
+//       white coat or armour (about 1.0 .. 1.4) and big areas (sky) do not; colour counts only from chroma 0.25 on
+//       (a white surface under warm light has about 0.1 .. 0.2)
 //   clamped to 8; the colour keeps the pixel's hue: source = linear * e / m.
 // light_adjust_hdr.hlsl has a copy of source_of() for its debug view: keep both identical.
 //
@@ -71,7 +73,7 @@ float3 source_of(float3 lin, float mean)
     float m = max(max(lin.r, lin.g), lin.b);
     float mn = min(min(lin.r, lin.g), lin.b);
     float chroma = m > 0.0001 ? (m - mn) / m : 0.0;
-    float e = max(m - 0.6, 0.0) * saturate(2.0 * chroma) + max(m - max(0.9, 1.6 * mean), 0.0);
+    float e = max(m - 0.6, 0.0) * saturate(2.5 * (chroma - 0.25)) + max(m - max(1.6, 1.6 * mean), 0.0);
     e = min(e, 8.0);
     return m > 0.0001 ? lin * (e / m) : float3(0.0, 0.0, 0.0);
 }
