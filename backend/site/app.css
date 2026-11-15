@@ -390,6 +390,9 @@ main { max-width: calc(var(--wrap) + 32px); margin: 0 auto; padding: 0 16px 64px
 .vote { min-height: 36px; padding: 8px 12px; font-size: .9rem; }
 .vote .up { color: #e8c977; }
 .vote .down { color: #ffa196; }
+.vote:disabled { opacity: .55; cursor: default; }
+.vote.voted, .vote.voted:disabled { opacity: 1; outline: 2px solid #e8c977; outline-offset: 1px; }
+.vote.voted::after { content: " · Seu voto"; font-size: .8rem; color: #e8c977; }
 .chip { color: var(--ink-muted); font: 600 .8125rem/1 var(--label); letter-spacing: .08em; text-transform: uppercase; border: 1px solid rgba(42, 36, 32, .35); }
 .chip span { display: inline-block; padding: 5px 7px; }
 .chip span + span { background: rgba(42, 36, 32, .1); color: var(--ink); }

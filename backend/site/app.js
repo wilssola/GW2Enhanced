@@ -89,7 +89,9 @@
     try { body = await r.json(); } catch (_) { /* not JSON */ }
     if (!r.ok) {
       const code = body && typeof body.error === "string" ? body.error.split(":")[0] : "";
-      throw new Error(Object.prototype.hasOwnProperty.call(ERRORS, code) ? ERRORS[code] : "Algo deu errado (" + r.status + "). Tente de novo.");
+      const err = new Error(Object.prototype.hasOwnProperty.call(ERRORS, code) ? ERRORS[code] : "Algo deu errado (" + r.status + "). Tente de novo.");
+      err.code = code;
+      throw err;
     }
     return body;
   }
@@ -133,16 +135,40 @@
     } catch (_) { /* metrics are optional */ }
   }
 
-  // Vote buttons; after a vote their counts are updated from the answer (the list itself is cached for a while).
+  // The votes cast from this browser (translation id -> 1 / -1), so a voted item stays marked after the list is fetched
+  // again or the page is reloaded. Storage may be unavailable (private mode): then it lasts as long as the page.
+  const VOTED_KEY = "gw2e-voted";
+  const voted = (() => {
+    try { const v = JSON.parse(localStorage.getItem(VOTED_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (_) { return {}; }
+  })();
+  function rememberVote(id, value) {
+    voted[id] = value;
+    try { localStorage.setItem(VOTED_KEY, JSON.stringify(voted)); } catch (_) { /* storage unavailable */ }
+  }
+
+  // Vote buttons. A vote updates its counts in place from the answer and marks the chosen button; nothing else is
+  // redrawn, so the list stays where it is.
   function voteButtons(t) {
     const upN = text("span", "up", "▲ " + num(t.up));
     const downN = text("span", "down", "▼ " + num(t.down));
-    const done = (r) => {
-      if (typeof r.up === "number") upN.textContent = "▲ " + num(r.up);
-      if (typeof r.down === "number") downN.textContent = "▼ " + num(r.down);
+    const up = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar a favor", title: "Boa tradução" }, upN);
+    const down = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar contra", title: "Tradução ruim" }, downN);
+    const mark = (value) => {
+      for (const [b, v] of [[up, 1], [down, -1]]) {
+        b.disabled = true;
+        b.classList.toggle("voted", v === value);
+        if (v === value) { b.setAttribute("aria-pressed", "true"); b.title = "Seu voto"; }
+      }
     };
-    const up = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar a favor", title: "Boa tradução", onclick: () => vote(t.id, 1, done) }, upN);
-    const down = el("button", { class: "gbtn vote", type: "button", "aria-label": "Votar contra", title: "Tradução ruim", onclick: () => vote(t.id, -1, done) }, downN);
+    const done = (r, value) => {
+      if (r && typeof r.up === "number") upN.textContent = "▲ " + num(r.up);
+      if (r && typeof r.down === "number") downN.textContent = "▼ " + num(r.down);
+      rememberVote(t.id, value);
+      mark(value);
+    };
+    up.onclick = () => vote(t.id, 1, done);
+    down.onclick = () => vote(t.id, -1, done);
+    if (voted[t.id] === 1 || voted[t.id] === -1) mark(voted[t.id]);
     return [up, down];
   }
 
@@ -273,7 +299,18 @@
       if (seq !== state.seq) return;
       state.total = typeof r.total === "number" ? r.total : null;
       state.more = r.more === true || typeof r.next_cursor === "string";
-      list.replaceChildren(...r.items.map(render));
+      // Revalidation without a full redraw: a card whose data did not change keeps its node (scroll position, an open
+      // "Outras traduções", focus and vote marks stay); only new or changed cards are built.
+      const old = new Map();
+      for (const c of list.children) if (c.dataset && c.dataset.sig) old.set(c.dataset.sig, c);
+      list.replaceChildren(...r.items.map((item) => {
+        const sig = JSON.stringify(item);
+        const keep = old.get(sig);
+        if (keep) return keep;
+        const card = render(item);
+        card.dataset.sig = sig;
+        return card;
+      }));
       if (!r.items.length) {
         list.append(text("div", "msg", state.p > 1 ? "Esta página está vazia." : state.q ? "Nada encontrado." : "Nenhum texto ainda."));
       }
@@ -357,8 +394,15 @@
     ask(value > 0 ? "Votar a favor desta tradução" : "Votar contra esta tradução",
       [text("p", "note", "Confirme que você é humano para registrar o voto.")], null,
       async (token) => {
-        const r = await api("/v1/votes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ translation_id: id, value, turnstile: token }) });
-        if (r && done) done(r);
+        let r;
+        try {
+          r = await api("/v1/votes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ translation_id: id, value, turnstile: token }) });
+        } catch (e) {
+          // Voted before (another visit, another browser on the same network): mark it and close, it is not an error.
+          if (e.code === "already_voted") { if (done) done(null, value); toast(e.message); return; }
+          throw e;
+        }
+        if (done) done(r, value);
         toast("Voto registrado. Obrigado!");
       });
   }
