@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GW2 Enhanced — Guild Wars 2 em português, em HD e com gráficos melhorados</title>
-<meta name="description" content="Mod para Guild Wars 2 num único arquivo: tradução para português feita pela comunidade, texturas em HD e gráficos com HDR, oclusão de ambiente e reflexos.">
-<meta name="color-scheme" content="light dark">
+<meta name="description" content="Mod gratuito para Guild Wars 2: o jogo inteiro em português do Brasil, texturas em HD e gráficos mais bonitos. Tudo num único mod, sem alterar nenhum arquivo do jogo.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0b0b">
 <link rel="preload" href="/fonts/cinzel.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/eb-garamond.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/app.css">
@@ -39,124 +40,161 @@
   </defs>
 </svg>
 
-<div class="utility">
-  <nav class="utility-links" aria-label="Links">
-    <a href="/v1/download">Baixar o mod</a>
-    <a href="https://github.com/wilssola/GW2Enhanced">Código-fonte</a>
+<a class="skip" href="#recursos">Pular para o conteúdo</a>
+
+<div class="topbar">
+  <a class="topbar-brand" href="#topo"><i class="seal" aria-hidden="true">E</i>GW2 Enhanced</a>
+  <nav class="topnav" aria-label="Atalhos">
+    <a href="#traducao">Tradução</a>
+    <a href="#texturas">Texturas</a>
+    <a href="#graficos">Gráficos</a>
     <a href="#instalar">Instalação</a>
+    <a href="https://github.com/wilssola/GW2Enhanced">Código-fonte</a>
   </nav>
   <span class="tag" aria-label="Idioma: português do Brasil"><span>Idioma</span><b>PT-BR</b></span>
+  <a class="gbtn primary topbar-dl" href="/v1/download">Baixar</a>
 </div>
 
-<header class="masthead">
+<header class="masthead" id="topo">
   <svg class="stroke" viewBox="0 0 1200 300" preserveAspectRatio="none" aria-hidden="true" focusable="false">
     <path filter="url(#brush)" fill="url(#red)" d="M-40 40 C 180 10, 420 30, 640 22 S 1000 8, 1110 30 L 1100 205 C 900 236, 640 222, 420 246 S 90 262, -40 236 Z"/>
     <path filter="url(#drybrush)" fill="#7d0b08" opacity=".55" d="M-20 196 C 220 214, 520 196, 760 206 S 1010 196, 1080 186 L 1078 214 C 860 236, 520 228, 260 246 S 40 252, -20 240 Z"/>
     <path filter="url(#drybrush)" fill="#ff5a3c" opacity=".22" d="M40 58 C 300 44, 560 60, 820 48 L 820 70 C 560 84, 300 70, 40 86 Z"/>
     <path filter="url(#brush)" fill="#111" d="M880 10 C 980 0, 1120 6, 1240 0 L 1240 248 C 1140 258, 1040 236, 960 250 C 1010 190, 1000 120, 1040 70 C 990 60, 920 40, 880 10 Z"/>
   </svg>
+  <div class="embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div class="masthead-inner">
     <div class="brand">
-      <p class="kicker">Mod para Guild Wars 2</p>
+      <p class="kicker">Mod gratuito para Guild Wars 2</p>
       <h1>GW2 Enhanced</h1>
-      <p class="tagline">Português, texturas em HD e gráficos melhorados. Tudo num único mod, sem alterar nenhum arquivo do jogo.</p>
+      <p class="tagline">O jogo em português, com texturas em HD e gráficos mais bonitos. Tudo num único mod, e nenhum arquivo do jogo é alterado.</p>
+      <div class="hero-actions">
+        <a class="play" href="/v1/download"><span>Baixar agora</span></a>
+        <a class="gbtn ghost" href="#recursos">Conhecer o mod</a>
+      </div>
     </div>
     <nav class="mainnav" aria-label="Seções">
       <a href="#traducao">Tradução</a>
-      <a href="#texturas">Texturas</a>
+      <a href="#texturas">Texturas HD</a>
       <a href="#graficos">Gráficos</a>
-      <a class="cta" href="/v1/download">Baixar agora</a>
     </nav>
   </div>
 </header>
 
 <main>
+  <ul class="promises reveal-group" aria-label="Em resumo">
+    <li class="reveal"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg><span>Nenhum arquivo do jogo é alterado</span></li>
+    <li class="reveal"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="16" cy="12" r="2.2"/></svg><span>Cada recurso liga e desliga</span></li>
+    <li class="reveal"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span>Atualiza sozinho, se você quiser</span></li>
+    <li class="reveal"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10z"/></svg><span>Grátis e de código aberto</span></li>
+  </ul>
+
   <section id="recursos" class="section" aria-labelledby="t-recursos">
-    <p class="kicker">Um mod, três recursos</p>
-    <h2 id="t-recursos">Tudo num único mod</h2>
-    <div class="divider" aria-hidden="true"></div>
-    <p class="lead">Instale uma vez e use o que quiser: cada recurso funciona sozinho ou junto com os outros, e cada um pode ser ligado e desligado a qualquer momento. Nenhum arquivo do jogo é alterado, e desinstalar deixa o jogo exatamente como era.</p>
-    <div class="features">
-      <a class="feature paper" href="#traducao">
-        <svg class="icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M6 9h24v17H17l-7 6v-6H6z"/><path d="M24 22h18v15h-3v5l-6-5h-9z"/><path d="M12 15h12M18 12v3c0 4-3 7-6 8M15 18c1 2 4 4 7 5"/><path d="M29 34l4-9 4 9M30.5 31h5"/></svg>
-        <span class="feature-kicker">Recurso 1</span>
+    <header class="sec-head reveal">
+      <p class="kicker">Um mod, três recursos</p>
+      <h2 id="t-recursos">Tudo num único mod</h2>
+      <div class="divider" aria-hidden="true"></div>
+      <p class="lead">Instale uma vez e use o que quiser. Cada recurso funciona sozinho ou junto com os outros e pode ser ligado e desligado a qualquer momento. Desinstalou, o jogo volta a ser exatamente como era.</p>
+    </header>
+    <div class="features reveal-group">
+      <a class="feature paper reveal" href="#traducao">
+        <span class="medallion" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M6 9h24v17H17l-7 6v-6H6z"/><path d="M24 22h18v15h-3v5l-6-5h-9z"/><path d="M12 15h12M18 12v3c0 4-3 7-6 8M15 18c1 2 4 4 7 5"/><path d="M29 34l4-9 4 9M30.5 31h5"/></svg></span>
+        <span class="feature-kicker">Recurso I</span>
         <h3>Tradução</h3>
-        <p>Os textos do jogo em português do Brasil, trocados na memória enquanto você joga. O que o dicionário ainda não tem é traduzido no seu próprio PC.</p>
-        <span class="more-link">Ver a tradução</span>
+        <p>O jogo inteiro em português do Brasil, com um dicionário feito pela comunidade. O que ainda falta é traduzido na hora, no seu próprio PC.</p>
+        <span class="feature-foot"><span class="switch" aria-hidden="true"></span><span class="more-link">Ver a tradução</span></span>
       </a>
-      <a class="feature paper" href="#texturas">
-        <svg class="icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path d="M5 9h16v30H5z"/><path d="M27 9h16v30H27z"/><path d="M5 19h16M5 29h16M13 9v30"/><path d="M27 14h16M27 19h16M27 24h16M27 29h16M27 34h16M32 9v30M38 9v30"/></svg>
-        <span class="feature-kicker">Recurso 2</span>
+      <a class="feature paper reveal" href="#texturas">
+        <span class="medallion" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M5 9h16v30H5z"/><path d="M27 9h16v30H27z"/><path d="M5 19h16M5 29h16M13 9v30"/><path d="M27 14h16M27 19h16M27 24h16M27 29h16M27 34h16M32 9v30M38 9v30"/></svg></span>
+        <span class="feature-kicker">Recurso II</span>
         <h3>Texturas HD</h3>
-        <p>As texturas do próprio jogo, ampliadas e mais nítidas de perto. Mesmas cores, mesmo estilo pintado à mão: nada é redesenhado.</p>
-        <span class="more-link">Ver a comparação</span>
+        <p>As texturas do próprio jogo, bem mais nítidas de perto. Mesmas cores e o mesmo estilo pintado à mão: nada é redesenhado.</p>
+        <span class="feature-foot"><span class="switch" aria-hidden="true"></span><span class="more-link">Ver a comparação</span></span>
       </a>
-      <a class="feature paper" href="#graficos">
-        <svg class="icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><circle cx="24" cy="24" r="8"/><path d="M24 4v7M24 37v7M4 24h7M37 24h7M10 10l5 5M33 33l5 5M38 10l-5 5M15 33l-5 5"/></svg>
-        <span class="feature-kicker">Recurso 3</span>
+      <a class="feature paper reveal" href="#graficos">
+        <span class="medallion" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><circle cx="24" cy="24" r="8"/><path d="M24 4v7M24 37v7M4 24h7M37 24h7M10 10l5 5M33 33l5 5M38 10l-5 5M15 33l-5 5"/></svg></span>
+        <span class="feature-kicker">Recurso III</span>
         <h3>Gráficos</h3>
-        <p>HDR de verdade, bloom, oclusão de ambiente, reflexos, raios de luz, correção de cor e modo foto, por cima do renderizador do jogo.</p>
-        <span class="more-link">Ver os efeitos</span>
+        <p>Iluminação mais bonita, HDR de verdade e efeitos modernos, feitos dentro do próprio jogo e leves para o seu computador.</p>
+        <span class="feature-foot"><span class="switch" aria-hidden="true"></span><span class="more-link">Ver os efeitos</span></span>
       </a>
     </div>
   </section>
 
   <!-- ===================== Tradução ===================== -->
-  <section id="traducao" class="section feature-section" aria-labelledby="t-traducao">
-    <p class="kicker">Recurso 1</p>
-    <h2 id="t-traducao">Tradução para português</h2>
-    <div class="divider" aria-hidden="true"></div>
-    <div class="split">
-      <div class="paper prose">
-        <p>O jogo inteiro em português do Brasil: missões, diálogos, itens, habilidades, interface e até as páginas do Trading Post, da Gem Store e do Wizard's Vault. O mod já vem com um dicionário de cerca de 205 mil textos, e o que ainda falta é traduzido na hora, no seu próprio computador.</p>
-        <p>A tradução não precisa caber no espaço do texto em inglês, e textos protegidos do jogo também são traduzidos assim que o servidor libera a chave deles. Com o jogo em outro idioma (espanhol, por exemplo), tudo o que tem tradução aparece em português e o resto fica no idioma do jogo. O chat entre jogadores nunca é traduzido, salvo nem enviado.</p>
+  <section id="traducao" class="section feature-section" data-num="I" aria-labelledby="t-traducao">
+    <header class="sec-head reveal">
+      <p class="kicker">Recurso I</p>
+      <h2 id="t-traducao">Tradução para português</h2>
+      <div class="divider" aria-hidden="true"></div>
+      <p class="lead">Missões, diálogos, itens, habilidades, interface e até o Trading Post, a Gem Store e o Wizard's Vault: o jogo inteiro em português do Brasil.</p>
+    </header>
+
+    <div class="points reveal-group">
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M8 7h7M8 11h5"/></svg>
+        <h3>Dicionário da comunidade</h3>
+        <p>O mod já vem com cerca de 205 mil textos traduzidos, revisados e votados pelos próprios jogadores aqui no site. Todo dia sai uma versão nova com as melhores traduções.</p>
       </div>
-      <aside class="paper card-dl" aria-labelledby="t-dl-tr">
-        <h3 id="t-dl-tr">Qual pacote baixar</h3>
-        <dl class="pkgs">
-          <dt>Translation-CPU</dt><dd>tradutor no processador (o menor)</dd>
-          <dt>Translation-CUDA</dt><dd>placas NVIDIA</dd>
-          <dt>Translation-DirectML</dt><dd>qualquer placa DirectX 12 (AMD, Intel, NVIDIA)</dd>
-          <dt>Translation</dt><dd>todos os modos acima</dd>
-        </dl>
-        <a class="cta" href="https://github.com/wilssola/GW2Enhanced/releases/latest">Baixar a tradução</a>
-      </aside>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/><path d="M7 10h3M12 8l2 4 2-4"/></svg>
+        <h3>Traduz no seu PC</h3>
+        <p>O que o dicionário ainda não tem é traduzido na hora por um modelo de tradução que roda no seu computador, sem internet, no processador ou na placa de vídeo.</p>
+      </div>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 11V7a5 5 0 0 1 10 0v4"/><path d="M12 11v10M8 17l4 4 4-4"/></svg>
+        <h3>Ajude, se quiser</h3>
+        <p>Só com a sua permissão, o mod envia os textos que encontrou para melhorar o dicionário. Nada entra direto: tudo é conferido e votado pela comunidade antes.</p>
+      </div>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <h3>Sempre a versão oficial</h3>
+        <p>Cada nova versão da tradução é conferida pelo mod, para garantir que veio mesmo deste site antes de ser usada.</p>
+      </div>
     </div>
 
-    <div id="como-funciona" class="sub" aria-labelledby="t-how-tr">
-      <p class="kicker">Como funciona</p>
-      <h3 id="t-how-tr">Do texto em inglês ao português na tela</h3>
-      <ol class="steps">
-        <li class="paper"><b>Troca na memória</b><span>Quando o jogo monta um texto para mostrar, o mod entrega a versão em português no lugar. A troca é feita pelo número de cada texto e só na memória: o <code>Gw2.dat</code> nunca é alterado.</span></li>
-        <li class="paper"><b>Dicionário da comunidade</b><span>As traduções vêm de um dicionário, o mesmo que você vê e vota nesta página. O mod já vem com o dicionário completo, e cada nova versão publicada aqui é assinada digitalmente (Ed25519), para garantir que veio mesmo deste site.</span></li>
-        <li class="paper"><b>Tradução local</b><span>O que o dicionário ainda não tem é traduzido no seu PC, sem internet, por um modelo de tradução automática (OPUS-MT, rodando no CTranslate2): no processador ou na placa de vídeo, com CUDA (NVIDIA) ou DirectML (qualquer placa DirectX 12). Diálogos do mapa são traduzidos antes de aparecer, e um balão de fala fica um pouco mais na tela enquanto a tradução é feita.</span></li>
-        <li class="paper"><b>Envio opcional</b><span>Só se você aceitar (o mod pergunta na primeira vez), ele envia para este site os textos em inglês que encontrou, com o número de cada um, e as traduções feitas no seu PC. Dá para mudar quando quiser no painel, em “Ajudar a melhorar a tradução”.</span></li>
-        <li class="paper"><b>Revisão</b><span>Nada enviado entra direto. Tudo passa por verificação de regras (marcações do jogo, links, tamanho); um texto em inglês só é aceito quando jogadores diferentes enviam o mesmo ou quando a revisão automática o reconhece como texto do jogo; e cada tradução passa por uma revisão automática antes de poder receber votos.</span></li>
-        <li class="paper"><b>Votos e nova versão</b><span>Aqui a comunidade compara, vota e sugere correções. A tradução mais bem votada vira a atual, e todo dia uma nova versão do dicionário é publicada com as melhores.</span></li>
-      </ol>
-      <div class="paper prose callout">
-        <h4>O que é enviado, e o que não é</h4>
-        <p><b>Enviado, só com a sua permissão:</b> o texto original em inglês, o número dele no jogo e as traduções feitas pelo tradutor do seu PC. <b>Nunca enviado:</b> o chat entre jogadores e as traduções das páginas do jogo (Trading Post, Gem Store, Wizard's Vault).</p>
-        <p>Este site não guarda endereços IP: só um código derivado deles (HMAC-SHA256 com uma chave secreta), usado para limitar abusos e garantir um voto por pessoa. Votos e sugestões pedem a verificação anti-robô da Cloudflare (Turnstile).</p>
+    <div class="privacy reveal">
+      <svg class="privacy-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10" width="14" height="11" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.5"/></svg>
+      <div>
+        <h3>Sua privacidade</h3>
+        <p><b>O chat entre jogadores nunca é lido nem enviado.</b> Se você aceitar ajudar (o mod pergunta na primeira vez), ele envia só o texto original em inglês e as traduções feitas no seu PC. As páginas do Trading Post, da Gem Store e do Wizard's Vault também não são enviadas. Dá para mudar de ideia quando quiser, no painel do mod. Este site não guarda o seu endereço IP.</p>
       </div>
     </div>
+
+    <details class="tech reveal">
+      <summary><span>Detalhes técnicos</span></summary>
+      <div class="tech-body">
+        <ul>
+          <li>O mod troca o texto na memória, pelo número de cada texto, no momento em que o jogo vai mostrá-lo. O <code>Gw2.dat</code> nunca é alterado, e com o jogo em outro idioma tudo o que tem tradução aparece em português.</li>
+          <li>A tradução não precisa caber no espaço do texto em inglês. Textos protegidos do jogo são traduzidos assim que o servidor libera a chave deles.</li>
+          <li>Cada versão do dicionário publicada aqui é assinada (Ed25519), e o mod confere a assinatura antes de usar.</li>
+          <li>O tradutor local é um modelo OPUS-MT rodando no CTranslate2, num processo separado: no processador, em placas NVIDIA (CUDA) ou em qualquer placa DirectX 12 (DirectML). Diálogos do mapa são traduzidos antes de aparecer.</li>
+          <li>Tudo o que é enviado passa por regras (marcações do jogo, links, tamanho). Um texto em inglês só é aceito quando jogadores diferentes enviam o mesmo ou quando a revisão automática o reconhece, e cada tradução é revisada antes de poder receber votos.</li>
+          <li>Em vez do IP, o site guarda só um código derivado dele (HMAC-SHA256 com chave secreta), usado para limitar abusos e garantir um voto por pessoa. Votos e sugestões pedem a verificação anti-robô da Cloudflare (Turnstile).</li>
+        </ul>
+      </div>
+    </details>
 
     <div id="metricas" class="sub" aria-labelledby="t-metricas">
-      <p class="kicker">Progresso da comunidade</p>
-      <h3 id="t-metricas">O dicionário até agora</h3>
-      <div class="plaques">
-        <div class="plaque paper"><b id="s-translated">–</b><span>dos textos traduzidos</span></div>
-        <div class="plaque paper"><b id="s-perfect">–</b><span>aprovados pela comunidade</span></div>
-        <div class="plaque paper"><b id="s-texts">–</b><span>textos conhecidos</span></div>
-        <div class="plaque paper"><b id="s-downloads">–</b><span>downloads do mod</span></div>
+      <header class="sub-head reveal">
+        <p class="kicker">Progresso da comunidade</p>
+        <h3 id="t-metricas">O dicionário até agora</h3>
+      </header>
+      <div class="plaques reveal-group">
+        <div class="plaque paper reveal"><b id="s-translated">–</b><span>dos textos traduzidos</span></div>
+        <div class="plaque paper reveal"><b id="s-perfect">–</b><span>aprovados pela comunidade</span></div>
+        <div class="plaque paper reveal"><b id="s-texts">–</b><span>textos conhecidos</span></div>
+        <div class="plaque paper reveal"><b id="s-downloads">–</b><span>downloads do mod</span></div>
       </div>
-      <div class="progress" aria-hidden="true"><i id="s-bar"></i></div>
+      <div class="progress reveal" aria-hidden="true"><i id="s-bar"></i></div>
     </div>
 
     <div id="textos" class="sub" aria-labelledby="t-textos">
-      <p class="kicker">Original e tradução lado a lado</p>
-      <h3 id="t-textos">Textos do jogo</h3>
-      <p class="hint">Compare o texto original em inglês com a tradução, vote nas melhores e sugira correções. Cada pessoa tem um voto por tradução, e as sugestões passam pela mesma revisão automática antes de aparecer.</p>
+      <header class="sub-head reveal">
+        <p class="kicker">Original e tradução lado a lado</p>
+        <h3 id="t-textos">Vote e sugira</h3>
+        <p class="hint">Compare o texto original em inglês com a tradução, vote nas melhores e sugira correções. Cada pessoa tem um voto por tradução, e as sugestões são conferidas antes de aparecer.</p>
+      </header>
       <div class="toolbar">
         <div class="tabs" role="group" aria-label="Ordenar">
           <button class="gbtn" data-sort="recent" aria-pressed="true">Recentes</button>
@@ -174,140 +212,181 @@
   </section>
 
   <!-- ===================== Texturas HD ===================== -->
-  <section id="texturas" class="section feature-section" aria-labelledby="t-texturas">
-    <p class="kicker">Recurso 2</p>
-    <h2 id="t-texturas">Texturas em HD</h2>
-    <div class="divider" aria-hidden="true"></div>
-    <div class="split">
-      <div class="paper prose">
-        <p>O pacote HD é uma <strong>remasterização das texturas do próprio jogo</strong>, não arte nova. Nada foi desenhado, pintado ou gerado do zero: cada textura HD é a textura original, ampliada (2x, e 4x para o seu próprio personagem).</p>
-        <p><strong>O estilo do jogo é mantido.</strong> O visual pintado de Guild Wars 2, as cores e os detalhes feitos à mão são da ArenaNet, e o pacote não os muda: sem recolorir, sem estilo “realista”, sem materiais novos, sem filtros. O jogo continua com a cara dele, só que mais nítido de perto.</p>
+  <section id="texturas" class="section feature-section" data-num="II" aria-labelledby="t-texturas">
+    <header class="sec-head reveal">
+      <p class="kicker">Recurso II</p>
+      <h2 id="t-texturas">Texturas em HD</h2>
+      <div class="divider" aria-hidden="true"></div>
+      <p class="lead">As texturas do próprio Guild Wars 2, ampliadas e bem mais nítidas de perto. O jogo continua com a cara dele: mesmas cores, mesmo estilo pintado à mão.</p>
+    </header>
+
+    <div class="sub sub-first" aria-labelledby="t-comp">
+      <header class="sub-head reveal">
+        <p class="kicker">Original e HD</p>
+        <h3 id="t-comp">Arraste para comparar</h3>
+        <p class="hint">À esquerda, a textura original do jogo; à direita, a mesma textura em HD. Escolha outra textura abaixo.</p>
+      </header>
+      <div class="gallery reveal" id="gallery-texturas" data-gallery="texturas"></div>
+    </div>
+
+    <div class="points reveal-group">
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 20c4-1 6-3 7-7l6-9 3 2-6 9c-3 3-6 4-10 5z"/><path d="M14 8l3 2"/></svg>
+        <h3>O estilo original</h3>
+        <p>Nada é redesenhado, recolorido ou trocado por um visual “realista”. A arte continua sendo a da ArenaNet; o pacote só a deixa mais nítida.</p>
       </div>
-      <aside class="paper card-dl" aria-labelledby="t-dl-hd">
-        <h3 id="t-dl-hd">Como instalar</h3>
-        <ol class="steps-sm">
-          <li>Baixe o pacote <b>Textures</b> (ou o <b>All</b>) nos Releases.</li>
-          <li>Baixe o pacote de texturas HD (cerca de 95 GB) no Nexus Mods: um pacote principal obrigatório e dois pacotes 4x opcionais.</li>
-          <li>Extraia tudo na pasta do jogo. O mod procura <code>GW2Remastered\pack</code> ali (ou a pasta que você escolher no painel).</li>
-        </ol>
-        <a class="cta" href="https://github.com/wilssola/GW2Enhanced/releases/latest">Baixar as texturas</a>
-      </aside>
-    </div>
-
-    <div class="sub" aria-labelledby="t-how-hd-game">
-      <p class="kicker">Como funciona</p>
-      <h3 id="t-how-hd-game">No jogo</h3>
-      <ol class="steps">
-        <li class="paper"><b>O jogo pede uma textura</b><span>Sempre que o jogo vai ler uma textura do <code>Gw2.dat</code>, o mod está no caminho, na camada de arquivos do próprio jogo.</span></li>
-        <li class="paper"><b>O mod entrega a HD</b><span>Se o pacote HD tem aquela textura, o jogo recebe a versão ampliada no lugar da original. Se não tem, recebe a original, como sempre.</span></li>
-        <li class="paper"><b>Sem conversão na hora</b><span>As texturas HD já estão no mesmo formato de GPU que o jogo espera, guardadas em poucos arquivos grandes com um índice. Nada é convertido enquanto você joga, e o <code>Gw2.dat</code> não é alterado.</span></li>
-      </ol>
-    </div>
-
-    <div class="sub" aria-labelledby="t-comp">
-      <p class="kicker">Original e HD lado a lado</p>
-      <h3 id="t-comp">Compare</h3>
-      <p class="hint">À esquerda, a textura do jogo ampliada; à direita, a mesma textura do pacote HD. São recortes das próprias texturas, não capturas do jogo. Toque numa imagem para ampliar.</p>
-      <div class="gallery" id="gallery-texturas" data-gallery="texturas"></div>
-    </div>
-
-    <div class="sub" aria-labelledby="t-how-hd">
-      <p class="kicker">Como o pacote foi feito</p>
-      <h3 id="t-how-hd">Do <code>Gw2.dat</code> ao pacote</h3>
-      <ol class="steps">
-        <li class="paper"><b>Extrair</b><span>Cada textura é lida do <code>Gw2.dat</code> (cerca de 432 mil; umas 231 mil entram no pacote), com os pixels e o formato de GPU exatos que o jogo usa.</span></li>
-        <li class="paper"><b>Classificar</b><span>Cada textura é identificada pelo que a usa (personagem, cabelo e olhos, armas e armaduras, cenário, criaturas, efeitos, terreno, interface) e recebe um tamanho-alvo. Interface, arte de cinemáticas e texturas pequenas ou já grandes ficam como estão.</span></li>
-        <li class="paper"><b>Ampliar</b><span>Texturas de cor passam pelo <a href="https://huggingface.co/Kim2091/UltraSharp">4x-UltraSharp</a>, rodando localmente na GPU. Mapas de normais, máscaras e outras texturas de dados não passam por modelo nenhum: são redimensionadas com Lanczos.</span></li>
-        <li class="paper"><b>Codificar</b><span>Cada resultado volta para o mesmo formato de bloco do jogo (BC1/BC3/BC5/BC7…), então o motor lê como se fosse a própria textura.</span></li>
-        <li class="paper"><b>Empacotar</b><span>Os resultados ficam em poucos arquivos grandes com um índice, que o mod lê quando o jogo pede uma textura.</span></li>
-      </ol>
-      <div class="paper prose callout">
-        <h4>É IA generativa?</h4>
-        <p>Não, não no sentido usual. O 4x-UltraSharp é uma rede de super-resolução da arquitetura ESRGAN (um ampliador convolucional de imagem para imagem): a única entrada é a textura original, não há prompt nem modelo de texto, e ele não cria conteúdo que já não esteja lá. Rodado duas vezes na mesma textura, dá o mesmo resultado. Ele <em>aguça e reconstrói detalhes finos</em> (bordas, granulado, padrões pequenos) que um redimensionamento simples borraria. As formas, cores, composição e o design de cada textura continuam da ArenaNet.</p>
-        <p class="small">4x-UltraSharp é de Kim2091, sob <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>: o pacote HD é gratuito e não comercial.</p>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5M9 11h4M11 9v4"/></svg>
+        <h3>Não é IA generativa</h3>
+        <p>As texturas foram ampliadas por um programa de super-resolução. Ele só recebe a textura original, não tem prompt e não inventa nada: aguça bordas e detalhes finos que uma ampliação comum borraria.</p>
+      </div>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="6" r="3"/><path d="M6 21v-3a6 6 0 0 1 12 0v3"/></svg>
+        <h3>Seu personagem em 4x</h3>
+        <p>Cenário, criaturas, armas e armaduras ficam com o dobro da resolução, e o seu próprio personagem com quatro vezes mais.</p>
+      </div>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg>
+        <h3>Pacote no Nexus Mods</h3>
+        <p>O pacote HD é grande (cerca de 95 GB) e fica no Nexus Mods: um pacote principal e dois opcionais com ainda mais detalhe. Basta extrair na pasta do jogo.</p>
       </div>
     </div>
+
+    <details class="tech reveal">
+      <summary><span>Detalhes técnicos</span></summary>
+      <div class="tech-body">
+        <ul>
+          <li>Quando o jogo vai ler uma textura do <code>Gw2.dat</code>, o mod entrega a versão HD do pacote, se ela existir; senão, a original. O <code>Gw2.dat</code> não é alterado.</li>
+          <li>Das cerca de 432 mil texturas do jogo, umas 231 mil entram no pacote. Cada uma é classificada pelo que a usa (personagem, armas e armaduras, cenário, criaturas, efeitos, terreno) e recebe um tamanho-alvo. Interface, cinemáticas e texturas pequenas ou já grandes ficam como estão.</li>
+          <li>Texturas de cor passam pelo <a href="https://huggingface.co/Kim2091/UltraSharp">4x-UltraSharp</a> (super-resolução da arquitetura ESRGAN, de imagem para imagem, rodando localmente na GPU). Mapas de normais e máscaras não passam por modelo nenhum: são redimensionados com Lanczos.</li>
+          <li>Cada resultado volta para o mesmo formato de GPU do jogo (BC1/BC3/BC5/BC7), e o pacote fica em poucos arquivos grandes com um índice. Nada é convertido enquanto você joga.</li>
+          <li>O mod procura a pasta <code>GW2Remastered\pack</code> na pasta do jogo, ou a pasta que você escolher no painel.</li>
+        </ul>
+      </div>
+    </details>
+    <p class="credit">Ampliação feita com o <a href="https://huggingface.co/Kim2091/UltraSharp">4x-UltraSharp</a>, de Kim2091, sob <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>: o pacote HD é gratuito e não comercial.</p>
   </section>
 
   <!-- ===================== Gráficos ===================== -->
-  <section id="graficos" class="section feature-section" aria-labelledby="t-graficos">
-    <p class="kicker">Recurso 3</p>
-    <h2 id="t-graficos">Gráficos melhorados</h2>
-    <div class="divider" aria-hidden="true"></div>
-    <div class="split">
-      <div class="paper prose">
-        <p>Efeitos modernos de iluminação e HDR de verdade, feitos dentro do próprio renderizador do jogo (Direct3D 11), e não como um filtro por cima da imagem pronta.</p>
-        <p>Não usa IA nem rede neural: são shaders comuns, rodando na sua placa de vídeo junto com os do jogo. Os ajustes ficam no painel do mod, e nenhum ajuste pode esconder algo que o jogo original mostra.</p>
+  <section id="graficos" class="section feature-section" data-num="III" aria-labelledby="t-graficos">
+    <header class="sec-head reveal">
+      <p class="kicker">Recurso III</p>
+      <h2 id="t-graficos">Gráficos melhorados</h2>
+      <div class="divider" aria-hidden="true"></div>
+      <p class="lead">Iluminação mais bonita, HDR de verdade e efeitos modernos, feitos dentro do próprio jogo, e não como um filtro por cima da imagem pronta.</p>
+    </header>
+
+    <div class="points reveal-group">
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+        <h3>Leve para o PC</h3>
+        <p>Os efeitos rodam na sua placa de vídeo junto com o jogo, sem precisar de IA. O desempenho quase não muda.</p>
       </div>
-      <aside class="paper card-dl" aria-labelledby="t-dl-gfx">
-        <h3 id="t-dl-gfx">Qual pacote baixar</h3>
-        <dl class="pkgs">
-          <dt>Graphics</dt><dd>só os gráficos</dd>
-          <dt>All</dt><dd>os três recursos juntos</dd>
-        </dl>
-        <a class="cta" href="https://github.com/wilssola/GW2Enhanced/releases/latest">Baixar os gráficos</a>
-      </aside>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+        <h3>HDR de verdade</h3>
+        <p>Em monitores HDR, o brilho de magias, do sol e do fogo vai além do branco sem estourar a imagem.</p>
+      </div>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="14" rx="1"/><path d="M3 14h18M7 18v2h10v-2"/></svg>
+        <h3>Interface intacta</h3>
+        <p>Os efeitos valem só para o mundo do jogo: a interface continua nítida, e nada que o jogo mostra fica escondido.</p>
+      </div>
+      <div class="point paper reveal">
+        <svg class="point-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+        <h3>Do seu jeito</h3>
+        <p>Cada efeito tem os seus ajustes no painel do mod, dentro do jogo, e pode ser ligado ou desligado.</p>
+      </div>
     </div>
-    <div class="sub" aria-labelledby="t-how-gfx">
-      <p class="kicker">Como funciona</p>
-      <h3 id="t-how-gfx">Dentro do renderizador do jogo</h3>
-      <ol class="steps">
-        <li class="paper"><b>Reconhece cada etapa</b><span>O mod acompanha as etapas que o jogo usa para desenhar cada quadro e as reconhece pelos shaders. Se um quadro não parece o mundo (tela de carregamento, seleção de personagem, cinemática), os efeitos se desligam naquele quadro.</span></li>
-        <li class="paper"><b>Mais faixa de cor</b><span>O jogo desenha a cena com 8 bits e corta as cores no branco, então uma magia de fogo e uma parede branca acabam no mesmo branco. O mod troca essas imagens intermediárias por ponto flutuante de 16 bits, e o brilho passa do branco sem estourar.</span></li>
-        <li class="paper"><b>Efeitos entre as etapas</b><span>Os efeitos entram entre as etapas do próprio jogo, usando o buffer de profundidade dele, então respeitam a geometria da cena. A interface é desenhada depois e não é afetada.</span></li>
-        <li class="paper"><b>Saída em HDR</b><span>Com o HDR do Windows ligado, a imagem sai em HDR (scRGB, ou HDR10 em teste): os brilhos passam do branco até o pico do seu monitor, e a interface fica no brilho que você escolher. Em SDR, o resultado é recortado como antes.</span></li>
-      </ol>
+
+    <div class="sub" aria-labelledby="t-efeitos">
+      <header class="sub-head reveal">
+        <p class="kicker">O que vem junto</p>
+        <h3 id="t-efeitos">Efeitos</h3>
+      </header>
+      <ul class="effects reveal-group" aria-labelledby="t-efeitos">
+        <li class="reveal"><b>HDR real</b><span>brilho além do branco</span></li>
+        <li class="reveal"><b>Bloom</b><span>o brilho das luzes</span></li>
+        <li class="reveal"><b>Oclusão de ambiente</b><span>sombras nos cantos e frestas</span></li>
+        <li class="reveal"><b>Reflexos</b><span>superfícies que refletem a cena</span></li>
+        <li class="reveal"><b>Raios de luz</b><span>luz atravessando a cena</span></li>
+        <li class="reveal"><b>Sombras de contato</b><span>onde os objetos se tocam</span></li>
+        <li class="reveal"><b>Efeitos de lente</b><span>como numa câmera</span></li>
+        <li class="reveal"><b>Correção de cor</b><span>ajuste fino das cores</span></li>
+        <li class="reveal"><b>Modo foto</b><span>para capturas de tela</span></li>
+      </ul>
     </div>
-    <ul class="effects" aria-label="Efeitos">
-      <li class="paper"><b>HDR real</b><span>saída scRGB ou HDR10</span></li>
-      <li class="paper"><b>Bloom</b><span>com intensidade ajustável</span></li>
-      <li class="paper"><b>Oclusão de ambiente</b><span>sombras nos cantos e frestas</span></li>
-      <li class="paper"><b>Reflexos</b><span>no espaço da tela</span></li>
-      <li class="paper"><b>Raios de luz</b><span>luz atravessando a cena</span></li>
-      <li class="paper"><b>Sombras de contato</b><span>detalhe onde os objetos se tocam</span></li>
-      <li class="paper"><b>Efeitos de lente</b><span>como numa câmera</span></li>
-      <li class="paper"><b>Correção de cor</b><span>ajuste fino das cores</span></li>
-      <li class="paper"><b>Modo foto</b><span>para capturas de tela</span></li>
-    </ul>
+
     <div class="sub" aria-labelledby="t-comp-gfx">
-      <p class="kicker">Antes e depois</p>
-      <h3 id="t-comp-gfx">No jogo</h3>
+      <header class="sub-head reveal">
+        <p class="kicker">Antes e depois</p>
+        <h3 id="t-comp-gfx">No jogo</h3>
+      </header>
       <div class="gallery" id="gallery-graficos" data-gallery="graficos"></div>
-      <p class="placeholder" data-empty="graficos">Capturas de antes e depois, com e sem os efeitos, em breve.</p>
+      <p class="placeholder reveal" data-empty="graficos">Capturas de antes e depois, com e sem os efeitos, em breve.</p>
     </div>
+
+    <details class="tech reveal">
+      <summary><span>Detalhes técnicos</span></summary>
+      <div class="tech-body">
+        <ul>
+          <li>O mod acompanha as etapas que o jogo (Direct3D 11) usa para desenhar cada quadro e as reconhece pelos shaders. Em telas de carregamento, seleção de personagem e cinemáticas, os efeitos se desligam.</li>
+          <li>O jogo desenha a cena com 8 bits por cor e corta tudo no branco. O mod troca essas imagens intermediárias por ponto flutuante de 16 bits, e o brilho passa do branco sem estourar.</li>
+          <li>Os efeitos entram entre as etapas do próprio jogo e usam o buffer de profundidade dele, então respeitam a geometria da cena. A interface é desenhada depois e não é afetada.</li>
+          <li>Com o HDR do Windows ligado, a imagem sai em scRGB (ou HDR10, em teste), até o pico do seu monitor. Em SDR, o resultado é recortado como antes.</li>
+        </ul>
+      </div>
+    </details>
   </section>
 
   <!-- ===================== Instalação ===================== -->
-  <section id="instalar" class="section" aria-labelledby="t-instalar">
-    <p class="kicker">Instalação</p>
-    <h2 id="t-instalar">Três passos</h2>
-    <div class="divider" aria-hidden="true"></div>
-    <ol class="steps steps-3">
-      <li class="paper"><b>Feche o jogo</b><span>O mod é carregado quando o jogo abre.</span></li>
-      <li class="paper"><b>Rode o instalador</b><span>Ele encontra o jogo sozinho (Steam ou o instalador da ArenaNet) e instala o mod. Se você já usa outro mod, ele é guardado antes.</span></li>
-      <li class="paper"><b>Abra o jogo</b><span><kbd>Shift</kbd>+<kbd>Home</kbd> abre o painel do mod, com uma aba para cada recurso e uma que mostra se tudo está funcionando.</span></li>
+  <section id="instalar" class="section feature-section" aria-labelledby="t-instalar">
+    <header class="sec-head reveal">
+      <p class="kicker">Instalação</p>
+      <h2 id="t-instalar">Comece em três passos</h2>
+      <div class="divider" aria-hidden="true"></div>
+    </header>
+    <ol class="steps reveal-group">
+      <li class="paper reveal"><b>Baixe e abra o instalador</b><span>Com o jogo fechado. Ele encontra o Guild Wars 2 sozinho, seja na Steam ou no instalador da ArenaNet, e instala o mod.</span></li>
+      <li class="paper reveal"><b>Abra o jogo</b><span>O mod começa junto com o jogo. <kbd>Shift</kbd>+<kbd>Home</kbd> abre o painel, com uma aba para cada recurso.</span></li>
+      <li class="paper reveal"><b>Escolha o que usar</b><span>Ligue e desligue cada recurso quando quiser. Para as texturas HD, baixe também o pacote no Nexus Mods.</span></li>
     </ol>
-    <div class="split split-even">
-      <div class="paper prose">
-        <h4>Atualizações</h4>
-        <p>Quando sai uma versão nova, o mod avisa no jogo e pergunta se você quer atualizar. Se aceitar, ele baixa, confere que o arquivo é oficial e se atualiza sozinho. Suas configurações e traduções ficam como estão.</p>
+    <div class="duo reveal-group">
+      <div class="paper prose reveal">
+        <h3>Atualizações automáticas</h3>
+        <p>Quando sai uma versão nova, o mod avisa no jogo e pergunta se você quer atualizar. Antes de instalar, ele confere que a atualização é oficial. Suas configurações e traduções ficam como estão.</p>
       </div>
-      <div class="paper prose">
-        <h4>Desinstalar</h4>
+      <div class="paper prose reveal">
+        <h3>Desinstalar</h3>
         <p>Abra o instalador e escolha <b>Desinstalar</b>. O jogo volta a ser exatamente o original.</p>
       </div>
     </div>
-    <div class="dl-band">
-      <a class="cta big" href="/v1/download">Baixar o GW2 Enhanced</a>
-      <span>Gratuito e de código aberto. Todos os pacotes nos <a href="https://github.com/wilssola/GW2Enhanced/releases/latest">Releases do GitHub</a>, com SHA-256 e atestado de origem.</span>
+    <details class="tech reveal">
+      <summary><span>Detalhes técnicos</span></summary>
+      <div class="tech-body">
+        <ul>
+          <li>O mod é um único arquivo, <code>msimg32.dll</code>, colocado ao lado do <code>Gw2-64.exe</code>. Se outro mod já usa esse nome, o instalador o guarda antes. Apagar o arquivo devolve o jogo original.</li>
+          <li>Também há pacotes avulsos: só a tradução (com o tradutor no processador, em placas NVIDIA ou em qualquer placa DirectX 12), só as texturas, só os gráficos, ou tudo junto.</li>
+          <li>Cada versão no GitHub traz a soma SHA-256 de todos os arquivos e um atestado de origem. As atualizações automáticas só são instaladas se o arquivo baixado conferir com a soma.</li>
+        </ul>
+      </div>
+    </details>
+
+    <div class="dl-band reveal">
+      <div class="dl-text">
+        <b>Pronto para jogar em português?</b>
+        <span>Gratuito e de código aberto. Todas as versões ficam no <a href="https://github.com/wilssola/GW2Enhanced/releases/latest">GitHub</a>, e quem programa pode ler o <a href="https://github.com/wilssola/GW2Enhanced">código-fonte</a>.</span>
+      </div>
+      <a class="play" href="/v1/download"><span>Baixar</span></a>
     </div>
   </section>
 </main>
 
 <footer class="footer">
-  <p><b>GW2 Enhanced é um projeto de fã, não oficial.</b> Não é feito, endossado, apoiado nem afiliado à ArenaNet, LLC ou à NCSOFT Corporation. É um mod do lado do cliente: muda só o que o seu computador mostra, não envia nada aos servidores do jogo e não dá vantagem no jogo. Programas de terceiros que se conectam ao cliente do jogo são usados <b>por sua conta e risco</b>; leia a <a href="https://help.guildwars2.com/hc/en-us/articles/360013658134">política da ArenaNet sobre programas de terceiros</a> e o Contrato de Usuário do jogo antes de usar.</p>
+  <p class="footer-brand"><i class="seal" aria-hidden="true">E</i>GW2 Enhanced</p>
+  <p><b>GW2 Enhanced é um projeto de fã, não oficial.</b> Não é feito, endossado, apoiado nem afiliado à ArenaNet, LLC ou à NCSOFT Corporation. Ele só muda o que o seu computador mostra: não envia nada aos servidores do jogo e não dá vantagem a ninguém. Programas de terceiros que se conectam ao jogo são usados <b>por sua conta e risco</b>; leia a <a href="https://help.guildwars2.com/hc/en-us/articles/360013658134">política da ArenaNet sobre programas de terceiros</a> e o Contrato de Usuário do jogo antes de usar.</p>
   <p>© ArenaNet, LLC. Todos os direitos reservados. NCSOFT, o logotipo NC, ArenaNet, Guild Wars, Guild Wars 2 e todos os logotipos e designs associados são marcas comerciais ou registradas da NCSOFT Corporation. Outras marcas pertencem aos seus donos.</p>
-  <p class="small">Código sob a licença MIT · Fontes Cinzel, EB Garamond e Barlow Condensed sob a SIL Open Font License · <a href="https://github.com/wilssola/GW2Enhanced">Código-fonte</a></p>
+  <p class="small">Código sob a licença MIT · Fontes Cinzel, EB Garamond e Barlow Condensed sob a SIL Open Font License · <a href="https://github.com/wilssola/GW2Enhanced">Código-fonte no GitHub</a></p>
 </footer>
 
 <dialog id="dlg" class="paper-dialog" aria-labelledby="dlg-title">
