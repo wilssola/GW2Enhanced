@@ -4,8 +4,6 @@
 
 pub mod config;
 pub mod log;
-#[cfg(feature = "standalone")]
-mod proxy;
 #[allow(dead_code)] // the log parser (`parse_frame_log`) is used by the tests only
 mod passes;
 #[cfg(test)]
@@ -57,18 +55,10 @@ mod clampemu;
 #[cfg(test)]
 mod testlock;
 
-#[cfg(feature = "standalone")]
-use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::Foundation::{HMODULE, TRUE};
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
 pub static MODULE: AtomicUsize = AtomicUsize::new(0);
 
@@ -179,15 +169,3 @@ pub fn init() {
     }
 }
 
-#[cfg(feature = "standalone")]
-#[unsafe(no_mangle)]
-pub extern "system" fn DllMain(module: HMODULE, reason: u32, _: *mut c_void) -> i32 {
-    if reason == DLL_PROCESS_ATTACH {
-        MODULE.store(module as usize, Ordering::Relaxed);
-        unsafe { DisableThreadLibraryCalls(module) };
-        let _ = std::thread::Builder::new().name("gw2graphics-init".into()).spawn(|| {
-            let _ = std::panic::catch_unwind(init);
-        });
-    }
-    TRUE
-}

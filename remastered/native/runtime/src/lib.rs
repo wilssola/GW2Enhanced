@@ -13,23 +13,13 @@ mod game;
 pub mod overlay;
 mod player_diag;
 pub mod log;
-#[cfg(feature = "standalone")]
-mod proxy;
 mod reload;
 mod resize;
 mod sig;
 
-#[cfg(feature = "standalone")]
-use std::ffi::c_void;
 use std::path::PathBuf;
 
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::Foundation::{HMODULE, TRUE};
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -45,9 +35,11 @@ fn exe_path() -> Option<PathBuf> {
 
 pub static MODULE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-#[cfg(feature = "standalone")]
+
+// In this crate's own tests the counting allocator is the global one (in the mod, `enhanced` installs it).
+#[cfg(test)]
 #[global_allocator]
-static ALLOC: mem::CountingAlloc = mem::CountingAlloc;
+static TEST_ALLOC: mem::CountingAlloc = mem::CountingAlloc;
 
 /// Starts the texture runtime. Call from a thread that is not under the loader lock.
 pub fn init() {
@@ -81,18 +73,6 @@ pub fn init() {
     }
 }
 
-#[cfg(feature = "standalone")]
-#[unsafe(no_mangle)]
-pub extern "system" fn DllMain(module: HMODULE, reason: u32, _: *mut c_void) -> i32 {
-    if reason == DLL_PROCESS_ATTACH {
-        unsafe { DisableThreadLibraryCalls(module) };
-        MODULE.store(module as usize, std::sync::atomic::Ordering::Relaxed);
-        let _ = std::thread::Builder::new().name("gw2remastered-init".into()).spawn(|| {
-            let _ = std::panic::catch_unwind(init);
-        });
-    }
-    TRUE
-}
 
 /// (level, free commit in MB) for the host's Health section: 0 fine, 1 low, 2 critical.
 pub fn commit_status() -> (u8, u64) {

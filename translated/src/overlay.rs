@@ -15,10 +15,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::imgui::{Condition, Context, Io, Ui, WindowFlags};
-use hudhook::windows::Win32::Foundation::HINSTANCE;
-use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
+use hudhook::{ImguiRenderLoop, MessageFilter, RenderContext};
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
@@ -41,6 +39,11 @@ static INVITING: AtomicBool = AtomicBool::new(false);
 /// The window or the invitation is on screen (the host then draws the cursor and passes input through).
 pub fn is_visible() -> bool {
     VISIBLE.load(Ordering::Relaxed) || INVITING.load(Ordering::Relaxed)
+}
+
+/// Opens or closes the window (the host uses it when translation is the only feature built in).
+pub fn set_visible(on: bool) {
+    VISIBLE.store(on, Ordering::Relaxed);
 }
 
 /// Set when the panel asks to be closed (the unified overlay owns the window).
@@ -378,7 +381,7 @@ fn available_languages(languages_dir: &PathBuf) -> Vec<String> {
 /// Panel waiting for the unified overlay to pick it up (when the DLL is not standalone).
 pub static PANEL: std::sync::Mutex<Option<Overlay>> = std::sync::Mutex::new(None);
 
-pub fn install(module: usize, language: &str, languages_dir: PathBuf, key: u32) {
+pub fn install(_module: usize, language: &str, languages_dir: PathBuf, key: u32) {
     let mut languages = available_languages(&languages_dir);
     if !languages.iter().any(|l| l == language) {
         languages.insert(0, language.to_owned());
@@ -397,17 +400,6 @@ pub fn install(module: usize, language: &str, languages_dir: PathBuf, key: u32) 
         gpus: Vec::new(),
         gpus_read: None,
     };
-    if !cfg!(feature = "standalone") {
-        *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(overlay);
-        log!("overlay: panel ready for the unified overlay");
-        return;
-    }
-    let hooks = Hudhook::builder()
-        .with::<ImguiDx11Hooks>(overlay)
-        .with_hmodule(HINSTANCE(module as *mut _))
-        .build();
-    match hooks.apply() {
-        Ok(()) => log!("overlay: installed (key {key:#x})"),
-        Err(e) => log!("overlay: could not install: {e:?}"),
-    }
+    *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(overlay);
+    log!("overlay: panel ready for the unified overlay");
 }

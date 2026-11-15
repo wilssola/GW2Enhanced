@@ -19,8 +19,6 @@ mod net;
 pub mod overlay;
 pub mod paths;
 pub mod procstats;
-#[cfg(feature = "standalone")]
-mod proxy;
 pub mod rc4;
 pub mod records;
 pub mod refresh;
@@ -30,19 +28,11 @@ mod ui_text;
 mod upload;
 mod web;
 
-#[cfg(feature = "standalone")]
-use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::Foundation::{HMODULE, TRUE};
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
-#[cfg(feature = "standalone")]
-use windows_sys::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 
 use config::Config;
 use dict::Dict;
@@ -191,21 +181,3 @@ pub fn init() {
     log!("initialization complete");
 }
 
-/// DLL entry point.
-///
-/// # Safety
-///
-/// Called only by the Windows loader, with a valid module handle.
-#[cfg(feature = "standalone")]
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn DllMain(module: HMODULE, reason: u32, _reserved: *mut c_void) -> i32 {
-    if reason == DLL_PROCESS_ATTACH {
-        unsafe { DisableThreadLibraryCalls(module) };
-        MODULE.store(module as usize, Ordering::Relaxed);
-        // The thread only starts running after the loader lock is released.
-        let _ = std::thread::Builder::new()
-            .name("gw2translated-init".into())
-            .spawn(init);
-    }
-    TRUE
-}

@@ -8,10 +8,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::imgui::{Condition, Context, Io, StyleColor, TreeNodeFlags, Ui};
-use hudhook::windows::Win32::Foundation::HINSTANCE;
-use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
+use hudhook::{ImguiRenderLoop, MessageFilter, RenderContext};
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
@@ -83,6 +81,10 @@ static VISIBLE: AtomicBool = AtomicBool::new(false);
 /// The overlay window is open.
 pub fn visible() -> bool {
     VISIBLE.load(Ordering::Relaxed)
+}
+/// Opens or closes the window (the host uses it when graphics is the only feature built in).
+pub fn set_visible(on: bool) {
+    VISIBLE.store(on, Ordering::Relaxed);
 }
 static KEY: AtomicU32 = AtomicU32::new(0x23);
 static MODS: AtomicU32 = AtomicU32::new(MOD_SHIFT);
@@ -201,7 +203,7 @@ impl Overlay {
         self.mapped_for = Some(key);
     }
 
-    fn poll_key(&mut self) {
+    pub fn poll_key(&mut self) {
         let held = |vk: i32| unsafe { GetAsyncKeyState(vk) } as u16 & 0x8000 != 0;
         // Modifiers must match exactly, so the bare key (a game binding) never opens the overlay.
         let down = photo::combo_down(held, KEY.load(Ordering::Relaxed), MODS.load(Ordering::Relaxed));
@@ -1372,7 +1374,7 @@ impl ImguiRenderLoop for Overlay {
 
 /// Installs the overlay. `cfg` is what the config file said at start (the window edits a copy);
 /// `path` is where Save writes.
-pub fn install(module: usize, cfg: Config, path: PathBuf) {
+pub fn install(_module: usize, cfg: Config, path: PathBuf) {
     let (k, m) = parse_key(&cfg.overlay_key).unwrap_or_else(|| {
         log!("overlay: bad overlay_key '{}', using Shift+End", cfg.overlay_key);
         (0x23, MOD_SHIFT)
@@ -1387,23 +1389,8 @@ pub fn install(module: usize, cfg: Config, path: PathBuf) {
     PHOTO_MODS.store(pm, Ordering::Relaxed);
     let key_text = cfg.overlay_key.clone();
     devshot::start(path.clone(), cfg.clone());
-    if !cfg!(feature = "standalone") {
-        *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Overlay::new(cfg, path));
-        log!("overlay: panel ready for the unified overlay (key {key_text})");
-        return;
-    }
-    // hudhook creates a dummy device and swapchain while installing; they must not be adopted.
-    d3d::ignore_creations(true);
-    let hooks = Hudhook::builder()
-        .with::<ImguiDx11Hooks>(Overlay::new(cfg, path))
-        .with_hmodule(HINSTANCE(module as *mut _))
-        .build();
-    let r = hooks.apply();
-    d3d::ignore_creations(false);
-    match r {
-        Ok(()) => log!("overlay: installed (frame tick, key {key_text})"),
-        Err(e) => log!("overlay: could not install: {e:?}"),
-    }
+    *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Overlay::new(cfg, path));
+    log!("overlay: panel ready for the unified overlay (key {key_text})");
 }
 
 #[cfg(test)]

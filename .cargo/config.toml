@@ -1,0 +1,10 @@
+# Every project builds the same msimg32.dll (target/release/msimg32.dll); what changes is which mods are inside.
+#   cargo mod-all          translation + textures + graphics (same as `cargo build --release`)
+#   cargo mod-translation  only the translation
+#   cargo mod-textures     only the HD textures
+#   cargo mod-graphics     only the graphics
+[alias]
+mod-all = "build --release -p gw2enhanced"
+mod-translation = "build --release -p gw2enhanced --no-default-features --features translation"
+mod-textures = "build --release -p gw2enhanced --no-default-features --features textures"
+mod-graphics = "build --release -p gw2enhanced --no-default-features --features graphics"

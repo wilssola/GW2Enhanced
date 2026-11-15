@@ -5,14 +5,9 @@ edition = "2024"
 description = "GW2 Enhanced Graphics runtime (wtsapi32.dll proxy)"
 license = "MIT"
 
-[features]
-# Builds the DLL on its own (DllMain and the 78 wtsapi32 proxy exports). The unified mod turns it off.
-default = ["standalone"]
-standalone = []
-
 [lib]
 name = "gw2graphics"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 retour = "0.3"
@@ -29,11 +24,6 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = "symbols"
 
 # Test-only: D3D11 WARP harness for the shader equivalence tests (same version hudhook already pulls).
 [dev-dependencies]

@@ -1,8 +1,26 @@
-# GW2 Enhanced: one mod, three features.
+# GW2 Enhanced: one mod (msimg32.dll) with three features. See README.md.
 #
-# The feature crates still keep their own workspaces/locks while the merge is in progress (they build standalone);
-# only the shared pieces live here. Excluded folders are separate workspaces.
+# One workspace, one Cargo.lock. `cargo build --release` builds the mod (enhanced) and the installer; the local
+# translator (CTranslate2) and the offline tools are built on request (`-p <name>`). `backend` is the website, a
+# separate project.
 [workspace]
-members = ["core", "enhanced"]
-exclude = ["backend", "translated", "remastered/native/runtime", "graphics/runtime"]
+members = [
+    "core",
+    "enhanced",
+    "translated",
+    "remastered/native/runtime",
+    "graphics/runtime",
+    "installer",
+    "translated/translator",
+    "translated/tools/gw2-dat-tool",
+    "translated/tools/gw2-translate",
+]
+default-members = ["core", "enhanced", "translated", "remastered/native/runtime", "graphics/runtime", "installer"]
+exclude = ["backend"]
 resolver = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

@@ -5,14 +5,9 @@ edition = "2024"
 description = "GW2 Remastered texture runtime (msimg32.dll proxy)"
 license = "MIT"
 
-[features]
-# Builds the DLL on its own (DllMain, msimg32 proxy exports, global allocator). The unified mod turns it off.
-default = ["standalone"]
-standalone = []
-
 [lib]
 name = "gw2remastered"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 retour = "0.3"
@@ -37,9 +32,3 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ] }
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = "symbols"

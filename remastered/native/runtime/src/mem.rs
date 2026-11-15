@@ -197,7 +197,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "standalone")] // the counting allocator is the global one only in the standalone DLL
     fn heap_counter_moves() {
         // Not the global allocator in tests of this crate? It is: the counter must follow a big allocation.
         let before = super::mod_heap();

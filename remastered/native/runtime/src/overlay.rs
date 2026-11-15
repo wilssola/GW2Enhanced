@@ -12,10 +12,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::imgui::{Condition, Context, Io, Ui};
-use hudhook::windows::Win32::Foundation::HINSTANCE;
-use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
+use hudhook::{ImguiRenderLoop, MessageFilter, RenderContext};
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
@@ -626,20 +624,9 @@ pub fn panel() -> Overlay {
 /// Panel waiting for the unified overlay to pick it up (when the DLL is not standalone).
 pub static PANEL: std::sync::Mutex<Option<Overlay>> = std::sync::Mutex::new(None);
 
-pub fn install(module: usize) {
-    if !cfg!(feature = "standalone") {
-        *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(panel());
-        log!("overlay: panel ready for the unified overlay");
-        return;
-    }
-    let hooks = Hudhook::builder()
-        .with::<ImguiDx11Hooks>(panel())
-        .with_hmodule(HINSTANCE(module as *mut _))
-        .build();
-    match hooks.apply() {
-        Ok(()) => log!("overlay: installed (key {})", hotkey_text()),
-        Err(e) => log!("overlay: could not install: {e:?}"),
-    }
+pub fn install(_module: usize) {
+    *PANEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(panel());
+    log!("overlay: panel ready for the unified overlay");
 }
 
 #[cfg(test)]

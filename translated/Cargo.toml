@@ -1,7 +1,3 @@
-[workspace]
-members = [".", "installer", "tools/gw2-dat-tool", "tools/gw2-translate", "translator"]
-resolver = "3"
-
 [package]
 name = "gw2translated"
 version = "0.1.0"
@@ -9,14 +5,9 @@ edition = "2024"
 description = "Plug-and-play translation of Guild Wars 2 (version.dll proxy)"
 license = "MIT"
 
-[features]
-# Builds the DLL on its own (DllMain and version.dll proxy exports). The unified mod turns it off.
-default = ["standalone"]
-standalone = []
-
 [lib]
 name = "gw2translated"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 hudhook = { version = "0.9", default-features = false, features = ["dx11"] }
@@ -39,9 +30,3 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 tempfile = "3"
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = "symbols"
