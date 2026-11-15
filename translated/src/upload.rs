@@ -20,6 +20,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::config::Contribute;
+use crate::live::LOCAL_SOURCE;
 use crate::{log, net, runtime};
 
 const HOST: &str = "app.gw2enhanced.workers.dev";
@@ -79,8 +80,10 @@ fn item(line: &str) -> Option<Item> {
         return None;
     }
     let id = v.get("id").and_then(Value::as_u64).and_then(|i| u32::try_from(i).ok());
-    let tr = v.get("tr").and_then(Value::as_str).map(str::to_owned);
-    let src = tr.as_ref().and(v.get("src").and_then(Value::as_str).map(str::to_owned));
+    // Only translations made on this PC are sent: one the server's AI made is already better than a local one.
+    let src = v.get("src").and_then(Value::as_str).filter(|s| *s == LOCAL_SOURCE);
+    let tr = src.and(v.get("tr").and_then(Value::as_str)).map(str::to_owned);
+    let src = tr.as_ref().and(src).map(str::to_owned);
     Some(Item { id, en, tr, src })
 }
 
@@ -257,6 +260,9 @@ mod tests {
             (l.tr.as_deref(), l.src.as_deref()),
             (Some("Leoa de Areia"), Some("argos"))
         );
+        // A translation the server's AI made is not sent back: only the English goes.
+        let n = item(r#"{"en":"Sand Lioness","tr":"Leoa da Areia","src":"nemotron"}"#).unwrap();
+        assert_eq!((n.tr.as_deref(), n.src.as_deref()), (None, None));
         assert!(item(r#"{"en":"[null]"}"#).is_none());
         assert!(item("not json").is_none());
     }

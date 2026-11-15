@@ -37,7 +37,7 @@ const BATCH: usize = 16;
 /// showed up on screen never waits long behind it.
 const BACKGROUND_BATCH: usize = 4;
 /// `src` of the translations made on this PC.
-const LOCAL_SOURCE: &str = "argos";
+pub(crate) const LOCAL_SOURCE: &str = "argos";
 /// Texts longer than this wait for the dictionary (the model's quality drops).
 const MAX_CHARS: usize = 2000;
 
