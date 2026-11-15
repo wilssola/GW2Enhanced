@@ -19,6 +19,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 use crate::log;
+use gw2enhanced_core::i18n::tr;
+use gw2enhanced_core::trf;
 
 const VK_HOME: i32 = 0x24;
 
@@ -104,7 +106,13 @@ fn pick_folder() -> Option<String> {
     };
     unsafe {
         let hr = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
-        let title: Vec<u16> = "Select the folder with the GW2 Remastered HD textures\0".encode_utf16().collect();
+        let title: Vec<u16> = tr(
+            "Select the folder with the GW2 Remastered HD textures",
+            "Escolha a pasta com as texturas HD do GW2 Remastered",
+        )
+        .encode_utf16()
+        .chain([0])
+        .collect();
         let mut bi: BROWSEINFOW = std::mem::zeroed();
         bi.hwndOwner = GetForegroundWindow();
         bi.lpszTitle = title.as_ptr();
@@ -371,7 +379,38 @@ pub struct Overlay {
     /// The first-run prompt already opened the panel once.
     welcomed: bool,
     /// Last message about the folder, shown under the box.
-    note: Option<(bool, String)>,
+    note: Option<Note>,
+}
+
+/// What the last Apply did (drawn in the overlay language of the moment).
+#[derive(Clone, Copy)]
+enum Note {
+    DefaultFolder,
+    Saved,
+    NoPack,
+}
+
+impl Note {
+    fn ok(self) -> bool {
+        !matches!(self, Note::NoPack)
+    }
+
+    fn text(self) -> &'static str {
+        match self {
+            Note::DefaultFolder => tr(
+                "Back to the default folder. Restart the game to apply.",
+                "De volta à pasta padrão. Reinicie o jogo para aplicar.",
+            ),
+            Note::Saved => tr(
+                "Folder saved. Restart the game to load the HD textures.",
+                "Pasta salva. Reinicie o jogo para carregar as texturas HD.",
+            ),
+            Note::NoPack => tr(
+                "No HD pack in this folder (pack.idx not found). Nothing changed.",
+                "Nenhum pacote HD nesta pasta (pack.idx não encontrado). Nada foi alterado.",
+            ),
+        }
+    }
 }
 
 impl Overlay {
@@ -430,27 +469,39 @@ impl Overlay {
         }
         let first_run = NO_PACK.load(Ordering::Relaxed) && !SETUP_DONE.load(Ordering::Relaxed);
         if first_run {
-            ui.text_colored([1.0, 0.85, 0.3, 1.0], "Welcome! Choose where the HD textures are.");
-            ui.text_wrapped("Select the folder with the pack (the one that has pack.idx). Until then, or if you skip, the game shows its original textures.");
+            ui.text_colored(
+                [1.0, 0.85, 0.3, 1.0],
+                tr("Welcome! Choose where the HD textures are.", "Bem-vindo! Escolha onde estão as texturas HD."),
+            );
+            ui.text_wrapped(tr(
+                "Select the folder with the pack (the one that has pack.idx). Until then, or if you skip, the game shows its original textures.",
+                "Escolha a pasta com o pacote (a que tem o pack.idx). Até lá, ou se você pular, o jogo mostra as texturas originais.",
+            ));
         } else if NO_PACK.load(Ordering::Relaxed) {
-            ui.text_colored([1.0, 0.6, 0.3, 1.0], "No HD textures found: the game shows its original textures.");
+            ui.text_colored(
+                [1.0, 0.6, 0.3, 1.0],
+                tr(
+                    "No HD textures found: the game shows its original textures.",
+                    "Nenhuma textura HD encontrada: o jogo mostra as texturas originais.",
+                ),
+            );
         }
-        ui.text("HD texture folder:");
+        ui.text(tr("HD texture folder:", "Pasta das texturas HD:"));
         ui.set_next_item_width(-1.0);
         ui.input_text("##packdir", &mut self.path).build();
         if PICKING.load(Ordering::Relaxed) {
-            ui.text_disabled("Choose the folder in the dialog window...");
-        } else if ui.button("Browse...") {
+            ui.text_disabled(tr("Choose the folder in the dialog window...", "Escolha a pasta na janela que abriu..."));
+        } else if ui.button(tr("Browse...###browse", "Procurar...###browse")) {
             start_picker();
         }
         ui.same_line();
-        if ui.button("Apply") {
+        if ui.button(tr("Apply###apply", "Aplicar###apply")) {
             let typed = self.path.trim().trim_matches('"').to_string();
             if typed.is_empty() {
                 *PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()) = String::new();
                 SETUP_DONE.store(true, Ordering::Relaxed);
                 RESTART_NEEDED.store(true, Ordering::Relaxed);
-                self.note = Some((true, "Back to the default folder. Restart the game to apply.".into()));
+                self.note = Some(Note::DefaultFolder);
                 save_settings();
             } else if let Some(dir) = resolve_pack(&typed) {
                 let shown = dir.display().to_string();
@@ -458,27 +509,30 @@ impl Overlay {
                 *PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()) = shown.clone();
                 SETUP_DONE.store(true, Ordering::Relaxed);
                 RESTART_NEEDED.store(true, Ordering::Relaxed);
-                self.note = Some((true, "Folder saved. Restart the game to load the HD textures.".into()));
+                self.note = Some(Note::Saved);
                 save_settings();
                 log!("overlay: pack folder set to {shown}");
             } else {
-                self.note = Some((false, "No HD pack in this folder (pack.idx not found). Nothing changed.".into()));
+                self.note = Some(Note::NoPack);
             }
         }
         if first_run {
             ui.same_line();
-            if ui.button("Skip") {
+            if ui.button(tr("Skip###skip", "Pular###skip")) {
                 SETUP_DONE.store(true, Ordering::Relaxed);
                 save_settings();
                 log!("overlay: first-run folder selection skipped");
             }
         }
-        if let Some((ok, msg)) = &self.note {
-            let c = if *ok { [0.4, 1.0, 0.4, 1.0] } else { [1.0, 0.4, 0.4, 1.0] };
-            ui.text_colored(c, msg);
+        if let Some(note) = self.note {
+            let c = if note.ok() { [0.4, 1.0, 0.4, 1.0] } else { [1.0, 0.4, 0.4, 1.0] };
+            ui.text_colored(c, note.text());
         }
         if RESTART_NEEDED.load(Ordering::Relaxed) && self.note.is_none() {
-            ui.text_colored([0.4, 1.0, 0.4, 1.0], "Restart the game to apply the new folder.");
+            ui.text_colored(
+                [0.4, 1.0, 0.4, 1.0],
+                tr("Restart the game to apply the new folder.", "Reinicie o jogo para usar a nova pasta."),
+            );
         }
         ui.separator();
     }
@@ -487,7 +541,7 @@ impl Overlay {
     pub fn body(&mut self, ui: &Ui) {
         self.folder_section(ui);
         let mut on = enabled();
-        if ui.checkbox("HD textures", &mut on) {
+        if ui.checkbox(tr("HD textures###hd", "Texturas HD###hd"), &mut on) {
             ENABLED.store(on, Ordering::Relaxed);
             *TOGGLED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
             save_settings();
@@ -498,78 +552,127 @@ impl Overlay {
             log!("overlay: remaster {}", if on { "ON" } else { "OFF" });
         }
         let mut all = crate::composite::ALL_4X.load(Ordering::Relaxed);
-        if ui.checkbox("4x for all players", &mut all) {
+        if ui.checkbox(tr("4x for all players###all4x", "4x para todos os jogadores###all4x"), &mut all) {
             crate::composite::ALL_4X.store(all, Ordering::Relaxed);
             save_settings();
             log!("overlay: 4x for every player {}", if all { "ON" } else { "OFF" });
         }
-        ui.text_disabled("HD off shows the original textures.");
-        ui.text_disabled("4x for all players uses more memory and also applies after a map change.");
+        ui.text_disabled(tr("HD off shows the original textures.", "Com o HD desligado, o jogo mostra as texturas originais."));
+        ui.text_disabled(tr(
+            "4x for all players uses more memory and also applies after a map change.",
+            "4x para todos os jogadores usa mais memória e também vale depois de trocar de mapa.",
+        ));
         ui.separator();
         if crate::reload::available() {
-            if ui.button("Reload textures") {
+            if ui.button(tr("Reload textures###reload", "Recarregar texturas###reload")) {
                 crate::reload::request();
             }
             if crate::reload::BUSY.load(Ordering::Relaxed) {
                 ui.same_line();
-                ui.text("Reloading...");
+                ui.text(tr("Reloading...", "Recarregando..."));
             }
-            ui.text(format!(
-                "Last reload: {} characters, {} textures",
+            let (chars, texs) = (
                 crate::reload::LAST_SCHEDULED.load(Ordering::Relaxed),
-                crate::reload::LAST_TEXTURES.load(Ordering::Relaxed)
+                crate::reload::LAST_TEXTURES.load(Ordering::Relaxed),
+            );
+            ui.text(trf!(
+                "Last reload: {chars} characters, {texs} textures",
+                "Última recarga: {chars} personagens, {texs} texturas"
             ));
             let mut tint = crate::diag::DEBUG_TINT.load(Ordering::Relaxed);
-            if ui.checkbox("Debug colors", &mut tint) {
+            if ui.checkbox(tr("Debug colors###tint", "Cores de depuração###tint"), &mut tint) {
                 crate::diag::set_debug_tint(tint);
                 crate::reload::request_after(std::time::Duration::ZERO);
                 log!("overlay: debug colors {}", if tint { "ON" } else { "OFF" });
             }
             if tint {
                 if !enabled() {
-                    ui.text_colored([1.0, 0.4, 0.4, 1.0], "HD textures are off: nothing is colored.");
+                    ui.text_colored(
+                        [1.0, 0.4, 0.4, 1.0],
+                        tr("HD textures are off: nothing is colored.", "As texturas HD estão desligadas: nada é colorido."),
+                    );
                 }
-                ui.text_colored([1.0, 0.0, 1.0, 1.0], "Magenta: 2x piece (AI)");
-                ui.text_colored([0.0, 1.0, 1.0, 1.0], "Cyan: 4x piece (AI)");
-                ui.text_colored([1.0, 0.65, 0.0, 1.0], "Orange: 4x piece, doubled from 2x");
-                ui.text_colored([1.0, 1.0, 0.0, 1.0], "Yellow: plain upscale (no AI)");
-                ui.text_colored([0.0, 1.0, 0.0, 1.0], "Green: model texture");
-                ui.text_colored([0.3, 0.3, 1.0, 1.0], "Blue: 4x model texture (you)");
-                ui.text("Normal color: not replaced");
-                ui.text("Left alone, by reason:");
-                ui.text_colored([1.0, 0.25, 0.25, 1.0], "Red: effect");
-                ui.text_colored([0.65, 0.25, 0.85, 1.0], "Purple: pair, big member already high resolution (1024 px+)");
-                ui.text_colored([1.0, 1.0, 1.0, 1.0], "White: already at target size");
-                ui.text_colored([0.65, 0.4, 0.1, 1.0], "Brown: under 128 px");
-                ui.text_colored([1.0, 0.7, 0.8, 1.0], "Pink: no job, other");
-                ui.text_colored([0.6, 0.6, 0.6, 1.0], "Gray: character piece source");
+                ui.text_colored([1.0, 0.0, 1.0, 1.0], tr("Magenta: 2x piece (AI)", "Magenta: peça 2x (IA)"));
+                ui.text_colored([0.0, 1.0, 1.0, 1.0], tr("Cyan: 4x piece (AI)", "Ciano: peça 4x (IA)"));
+                ui.text_colored(
+                    [1.0, 0.65, 0.0, 1.0],
+                    tr("Orange: 4x piece, doubled from 2x", "Laranja: peça 4x, dobrada a partir da 2x"),
+                );
+                ui.text_colored(
+                    [1.0, 1.0, 0.0, 1.0],
+                    tr("Yellow: plain upscale (no AI)", "Amarelo: ampliação simples (sem IA)"),
+                );
+                ui.text_colored([0.0, 1.0, 0.0, 1.0], tr("Green: model texture", "Verde: textura de modelo"));
+                ui.text_colored(
+                    [0.3, 0.3, 1.0, 1.0],
+                    tr("Blue: 4x model texture (you)", "Azul: textura de modelo 4x (você)"),
+                );
+                ui.text(tr("Normal color: not replaced", "Cor normal: não substituída"));
+                ui.text(tr("Left alone, by reason:", "Deixadas como estão, por motivo:"));
+                ui.text_colored([1.0, 0.25, 0.25, 1.0], tr("Red: effect", "Vermelho: efeito"));
+                ui.text_colored(
+                    [0.65, 0.25, 0.85, 1.0],
+                    tr(
+                        "Purple: pair, big member already high resolution (1024 px+)",
+                        "Roxo: par, o membro maior já está em alta resolução (1024 px+)",
+                    ),
+                );
+                ui.text_colored(
+                    [1.0, 1.0, 1.0, 1.0],
+                    tr("White: already at target size", "Branco: já está no tamanho final"),
+                );
+                ui.text_colored([0.65, 0.4, 0.1, 1.0], tr("Brown: under 128 px", "Marrom: menor que 128 px"));
+                ui.text_colored([1.0, 0.7, 0.8, 1.0], tr("Pink: no job, other", "Rosa: sem tarefa, outros"));
+                ui.text_colored(
+                    [0.6, 0.6, 0.6, 1.0],
+                    tr("Gray: character piece source", "Cinza: origem de peça de personagem"),
+                );
             }
         } else {
-            ui.text_disabled("Live reload unavailable. Change maps to apply.");
+            ui.text_disabled(tr(
+                "Live reload unavailable. Change maps to apply.",
+                "Recarga ao vivo indisponível. Troque de mapa para aplicar.",
+            ));
         }
         ui.separator();
-        ui.text(format!("HD pack: {} textures", PACK_SIZE.load(Ordering::Relaxed)));
-        ui.text(format!("Character HD: {}", if COMPOSITE_2X.load(Ordering::Relaxed) { "on" } else { "off" }));
-        ui.text(format!("Characters at 4x: {}", crate::composite::N_4X.load(Ordering::Relaxed)));
-        ui.text(format!("Served from pack: {}", N_PACK.load(Ordering::Relaxed)));
-        ui.text(format!("4x textures (you): {}", crate::diag::N_CHAR4X.load(Ordering::Relaxed)));
-        ui.text(format!("Plain upscales: {}", N_PLAIN2X.load(Ordering::Relaxed)));
-        ui.text(format!("Refused resizes: {}", N_REFUSED.load(Ordering::Relaxed)));
+        let pack = PACK_SIZE.load(Ordering::Relaxed);
+        ui.text(trf!("HD pack: {pack} textures", "Pacote HD: {pack} texturas"));
+        let char_hd = if COMPOSITE_2X.load(Ordering::Relaxed) { tr("on", "ligado") } else { tr("off", "desligado") };
+        ui.text(trf!("Character HD: {char_hd}", "HD dos personagens: {char_hd}"));
+        let n = crate::composite::N_4X.load(Ordering::Relaxed);
+        ui.text(trf!("Characters at 4x: {n}", "Personagens em 4x: {n}"));
+        let n = N_PACK.load(Ordering::Relaxed);
+        ui.text(trf!("Served from pack: {n}", "Servidas do pacote: {n}"));
+        let n = crate::diag::N_CHAR4X.load(Ordering::Relaxed);
+        ui.text(trf!("4x textures (you): {n}", "Texturas 4x (você): {n}"));
+        let n = N_PLAIN2X.load(Ordering::Relaxed);
+        ui.text(trf!("Plain upscales: {n}", "Ampliações simples: {n}"));
+        let n = N_REFUSED.load(Ordering::Relaxed);
+        ui.text(trf!("Refused resizes: {n}", "Redimensionamentos recusados: {n}"));
         ui.separator();
         crate::mem::refresh_os();
         let o = crate::mem::os();
         let (cache, files, _) = crate::diag::memory_stats();
-        ui.text(format!("VRAM game: {} of {}", crate::mem::fmt(o.vram_used), crate::mem::fmt(o.vram_budget)));
-        ui.text(format!("VRAM mod: ~{} (estimate)", crate::mem::fmt(crate::mem::mod_vram())));
-        ui.text(format!("RAM game: {} (private {})", crate::mem::fmt(o.ram_working), crate::mem::fmt(o.ram_private)));
-        ui.text(format!("RAM mod: {} (cache {}, {} files)", crate::mem::fmt(crate::mem::mod_heap()), crate::mem::fmt(cache as u64), files));
+        let fmt = crate::mem::fmt;
+        let (used, budget) = (fmt(o.vram_used), fmt(o.vram_budget));
+        ui.text(trf!("VRAM game: {used} of {budget}", "VRAM do jogo: {used} de {budget}"));
+        let vram = fmt(crate::mem::mod_vram());
+        ui.text(trf!("VRAM mod: ~{vram} (estimate)", "VRAM do mod: ~{vram} (estimativa)"));
+        let (working, private) = (fmt(o.ram_working), fmt(o.ram_private));
+        ui.text(trf!("RAM game: {working} (private {private})", "RAM do jogo: {working} (privada {private})"));
+        let (heap, cache) = (fmt(crate::mem::mod_heap()), fmt(cache as u64));
+        ui.text(trf!(
+            "RAM mod: {heap} (cache {cache}, {files} files)",
+            "RAM do mod: {heap} (cache {cache}, {files} arquivos)"
+        ));
         ui.separator();
         if CAPTURING.load(Ordering::Relaxed) {
-            ui.text("Press the new hotkey (Esc cancels)");
+            ui.text(tr("Press the new hotkey (Esc cancels)", "Aperte a nova tecla de atalho (Esc cancela)"));
         } else {
-            ui.text(format!("Hotkey: {}", hotkey_text()));
+            let key = hotkey_text();
+            ui.text(trf!("Hotkey: {key}", "Tecla de atalho: {key}"));
             ui.same_line();
-            if ui.button("Change") {
+            if ui.button(tr("Change###hotkey", "Alterar###hotkey")) {
                 CAPTURING.store(true, Ordering::Relaxed);
             }
         }
