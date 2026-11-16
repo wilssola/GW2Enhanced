@@ -34,7 +34,7 @@ required-features = ["jobs"]
 ureq = { version = "3", optional = true, features = ["json"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-worker = { version = "0.8", features = ["d1"] }
+worker = { version = "0.9", features = ["d1"] }
 getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
