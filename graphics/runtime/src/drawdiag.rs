@@ -900,7 +900,8 @@ mod tests {
     #[test]
     fn the_log_text_matches_the_fixture_the_python_tool_is_tested_with() {
         let text = format_log(&header(), &aggregate(&sample_records()));
-        assert_eq!(text, GOLDEN, "regenerate tools/draw-diff/fixtures/sample_a.log from this output if the format changed on purpose:\n{text}");
+        // The checkout may turn the fixture's line ends into CRLF (core.autocrlf on Windows).
+        assert_eq!(text, GOLDEN.replace("\r\n", "\n"), "regenerate tools/draw-diff/fixtures/sample_a.log from this output if the format changed on purpose:\n{text}");
     }
 
     #[test]
