@@ -17,7 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 ed25519-dalek = { version = "2.2", default-features = false, features = ["std", "fast", "zeroize"] }
-base64 = "0.22"
+base64 = "0.23"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # Query builder: every statement is built as (SQL with ? placeholders, values).
 sea-query = { version = "1.0.2", default-features = false, features = ["backend-sqlite", "derive"] }
