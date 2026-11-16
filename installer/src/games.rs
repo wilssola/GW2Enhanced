@@ -239,6 +239,17 @@ pub fn find_installs() -> Vec<GameInstall> {
     found
 }
 
+/// How an install was found (`GameInstall::source`), in the language in use.
+pub fn source_label(source: &str) -> String {
+    let en = match source {
+        "Escolhida por você" => "Picked by you",
+        "Instalador da ArenaNet" => "ArenaNet installer",
+        "Pasta padrão" => "Default folder",
+        other => other,
+    };
+    crate::i18n::pick(source, en).to_string()
+}
+
 /// What a folder the player picked is: a store's when it is in one of its libraries, else the ArenaNet client.
 pub fn classify(path: &Path) -> GameInstall {
     if let Some(g) = platform::candidates().into_iter().find(|g| same_path(&g.path, path)) {

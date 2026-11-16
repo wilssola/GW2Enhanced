@@ -71,7 +71,7 @@ fn tokens(text: &str) -> Result<Vec<Tok>, String> {
                 let mut s = String::new();
                 i += 1;
                 loop {
-                    let Some(&c) = b.get(i) else { return Err("aspas sem fechar no arquivo da Steam".into()) };
+                    let Some(&c) = b.get(i) else { return Err(tr!("aspas sem fechar no arquivo da Steam", "unclosed quote in the Steam file")) };
                     match c {
                         b'"' => break,
                         b'\\' if i + 1 < b.len() => {
@@ -118,10 +118,10 @@ fn parse_entries(toks: &[Tok], pos: &mut usize, nested: bool) -> Result<Vec<(Str
     let mut entries = Vec::new();
     loop {
         match toks.get(*pos) {
-            None if nested => return Err("chave sem fechar no arquivo da Steam".into()),
+            None if nested => return Err(tr!("chave sem fechar no arquivo da Steam", "unclosed brace in the Steam file")),
             None => return Ok(entries),
             Some(Tok::Close(_)) if nested => return Ok(entries),
-            Some(Tok::Close(_)) | Some(Tok::Open(_)) => return Err("arquivo da Steam malformado".into()),
+            Some(Tok::Close(_)) | Some(Tok::Open(_)) => return Err(tr!("arquivo da Steam malformado", "malformed Steam file")),
             Some(Tok::Str(key, _)) => {
                 *pos += 1;
                 let key = key.clone();
@@ -135,12 +135,12 @@ fn parse_entries(toks: &[Tok], pos: &mut usize, nested: bool) -> Result<Vec<(Str
                         *pos += 1;
                         let inner = parse_entries(toks, pos, true)?;
                         let Some(Tok::Close(close)) = toks.get(*pos) else {
-                            return Err("chave sem fechar no arquivo da Steam".into());
+                            return Err(tr!("chave sem fechar no arquivo da Steam", "unclosed brace in the Steam file"));
                         };
                         entries.push((key, Value::Block { entries: inner, open_end, close: *close }));
                         *pos += 1;
                     }
-                    _ => return Err(format!("valor faltando para {key:?} no arquivo da Steam")),
+                    _ => return Err(tr!("valor faltando para {key:?} no arquivo da Steam", "missing value for {key:?} in the Steam file")),
                 }
             }
         }
@@ -174,7 +174,7 @@ fn indent_at(text: &str, at: usize) -> String {
 /// deepest one that exists. Returns the new text.
 pub fn set(text: &str, path: &[&str], value: &str) -> Result<String, String> {
     let root = parse(text)?;
-    let (key, blocks) = path.split_last().ok_or("caminho vazio")?;
+    let (key, blocks) = path.split_last().ok_or_else(|| tr!("caminho vazio", "empty path"))?;
     // Deepest existing block along the path.
     let mut cur = &root;
     let mut depth = 0;
@@ -184,7 +184,7 @@ pub fn set(text: &str, path: &[&str], value: &str) -> Result<String, String> {
                 cur = v;
                 depth += 1;
             }
-            Some(Value::Str { .. }) => return Err(format!("{k:?} não é um bloco no arquivo da Steam")),
+            Some(Value::Str { .. }) => return Err(tr!("{k:?} não é um bloco no arquivo da Steam", "{k:?} is not a block in the Steam file")),
             None => break,
         }
     }
@@ -192,7 +192,7 @@ pub fn set(text: &str, path: &[&str], value: &str) -> Result<String, String> {
         && let Some(existing) = cur.get(key)
     {
         let Value::Str { span, .. } = existing else {
-            return Err(format!("{key:?} é um bloco no arquivo da Steam"));
+            return Err(tr!("{key:?} é um bloco no arquivo da Steam", "{key:?} is a block in the Steam file"));
         };
         return Ok(format!("{}{}{}", &text[..span.start], quote(value), &text[span.end..]));
     }

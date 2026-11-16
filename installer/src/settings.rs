@@ -21,6 +21,8 @@ pub struct Settings {
     pub launch: LaunchOptions,
     /// Closes the installer once the game has been started.
     pub close_on_launch: bool,
+    /// The window's language, `"pt-BR"` or `"en"`; empty until the player picks one (the system's is used then).
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -33,6 +35,7 @@ impl Default for Settings {
             show_prereleases: false,
             launch: LaunchOptions::default(),
             close_on_launch: false,
+            language: String::new(),
         }
     }
 }
@@ -58,12 +61,12 @@ impl Settings {
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let p = path().ok_or("pasta de configurações do usuário não encontrada")?;
+        let p = path().ok_or_else(|| tr!("pasta de configurações do usuário não encontrada", "user settings folder not found"))?;
         if let Some(dir) = p.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("não consegui salvar as configurações: {e}"))?;
+            std::fs::create_dir_all(dir).map_err(|e| tr!("não consegui salvar as configurações: {e}", "could not save the settings: {e}"))?;
         }
         let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(&p, text).map_err(|e| format!("não consegui salvar as configurações: {e}"))
+        std::fs::write(&p, text).map_err(|e| tr!("não consegui salvar as configurações: {e}", "could not save the settings: {e}"))
     }
 }
 
@@ -77,6 +80,7 @@ mod tests {
         assert_eq!(s.package, "Graphics");
         assert!(s.check_updates_on_start);
         assert!(s.launch.autologin && !s.launch.share_archive);
+        assert_eq!(s.language, "", "no language chosen yet");
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back, s);
     }

@@ -85,7 +85,7 @@ struct Busy<'a>(&'a AtomicBool);
 impl<'a> Busy<'a> {
     fn take(flag: &'a AtomicBool) -> Result<Self, String> {
         if flag.swap(true, Ordering::SeqCst) {
-            return Err("outra operação ainda está em andamento".into());
+            return Err(tr!("outra operação ainda está em andamento", "another operation is still running"));
         }
         Ok(Self(flag))
     }
@@ -105,7 +105,7 @@ fn view(g: &GameInstall, running: &[Option<PathBuf>]) -> InstallView {
     InstallView {
         path: g.path.display().to_string(),
         channel: g.channel,
-        source: g.source.clone(),
+        source: games::source_label(&g.source),
         status: setup::status(&g.path),
         running: launch::running_in(running, &g.path),
         proton: (cfg!(not(windows)) && g.channel == Channel::Steam).then(|| proton::status(g)),
@@ -141,7 +141,7 @@ fn find_install(state: &AppState, path: &str) -> Result<GameInstall, String> {
         .iter()
         .find(|g| same(&g.path, Path::new(path)))
         .cloned()
-        .ok_or_else(|| format!("{path} não está na lista de instalações"))
+        .ok_or_else(|| tr!("{path} não está na lista de instalações", "{path} is not in the list of installs"))
 }
 
 fn overview_of(state: &AppState) -> Overview {
@@ -172,10 +172,14 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Sen
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
 }
 
+/// `lang`: the language the page runs in (the browser's), used for the messages until the player picks one in the
+/// settings (`Settings::language`, which then wins).
 #[tauri::command]
-async fn overview(app: tauri::AppHandle, rescan: bool) -> Result<Overview, String> {
+async fn overview(app: tauri::AppHandle, rescan: bool, lang: Option<String>) -> Result<Overview, String> {
     blocking(move || {
         let state = app.state::<AppState>();
+        let saved = lock(&state.settings).language.clone();
+        crate::i18n::set(if saved.is_empty() { lang.as_deref().unwrap_or("") } else { &saved });
         if rescan || lock(&state.installs).is_empty() {
             let settings = lock(&state.settings).clone();
             *lock(&state.installs) = all_installs(&settings);
@@ -205,7 +209,7 @@ async fn browse_game(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Res
     blocking(move || {
         let Some(dir) = crate::dialog::pick_game_exe(owner)? else { return Ok(None) };
         if !setup::is_game_dir(&dir) {
-            return Err(format!("{} não tem o Gw2-64.exe", dir.display()));
+            return Err(tr!("{} não tem o Gw2-64.exe", "{} has no Gw2-64.exe", dir.display()));
         }
         let state = app.state::<AppState>();
         let g = games::classify(&dir);
@@ -229,8 +233,12 @@ async fn browse_game(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Res
 #[tauri::command]
 fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
     if !gw2enhanced_core::release::PACKAGES.contains(&settings.package.as_str()) {
-        return Err(format!("pacote desconhecido: {}", settings.package));
+        return Err(tr!("pacote desconhecido: {}", "unknown package: {}", settings.package));
     }
+    if !settings.language.is_empty() && crate::i18n::normalize(&settings.language) != Some(settings.language.as_str()) {
+        return Err(tr!("idioma desconhecido: {}", "unknown language: {}", settings.language));
+    }
+    crate::i18n::set(&settings.language);
     let mut s = lock(&state.settings);
     // The game folder lists are managed by select_game / browse_game.
     let keep = (s.game_dir.clone(), s.manual_dirs.clone());
@@ -258,7 +266,7 @@ async fn releases(app: tauri::AppHandle) -> Result<ReleasesView, String> {
 /// The game in `dir` must be closed to replace its files (another copy elsewhere is fine).
 fn ensure_closed(dir: &Path) -> Result<(), String> {
     if launch::game_running_in(dir) {
-        return Err("feche o Guild Wars 2 antes de continuar".into());
+        return Err(tr!("feche o Guild Wars 2 antes de continuar", "close Guild Wars 2 before continuing"));
     }
     Ok(())
 }
@@ -269,13 +277,13 @@ async fn install_release(app: tauri::AppHandle, tag: String, package: String, re
     blocking(move || {
         let state = app.state::<AppState>();
         let _busy = Busy::take(&state.busy)?;
-        let game = selected(&state).ok_or("escolha a pasta do jogo primeiro")?;
+        let game = selected(&state).ok_or_else(pick_first)?;
         ensure_closed(&game.path)?;
         let release = lock(&state.releases)
             .iter()
             .find(|r| r.tag == tag)
             .cloned()
-            .ok_or("atualize a lista de versões e tente de novo")?;
+            .ok_or_else(|| tr!("atualize a lista de versões e tente de novo", "refresh the list of versions and try again"))?;
         let stage = STAGE.iter().fold(game.path.clone(), |p, part| p.join(part));
         let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
         let mut progress = |stage: &str, done: u64, total: u64| {
@@ -292,7 +300,7 @@ async fn install_release(app: tauri::AppHandle, tag: String, package: String, re
         });
         let _ = std::fs::remove_dir_all(&stage);
         let mut log = result?;
-        log.insert(0, format!("GW2 Enhanced {} ({package}) baixado e verificado", release.version));
+        log.insert(0, tr!("GW2 Enhanced {} ({package}) baixado e verificado", "GW2 Enhanced {} ({package}) downloaded and verified", release.version));
         let mut s = lock(&state.settings);
         s.package = package;
         let _ = s.save();
@@ -307,8 +315,9 @@ async fn install_local(app: tauri::AppHandle, replace_foreign: Option<bool>) -> 
     blocking(move || {
         let state = app.state::<AppState>();
         let _busy = Busy::take(&state.busy)?;
-        let game = selected(&state).ok_or("escolha a pasta do jogo primeiro")?;
-        let pkg = setup::local_package().ok_or("não há um pacote ao lado do instalador")?;
+        let game = selected(&state).ok_or_else(pick_first)?;
+        let pkg = setup::local_package()
+            .ok_or_else(|| tr!("não há um pacote ao lado do instalador", "there is no package next to the installer"))?;
         ensure_closed(&game.path)?;
         setup::install(&pkg, &game.path, replace_foreign)
     })
@@ -320,7 +329,7 @@ async fn uninstall(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     blocking(move || {
         let state = app.state::<AppState>();
         let _busy = Busy::take(&state.busy)?;
-        let game = selected(&state).ok_or("escolha a pasta do jogo primeiro")?;
+        let game = selected(&state).ok_or_else(pick_first)?;
         ensure_closed(&game.path)?;
         setup::uninstall(&game.path)
     })
@@ -336,12 +345,12 @@ async fn play(app: tauri::AppHandle, path: String, patch_only: bool) -> Result<S
         let plan = launch::plan(&game, &opts, patch_only, &launch::Tools::find(&game))?;
         launch::run(&plan)?;
         let how = match game.channel {
-            Channel::Steam if cfg!(not(windows)) => "pela Steam (Proton)",
-            Channel::Steam => "pela Steam",
-            Channel::Standalone if cfg!(not(windows)) && !patch_only => "pelo Wine",
-            Channel::Epic => "pela Epic Games",
-            Channel::Standalone if patch_only => "para atualizar",
-            Channel::Standalone => "pelo Gw2-64.exe",
+            Channel::Steam if cfg!(not(windows)) => tr!("pela Steam (Proton)", "through Steam (Proton)"),
+            Channel::Steam => tr!("pela Steam", "through Steam"),
+            Channel::Standalone if cfg!(not(windows)) && !patch_only => tr!("pelo Wine", "with Wine"),
+            Channel::Epic => tr!("pela Epic Games", "through Epic Games"),
+            Channel::Standalone if patch_only => tr!("para atualizar", "to update"),
+            Channel::Standalone => tr!("pelo Gw2-64.exe", "with Gw2-64.exe"),
         };
         if lock(&state.settings).close_on_launch && !patch_only {
             let app2 = app.clone();
@@ -350,7 +359,7 @@ async fn play(app: tauri::AppHandle, path: String, patch_only: bool) -> Result<S
                 app2.exit(0);
             });
         }
-        Ok(format!("Guild Wars 2 iniciado {how}"))
+        Ok(tr!("Guild Wars 2 iniciado {how}", "Guild Wars 2 started {how}"))
     })
     .await
 }
@@ -362,7 +371,7 @@ async fn set_proton_override(app: tauri::AppHandle, path: String) -> Result<Vec<
         let state = app.state::<AppState>();
         let game = find_install(&state, &path)?;
         if game.channel != Channel::Steam {
-            return Err("isto só vale para o jogo da Steam".into());
+            return Err(tr!("isto só vale para o jogo da Steam", "this only applies to the Steam game"));
         }
         proton::apply(&game)
     })
@@ -374,7 +383,7 @@ async fn set_proton_override(app: tauri::AppHandle, path: String) -> Result<Vec<
 fn open_url(url: String) -> Result<(), String> {
     let lower = url.to_ascii_lowercase();
     if !(lower.starts_with("https://") || lower.starts_with("http://")) || url.chars().any(char::is_control) {
-        return Err("link recusado".into());
+        return Err(tr!("link recusado", "link refused"));
     }
     launch::shell_open(&url)
 }
@@ -386,8 +395,13 @@ fn open_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
     launch::shell_open(&g.path.display().to_string())
 }
 
+fn pick_first() -> String {
+    tr!("escolha a pasta do jogo primeiro", "choose the game folder first")
+}
+
 pub fn run() {
     let settings = Settings::load();
+    crate::i18n::init(&settings.language);
     tauri::Builder::default()
         .manage(AppState { settings: Mutex::new(settings), ..Default::default() })
         .invoke_handler(tauri::generate_handler![

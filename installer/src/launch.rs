@@ -146,10 +146,14 @@ pub fn plan(game: &GameInstall, opts: &LaunchOptions, patch_only: bool, tools: &
             if !tools.linux {
                 return Ok(Plan::Program { exe, args, cwd: Some(game.path.clone()), env: Vec::new() });
             }
-            let wine = tools.wine.clone().ok_or(
-                "o Wine não foi encontrado; abra o jogo pelo Lutris (com o override msimg32=n,b nas opções do Wine) \
-                 ou instale o Wine",
-            )?;
+            let wine = tools.wine.clone().ok_or_else(|| {
+                tr!(
+                    "o Wine não foi encontrado; abra o jogo pelo Lutris (com o override msimg32=n,b nas opções do Wine) \
+                     ou instale o Wine",
+                    "Wine was not found; start the game through Lutris (with the msimg32=n,b override in the Wine options) \
+                     or install Wine"
+                )
+            })?;
             let mut env = vec![("WINEDLLOVERRIDES".to_string(), crate::proton::DLL_OVERRIDE.to_string())];
             if let Some(prefix) = &game.wine_prefix {
                 env.push(("WINEPREFIX".into(), prefix.display().to_string()));
@@ -160,7 +164,7 @@ pub fn plan(game: &GameInstall, opts: &LaunchOptions, patch_only: bool, tools: &
         }
         Channel::Steam => {
             if patch_only {
-                return Err("na Steam, o jogo é atualizado pela própria Steam".into());
+                return Err(tr!("na Steam, o jogo é atualizado pela própria Steam", "on Steam, the game is updated by Steam itself"));
             }
             let url = format!("steam://rungameid/{STEAM_APP_ID}");
             match (&tools.steam, args.is_empty()) {
@@ -185,15 +189,21 @@ pub fn plan(game: &GameInstall, opts: &LaunchOptions, patch_only: bool, tools: &
         }
         Channel::Epic => {
             if tools.linux {
-                return Err("no Linux, a versão da Epic Games roda pelo Heroic Games Launcher: abra o jogo por ele".into());
+                return Err(tr!(
+                    "no Linux, a versão da Epic Games roda pelo Heroic Games Launcher: abra o jogo por ele",
+                    "on Linux, the Epic Games version runs through Heroic Games Launcher: start the game from it"
+                ));
             }
             if patch_only {
-                return Err("na Epic Games, o jogo é atualizado pelo próprio launcher da Epic".into());
+                return Err(tr!("na Epic Games, o jogo é atualizado pelo próprio launcher da Epic", "on Epic Games, the game is updated by the Epic launcher itself"));
             }
-            let app = game.epic.as_ref().ok_or("não encontrei os dados da Epic Games desta instalação")?;
+            let app = game
+                .epic
+                .as_ref()
+                .ok_or_else(|| tr!("não encontrei os dados da Epic Games desta instalação", "could not find the Epic Games data of this install"))?;
             let part = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
             if !(part(&app.namespace) && part(&app.catalog_item_id) && part(&app.app_name)) || app.app_name.is_empty() {
-                return Err("os dados da Epic Games desta instalação são inválidos".into());
+                return Err(tr!("os dados da Epic Games desta instalação são inválidos", "the Epic Games data of this install is invalid"));
             }
             let id = if app.namespace.is_empty() || app.catalog_item_id.is_empty() {
                 app.app_name.clone()
@@ -210,14 +220,14 @@ pub fn run(plan: &Plan) -> Result<(), String> {
     match plan {
         Plan::Program { exe, args, cwd, env } => {
             if !exe.is_file() {
-                return Err(format!("{} não existe", exe.display()));
+                return Err(tr!("{} não existe", "{} does not exist", exe.display()));
             }
             let mut cmd = Command::new(exe);
             cmd.args(args).envs(env.iter().map(|(k, v)| (k, v)));
             if let Some(cwd) = cwd {
                 cmd.current_dir(cwd);
             }
-            cmd.spawn().map(|_| ()).map_err(|e| format!("não consegui abrir {}: {e}", exe.display()))
+            cmd.spawn().map(|_| ()).map_err(|e| tr!("não consegui abrir {}: {e}", "could not open {}: {e}", exe.display()))
         }
         Plan::Url(url) => shell_open(url),
     }
@@ -234,7 +244,7 @@ pub fn shell_open(target: &str) -> Result<(), String> {
         ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL)
     };
     // ShellExecute returns a value above 32 on success.
-    if h as usize > 32 { Ok(()) } else { Err(format!("o Windows não conseguiu abrir {target} (código {})", h as usize)) }
+    if h as usize > 32 { Ok(()) } else { Err(tr!("o Windows não conseguiu abrir {target} (código {})", "Windows could not open {target} (code {})", h as usize)) }
 }
 
 #[cfg(not(windows))]
@@ -243,7 +253,7 @@ pub fn shell_open(target: &str) -> Result<(), String> {
         .arg(target)
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("não consegui abrir {target} (xdg-open: {e})"))
+        .map_err(|e| tr!("não consegui abrir {target} (xdg-open: {e})", "could not open {target} (xdg-open: {e})"))
 }
 
 /// Every running `Gw2-64.exe`: its full path, or `None` when the system does not tell.

@@ -38,8 +38,8 @@
   <span class="titlebar-brand" data-tauri-drag-region><i class="seal" aria-hidden="true">E</i>GW2 Enhanced</span>
   <span class="titlebar-info" id="tb-info" data-tauri-drag-region></span>
   <div class="titlebar-buttons">
-    <button class="tb-btn" id="tb-min" type="button" aria-label="Minimizar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5.5h8" stroke="currentColor" stroke-width="1.2"/></svg></button>
-    <button class="tb-btn close" id="tb-close" type="button" aria-label="Fechar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.2"/></svg></button>
+    <button class="tb-btn" id="tb-min" type="button" aria-label="Minimizar" data-i18n-attr="aria-label:tb.min"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5.5h8" stroke="currentColor" stroke-width="1.2"/></svg></button>
+    <button class="tb-btn close" id="tb-close" type="button" aria-label="Fechar" data-i18n-attr="aria-label:tb.close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.2"/></svg></button>
   </div>
 </div>
 
@@ -52,14 +52,14 @@
   </svg>
   <div class="masthead-inner" data-tauri-drag-region>
     <div class="brand" data-tauri-drag-region>
-      <p class="kicker" data-tauri-drag-region>Tradução · Texturas HD · Gráficos</p>
+      <p class="kicker" data-tauri-drag-region data-i18n="brand.kicker">Tradução · Texturas HD · Gráficos</p>
       <h1 data-tauri-drag-region>GW2 Enhanced</h1>
     </div>
-    <nav class="mainnav" aria-label="Seções">
-      <a href="#inicio" data-view="inicio">Início</a>
-      <a href="#instalar" data-view="instalar">Instalar</a>
-      <a href="#atualizacoes" data-view="atualizacoes">Atualizações<b class="dot" id="nav-dot" hidden></b></a>
-      <a href="#configuracoes" data-view="configuracoes">Configurações</a>
+    <nav class="mainnav" aria-label="Seções" data-i18n-attr="aria-label:nav.aria">
+      <a href="#inicio" data-view="inicio" data-i18n="nav.home">Início</a>
+      <a href="#instalar" data-view="instalar" data-i18n="nav.install">Instalar</a>
+      <a href="#atualizacoes" data-view="atualizacoes" data-i18n="nav.updates">Atualizações<b class="dot" id="nav-dot" hidden></b></a>
+      <a href="#configuracoes" data-view="configuracoes" data-i18n="nav.settings">Configurações</a>
     </nav>
   </div>
 </header>
@@ -69,7 +69,7 @@
   <section class="view" id="view-inicio" aria-labelledby="t-inicio">
     <div class="grid-home">
       <div class="paper card hero">
-        <p class="kicker">Situação do mod</p>
+        <p class="kicker" data-i18n="home.kicker">Situação do mod</p>
         <h2 id="t-inicio" class="hero-title">Carregando…</h2>
         <p class="hero-sub" id="hero-sub"></p>
         <div class="chips" id="hero-chips"></div>
@@ -78,42 +78,42 @@
             <b id="update-title">Nova versão disponível</b>
             <span id="update-text"></span>
           </div>
-          <button class="gbtn primary" id="update-now" type="button">Atualizar</button>
+          <button class="gbtn primary" id="update-now" type="button" data-i18n="home.updateNow">Atualizar</button>
         </div>
         <div class="wine" id="wine" hidden>
           <b id="wine-title"></b>
           <p id="wine-text"></p>
           <div class="wine-line" id="wine-line-row">
             <code id="wine-line"></code>
-            <button class="gbtn small" id="wine-copy" type="button">Copiar</button>
+            <button class="gbtn small" id="wine-copy" type="button" data-i18n="wine.copy">Copiar</button>
           </div>
           <div class="row-actions" id="wine-actions">
-            <button class="gbtn small primary" id="wine-apply" type="button">Configurar na Steam</button>
+            <button class="gbtn small primary" id="wine-apply" type="button" data-i18n="wine.apply">Configurar na Steam</button>
           </div>
         </div>
         <div class="row-actions">
-          <button class="gbtn" type="button" data-go="instalar">Pacotes e instalação</button>
-          <button class="gbtn" type="button" data-go="atualizacoes">Notas de atualização</button>
+          <button class="gbtn" type="button" data-go="instalar" data-i18n="home.toInstall">Pacotes e instalação</button>
+          <button class="gbtn" type="button" data-go="atualizacoes" data-i18n="home.toNotes">Notas de atualização</button>
         </div>
       </div>
 
       <div class="paper card news" id="news">
-        <p class="kicker">Última versão</p>
+        <p class="kicker" data-i18n="news.kicker">Última versão</p>
         <h3 id="news-title">Procurando…</h3>
         <p class="news-date" id="news-date"></p>
         <div class="notes clamp" id="news-notes"></div>
-        <button class="linkbtn" id="news-more" type="button" data-go="atualizacoes">Ler as notas completas</button>
+        <button class="linkbtn" id="news-more" type="button" data-go="atualizacoes" data-i18n="news.more">Ler as notas completas</button>
       </div>
     </div>
 
     <div class="section-head">
       <div>
-        <p class="kicker light">Onde o jogo está</p>
-        <h2 class="section-title">Instalações do Guild Wars 2</h2>
+        <p class="kicker light" data-i18n="installs.kicker">Onde o jogo está</p>
+        <h2 class="section-title" data-i18n="installs.title">Instalações do Guild Wars 2</h2>
       </div>
       <div class="row-actions">
-        <button class="gbtn" id="rescan" type="button">Procurar de novo</button>
-        <button class="gbtn" id="browse" type="button">Escolher pasta…</button>
+        <button class="gbtn" id="rescan" type="button" data-i18n="installs.rescan">Procurar de novo</button>
+        <button class="gbtn" id="browse" type="button" data-i18n="installs.browse">Escolher pasta…</button>
       </div>
     </div>
     <div class="divider" aria-hidden="true"></div>
@@ -122,29 +122,29 @@
 
   <!-- ============ Instalar ============ -->
   <section class="view" id="view-instalar" aria-labelledby="t-instalar" hidden>
-    <p class="kicker light">Escolha o que instalar</p>
-    <h2 class="section-title" id="t-instalar">Pacotes</h2>
+    <p class="kicker light" data-i18n="inst.kicker">Escolha o que instalar</p>
+    <h2 class="section-title" id="t-instalar" data-i18n="inst.title">Pacotes</h2>
     <div class="divider" aria-hidden="true"></div>
-    <p class="lead">Cada pacote é o mesmo <code>msimg32.dll</code> com partes diferentes dentro. Escolha um; para trocar depois, basta instalar outro por cima. Suas configurações e traduções nunca são apagadas.</p>
-    <div class="packages" id="packages" role="radiogroup" aria-label="Pacote"></div>
+    <p class="lead" data-i18n="inst.lead">Cada pacote é o mesmo <code>msimg32.dll</code> com partes diferentes dentro. Escolha um; para trocar depois, basta instalar outro por cima. Suas configurações e traduções nunca são apagadas.</p>
+    <div class="packages" id="packages" role="radiogroup" aria-label="Pacote" data-i18n-attr="aria-label:inst.pkgAria"></div>
 
     <div class="paper card install-panel">
       <div class="install-target">
-        <p class="kicker">Instalar em</p>
+        <p class="kicker" data-i18n="inst.target">Instalar em</p>
         <p class="path" id="install-path">—</p>
         <p class="small-note" id="install-state"></p>
       </div>
       <div class="install-buttons">
         <button class="gbtn primary big" id="install-gh" type="button" disabled>Baixar e instalar</button>
         <button class="gbtn" id="install-local" type="button" hidden>Instalar do pacote local</button>
-        <button class="gbtn danger" id="uninstall" type="button">Desinstalar</button>
+        <button class="gbtn danger" id="uninstall" type="button" data-i18n="inst.uninstall">Desinstalar</button>
       </div>
       <div class="progress-wrap" id="progress-wrap" hidden>
         <div class="progress-text"><span id="progress-stage">Preparando…</span><span id="progress-num"></span></div>
         <div class="progress"><i id="progress-bar"></i></div>
       </div>
       <ul class="log" id="log" hidden></ul>
-      <p class="small-note">Os downloads vêm só das versões oficiais no GitHub e só são instalados se a soma de verificação estiver assinada pelo GW2 Enhanced e o arquivo conferir com ela.</p>
+      <p class="small-note" data-i18n="inst.note">Os downloads vêm só das versões oficiais no GitHub e só são instalados se a soma de verificação estiver assinada pelo GW2 Enhanced e o arquivo conferir com ela.</p>
     </div>
   </section>
 
@@ -152,10 +152,10 @@
   <section class="view" id="view-atualizacoes" aria-labelledby="t-atualizacoes" hidden>
     <div class="section-head">
       <div>
-        <p class="kicker light">Notas de atualização</p>
-        <h2 class="section-title" id="t-atualizacoes">Versões</h2>
+        <p class="kicker light" data-i18n="upd.kicker">Notas de atualização</p>
+        <h2 class="section-title" id="t-atualizacoes" data-i18n="upd.title">Versões</h2>
       </div>
-      <button class="gbtn" id="refresh-releases" type="button">Verificar agora</button>
+      <button class="gbtn" id="refresh-releases" type="button" data-i18n="upd.check">Verificar agora</button>
     </div>
     <div class="divider" aria-hidden="true"></div>
     <div id="releases" aria-live="polite"></div>
@@ -163,51 +163,62 @@
 
   <!-- ============ Configurações ============ -->
   <section class="view" id="view-configuracoes" aria-labelledby="t-config" hidden>
-    <p class="kicker light">Preferências</p>
-    <h2 class="section-title" id="t-config">Configurações</h2>
+    <p class="kicker light" data-i18n="set.kicker">Preferências</p>
+    <h2 class="section-title" id="t-config" data-i18n="set.title">Configurações</h2>
     <div class="divider" aria-hidden="true"></div>
     <div class="settings">
       <div class="paper card">
-        <h3>Pasta do jogo</h3>
+        <h3 data-i18n="set.game">Pasta do jogo</h3>
         <label class="field">
-          <span>Instalação usada para instalar o mod e jogar</span>
+          <span data-i18n="set.gameLabel">Instalação usada para instalar o mod e jogar</span>
           <select id="set-game"></select>
         </label>
         <div class="row-actions">
-          <button class="gbtn" id="set-browse" type="button">Escolher outra pasta…</button>
-          <button class="gbtn" id="set-open" type="button">Abrir a pasta</button>
-          <button class="gbtn" id="set-patch" type="button">Só atualizar o jogo</button>
+          <button class="gbtn" id="set-browse" type="button" data-i18n="set.browse">Escolher outra pasta…</button>
+          <button class="gbtn" id="set-open" type="button" data-i18n="set.open">Abrir a pasta</button>
+          <button class="gbtn" id="set-patch" type="button" data-i18n="set.patch">Só atualizar o jogo</button>
         </div>
-        <p class="small-note">“Só atualizar o jogo” abre o Gw2-64.exe com <code>-image</code>: ele baixa a atualização do jogo e fecha. Na Steam e na Epic, quem atualiza o jogo é o launcher da loja.</p>
+        <p class="small-note" data-i18n="set.patchNote">“Só atualizar o jogo” abre o Gw2-64.exe com <code>-image</code>: ele baixa a atualização do jogo e fecha. Na Steam e na Epic, quem atualiza o jogo é o launcher da loja.</p>
       </div>
 
       <div class="paper card">
-        <h3>Atualizações</h3>
-        <label class="toggle"><input type="checkbox" id="set-check"><span>Procurar atualizações do mod ao abrir</span></label>
-        <label class="toggle"><input type="checkbox" id="set-pre"><span>Mostrar versões de teste (pré-lançamentos)</span></label>
-        <label class="toggle"><input type="checkbox" id="set-close"><span>Fechar este programa depois de abrir o jogo</span></label>
+        <h3 data-i18n="set.updates">Atualizações</h3>
+        <label class="toggle"><input type="checkbox" id="set-check"><span data-i18n="set.check">Procurar atualizações do mod ao abrir</span></label>
+        <label class="toggle"><input type="checkbox" id="set-pre"><span data-i18n="set.pre">Mostrar versões de teste (pré-lançamentos)</span></label>
+        <label class="toggle"><input type="checkbox" id="set-close"><span data-i18n="set.close">Fechar este programa depois de abrir o jogo</span></label>
+      </div>
+
+      <div class="paper card wide lang-card">
+        <div>
+          <h3 data-i18n="set.lang">Idioma</h3>
+          <p class="small-note" data-i18n="set.langNote">Idioma deste programa: telas, mensagens e avisos.</p>
+        </div>
+        <div class="langs" role="group" aria-label="Idioma" data-i18n-attr="aria-label:set.lang">
+          <button class="gbtn" type="button" data-lang="pt-BR" lang="pt-BR" aria-label="Português (Brasil)" aria-pressed="true">PT</button>
+          <button class="gbtn" type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+        </div>
       </div>
 
       <div class="paper card wide">
-        <h3>Opções de inicialização</h3>
-        <p class="small-note">Valem para o Gw2-64.exe e para a Steam. Na Epic Games, use as “Opções de inicialização” do próprio launcher da Epic.</p>
+        <h3 data-i18n="set.launch">Opções de inicialização</h3>
+        <p class="small-note" data-i18n="set.launchNote">Valem para o Gw2-64.exe e para a Steam. Na Epic Games, use as “Opções de inicialização” do próprio launcher da Epic.</p>
         <div class="opts">
-          <label class="toggle"><input type="checkbox" id="opt-autologin"><span><code>-autologin</code> Entra direto, se o jogo lembra seu e-mail e senha</span></label>
-          <label class="toggle"><input type="checkbox" id="opt-share"><span><code>-shareArchive</code> Abre o Gw2.dat em modo compartilhado (vários clientes, ferramentas)</span></label>
-          <label class="toggle"><input type="checkbox" id="opt-maplo"><span><code>-mapLoadinfo</code> Mostra progresso e tempo nas telas de carregamento</span></label>
-          <label class="toggle"><input type="checkbox" id="opt-windowed"><span><code>-windowed</code> Abre em janela</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-autologin"><span data-i18n="opt.autologin"><code>-autologin</code> Entra direto, se o jogo lembra seu e-mail e senha</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-share"><span data-i18n="opt.share"><code>-shareArchive</code> Abre o Gw2.dat em modo compartilhado (vários clientes, ferramentas)</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-maplo"><span data-i18n="opt.maplo"><code>-mapLoadinfo</code> Mostra progresso e tempo nas telas de carregamento</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-windowed"><span data-i18n="opt.windowed"><code>-windowed</code> Abre em janela</span></label>
         </div>
         <label class="field">
-          <span>Outros argumentos</span>
-          <input id="opt-extra" type="text" spellcheck="false" autocomplete="off" placeholder="ex.: -clientport 443">
+          <span data-i18n="opt.extra">Outros argumentos</span>
+          <input id="opt-extra" type="text" spellcheck="false" autocomplete="off" placeholder="ex.: -clientport 443" data-i18n-attr="placeholder:opt.extraPh">
         </label>
       </div>
 
       <div class="paper card wide about">
-        <h3>Sobre</h3>
-        <p>GW2 Enhanced <span id="about-version"></span>. Projeto de fã, sem afiliação com a ArenaNet ou NCSOFT. Guild Wars 2 é marca registrada da ArenaNet/NCSOFT.</p>
-        <p class="small-note">Fontes Cinzel, EB Garamond e Barlow Condensed sob a licença SIL Open Font License.</p>
-        <button class="linkbtn" type="button" id="about-repo">Código-fonte no GitHub</button>
+        <h3 data-i18n="about.title">Sobre</h3>
+        <p data-i18n="about.text">GW2 Enhanced <span id="about-version"></span>. Projeto de fã, sem afiliação com a ArenaNet ou NCSOFT. Guild Wars 2 é marca registrada da ArenaNet/NCSOFT.</p>
+        <p class="small-note" data-i18n="about.fonts">Fontes Cinzel, EB Garamond e Barlow Condensed sob a licença SIL Open Font License.</p>
+        <button class="linkbtn" type="button" id="about-repo" data-i18n="about.repo">Código-fonte no GitHub</button>
       </div>
     </div>
   </section>
@@ -221,14 +232,14 @@
       <span id="pb-state"></span>
     </div>
   </div>
-  <button class="play" id="play" type="button" disabled><span>Jogar</span></button>
+  <button class="play" id="play" type="button" disabled><span data-i18n="play">Jogar</span></button>
 </footer>
 
 <dialog id="dlg" class="paper-dialog" aria-labelledby="dlg-title">
   <h2 id="dlg-title"></h2>
   <div id="dlg-body"></div>
   <div class="row">
-    <button id="dlg-cancel" class="gbtn" type="button">Cancelar</button>
+    <button id="dlg-cancel" class="gbtn" type="button" data-i18n="dlg.cancel">Cancelar</button>
     <button id="dlg-ok" class="gbtn primary" type="button">Confirmar</button>
   </div>
 </dialog>

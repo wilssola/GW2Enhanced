@@ -123,12 +123,16 @@ fn remove_legacy(game: &Path, log: &mut Vec<String>) -> Result<(), String> {
     let dll = game.join(LEGACY_DLL);
     if dll.is_file() && has_marker(&dll, &[LEGACY_MARKER]) {
         std::fs::remove_file(&dll)
-            .map_err(|e| format!("não consegui remover o version.dll antigo do GW2 Translated: {e}"))?;
-        log.push(format!("version.dll antigo do GW2 Translated removido (a tradução agora fica no {DLL})"));
+            .map_err(|e| tr!("não consegui remover o version.dll antigo do GW2 Translated: {e}", "could not remove the old GW2 Translated version.dll: {e}"))?;
+        log.push(tr!(
+            "version.dll antigo do GW2 Translated removido (a tradução agora fica no {DLL})",
+            "old GW2 Translated version.dll removed (the translation now lives in {DLL})"
+        ));
         let backup = game.join(LEGACY_BACKUP);
         if backup.is_file() {
-            std::fs::rename(&backup, &dll).map_err(|e| format!("não consegui restaurar o version.dll anterior: {e}"))?;
-            log.push("version.dll de outro mod restaurado".into());
+            std::fs::rename(&backup, &dll)
+                .map_err(|e| tr!("não consegui restaurar o version.dll anterior: {e}", "could not restore the previous version.dll: {e}"))?;
+            log.push(tr!("version.dll de outro mod restaurado", "another mod's version.dll restored"));
         }
     }
     Ok(())
@@ -136,8 +140,9 @@ fn remove_legacy(game: &Path, log: &mut Vec<String>) -> Result<(), String> {
 
 /// Why an install stops when another mod's `msimg32.dll` is in the game folder.
 pub fn foreign_dll_message(game: &Path) -> String {
-    format!(
-        "já existe um {DLL} de outro mod em {}. O GW2 Enhanced só o substitui se você escolher: confirme a troca          (o arquivo dele fica guardado e volta ao desinstalar) ou remova esse mod antes",
+    tr!(
+        "já existe um {DLL} de outro mod em {}. O GW2 Enhanced só o substitui se você escolher: confirme a troca (o arquivo dele fica guardado e volta ao desinstalar) ou remova esse mod antes",
+        "there is already another mod's {DLL} in {}. GW2 Enhanced only replaces it if you choose to: confirm the swap (its file is kept and comes back when you uninstall) or remove that mod first",
         game.display()
     )
 }
@@ -149,12 +154,12 @@ pub fn install(pkg: &Path, game: &Path, replace_foreign: bool) -> Result<Vec<Str
     let mut log = Vec::new();
     let new_dll = pkg.join(DLL);
     if !new_dll.is_file() {
-        return Err(format!("pacote incompleto: falta {DLL} em {}", pkg.display()));
+        return Err(tr!("pacote incompleto: falta {DLL} em {}", "incomplete package: {DLL} missing in {}", pkg.display()));
     }
     remove_legacy(game, &mut log)?;
     if same_dir(pkg, game) {
         // The zip was extracted straight into the game folder: the files are already in place.
-        log.push("o pacote já está na pasta do jogo".into());
+        log.push(tr!("o pacote já está na pasta do jogo", "the package is already in the game folder"));
         return Ok(log);
     }
     let dll = game.join(DLL);
@@ -165,12 +170,12 @@ pub fn install(pkg: &Path, game: &Path, replace_foreign: bool) -> Result<Vec<Str
         }
         let backup = game.join(BACKUP);
         if !backup.exists() {
-            std::fs::copy(&dll, &backup).map_err(|e| format!("não consegui guardar o {DLL} atual: {e}"))?;
-            log.push(format!("{DLL} de outro mod guardado como {BACKUP}"));
+            std::fs::copy(&dll, &backup).map_err(|e| tr!("não consegui guardar o {DLL} atual: {e}", "could not back up the current {DLL}: {e}"))?;
+            log.push(tr!("{DLL} de outro mod guardado como {BACKUP}", "another mod's {DLL} kept as {BACKUP}"));
         }
     }
-    std::fs::copy(&new_dll, &dll).map_err(|e| format!("não consegui copiar o {DLL}: {e}"))?;
-    log.push(format!("{DLL} instalado"));
+    std::fs::copy(&new_dll, &dll).map_err(|e| tr!("não consegui copiar o {DLL}: {e}", "could not copy {DLL}: {e}"))?;
+    log.push(tr!("{DLL} instalado", "{DLL} installed"));
 
     for dir in DATA_DIRS {
         let from = pkg.join(dir);
@@ -179,7 +184,7 @@ pub fn install(pkg: &Path, game: &Path, replace_foreign: bool) -> Result<Vec<Str
         }
         let to = game.join(dir);
         let n = copy_dir(&from, &to).map_err(|e| format!("{dir}: {e}"))?;
-        log.push(format!("{dir}{} atualizado ({n} arquivos)", std::path::MAIN_SEPARATOR));
+        log.push(tr!("{dir}{} atualizado ({n} arquivos)", "{dir}{} updated ({n} files)", std::path::MAIN_SEPARATOR));
         if let Ok(langs) = std::fs::read_dir(to.join("languages")) {
             for lang in langs.flatten() {
                 for f in OBSOLETE {
@@ -197,17 +202,18 @@ pub fn uninstall(game: &Path) -> Result<Vec<String>, String> {
     remove_legacy(game, &mut log)?;
     let dll = game.join(DLL);
     if dll.is_file() && is_ours(&dll) {
-        std::fs::remove_file(&dll).map_err(|e| format!("não consegui remover o {DLL}: {e}"))?;
-        log.push(format!("{DLL} do GW2 Enhanced removido"));
+        std::fs::remove_file(&dll).map_err(|e| tr!("não consegui remover o {DLL}: {e}", "could not remove {DLL}: {e}"))?;
+        log.push(tr!("{DLL} do GW2 Enhanced removido", "GW2 Enhanced {DLL} removed"));
     }
     let backup = game.join(BACKUP);
     if backup.is_file() && !dll.exists() {
-        std::fs::rename(&backup, &dll).map_err(|e| format!("não consegui restaurar o {DLL} anterior: {e}"))?;
-        log.push(format!("{DLL} anterior restaurado"));
+        std::fs::rename(&backup, &dll).map_err(|e| tr!("não consegui restaurar o {DLL} anterior: {e}", "could not restore the previous {DLL}: {e}"))?;
+        log.push(tr!("{DLL} anterior restaurado", "previous {DLL} restored"));
     }
     let dirs: Vec<String> = DATA_DIRS.iter().map(|d| format!("{d}{}", std::path::MAIN_SEPARATOR)).collect();
-    log.push(format!(
+    log.push(tr!(
         "as pastas {} (configuração, coleta, logs) foram mantidas; apague à mão se quiser",
+        "the folders {} (settings, collected text, logs) were kept; delete them by hand if you want",
         dirs.join(", ")
     ));
     Ok(log)

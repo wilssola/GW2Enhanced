@@ -20,18 +20,26 @@ pub fn run(args: &[String]) -> Option<i32> {
         return None;
     }
     attach_console();
-    println!("GW2 Enhanced — tradução, texturas HD e gráficos para o Guild Wars 2\n");
+    // The language chosen in the window, else the system's.
+    crate::i18n::init(&crate::settings::Settings::load().language);
+    println!(
+        "{}\n",
+        tr!(
+            "GW2 Enhanced — tradução, texturas HD e gráficos para o Guild Wars 2",
+            "GW2 Enhanced — translation, HD textures and graphics for Guild Wars 2"
+        )
+    );
     let result = (|| {
         let game = match folder {
             Some(f) => f,
             None => default_game()?,
         };
         if !setup::is_game_dir(&game) {
-            return Err(format!("{} não tem o Gw2-64.exe", game.display()));
+            return Err(tr!("{} não tem o Gw2-64.exe", "{} has no Gw2-64.exe", game.display()));
         }
-        println!("Pasta do jogo: {}", game.display());
+        println!("{}", tr!("Pasta do jogo: {}", "Game folder: {}", game.display()));
         if launch::game_running_in(&game) {
-            return Err("feche o Guild Wars 2 antes de continuar".into());
+            return Err(tr!("feche o Guild Wars 2 antes de continuar", "close Guild Wars 2 before continuing"));
         }
         let log = if remove {
             setup::uninstall(&game)?
@@ -49,11 +57,11 @@ pub fn run(args: &[String]) -> Option<i32> {
     })();
     Some(match result {
         Ok(()) => {
-            println!("\nPronto! Abra o jogo normalmente.");
+            println!("\n{}", tr!("Pronto! Abra o jogo normalmente.", "Done! Start the game as usual."));
             0
         }
         Err(e) => {
-            println!("\nERRO: {e}");
+            println!("\n{}", tr!("ERRO: {e}", "ERROR: {e}"));
             1
         }
     })
@@ -66,8 +74,11 @@ fn default_game() -> Result<PathBuf, String> {
     let found = games::find_installs();
     match found.as_slice() {
         [one] => Ok(one.path.clone()),
-        [] => Err("não encontrei o Guild Wars 2; informe a pasta do jogo".into()),
-        _ => Err("encontrei mais de uma instalação do Guild Wars 2; informe a pasta do jogo".into()),
+        [] => Err(tr!("não encontrei o Guild Wars 2; informe a pasta do jogo", "Guild Wars 2 not found; give the game folder")),
+        _ => Err(tr!(
+            "encontrei mais de uma instalação do Guild Wars 2; informe a pasta do jogo",
+            "found more than one Guild Wars 2 install; give the game folder"
+        )),
     }
 }
 

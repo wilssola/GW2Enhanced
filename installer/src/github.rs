@@ -82,18 +82,26 @@ fn get(url: &str, accept: &str, api: bool) -> Result<ureq::http::Response<ureq::
         .build()
         .call()
         .map_err(|e| match e {
-            ureq::Error::StatusCode(404) if token().is_none() => "o GitHub respondeu 404: o repositório ainda é privado \
+            ureq::Error::StatusCode(404) if token().is_none() => tr!(
+                "o GitHub respondeu 404: o repositório ainda é privado \
                  ou não existe nenhuma versão publicada (com o repositório privado, defina a variável de ambiente \
-                 GW2E_GH_TOKEN com um token de acesso)"
-                .to_string(),
-            ureq::Error::StatusCode(404) => "o GitHub respondeu 404: nenhuma versão publicada, ou o token em \
-                 GW2E_GH_TOKEN não tem acesso ao repositório"
-                .to_string(),
-            ureq::Error::StatusCode(c @ (401 | 403)) => {
-                format!("o GitHub recusou o acesso (HTTP {c}): token inválido ou limite de consultas atingido; tente mais tarde")
-            }
-            ureq::Error::StatusCode(c) => format!("o GitHub respondeu HTTP {c}"),
-            e => format!("sem conexão com o GitHub: {e}"),
+                 GW2E_GH_TOKEN com um token de acesso)",
+                "GitHub answered 404: the repository is still private \
+                 or no version has been published (with a private repository, set the environment variable \
+                 GW2E_GH_TOKEN to an access token)"
+            ),
+            ureq::Error::StatusCode(404) => tr!(
+                "o GitHub respondeu 404: nenhuma versão publicada, ou o token em \
+                 GW2E_GH_TOKEN não tem acesso ao repositório",
+                "GitHub answered 404: no version published, or the token in \
+                 GW2E_GH_TOKEN has no access to the repository"
+            ),
+            ureq::Error::StatusCode(c @ (401 | 403)) => tr!(
+                "o GitHub recusou o acesso (HTTP {c}): token inválido ou limite de consultas atingido; tente mais tarde",
+                "GitHub refused access (HTTP {c}): invalid token or rate limit reached; try again later"
+            ),
+            ureq::Error::StatusCode(c) => tr!("o GitHub respondeu HTTP {c}", "GitHub answered HTTP {c}"),
+            e => tr!("sem conexão com o GitHub: {e}", "no connection to GitHub: {e}"),
         })
 }
 
@@ -173,8 +181,10 @@ fn parse_release(v: &serde_json::Value) -> Option<Release> {
 
 /// Releases as the API lists them (newest first), drafts left out.
 pub fn parse_releases(text: &str) -> Result<Vec<Release>, String> {
-    let json: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("resposta inválida do GitHub: {e}"))?;
-    let list = json.as_array().ok_or("resposta inválida do GitHub: não é uma lista")?;
+    let json: serde_json::Value = serde_json::from_str(text).map_err(|e| tr!("resposta inválida do GitHub: {e}", "invalid response from GitHub: {e}"))?;
+    let list = json
+        .as_array()
+        .ok_or_else(|| tr!("resposta inválida do GitHub: não é uma lista", "invalid response from GitHub: not a list"))?;
     Ok(list.iter().filter_map(parse_release).collect())
 }
 
@@ -215,7 +225,7 @@ pub type Progress<'a> = &'a mut dyn FnMut(&str, u64, u64);
 
 fn read_small(asset: &Asset, limit: u64) -> Result<Vec<u8>, String> {
     let mut resp = get(&asset.url, "application/octet-stream", false)?;
-    resp.body_mut().with_config().limit(limit).read_to_vec().map_err(|e| format!("falha ao baixar {}: {e}", asset.name))
+    resp.body_mut().with_config().limit(limit).read_to_vec().map_err(|e| tr!("falha ao baixar {}: {e}", "download of {} failed: {e}", asset.name))
 }
 
 /// Streams `asset` into `path`; returns its SHA-256 (lowercase hex).
@@ -223,114 +233,142 @@ fn download_to(asset: &Asset, path: &Path, progress: Progress) -> Result<String,
     use sha2::Digest as _;
     let mut resp = get(&asset.url, "application/octet-stream", false)?;
     let mut reader = resp.body_mut().with_config().limit(MAX_DOWNLOAD).reader();
-    let file = fs::File::create(path).map_err(|e| format!("não consegui gravar {}: {e}", path.display()))?;
+    let file = fs::File::create(path).map_err(|e| tr!("não consegui gravar {}: {e}", "could not write {}: {e}", path.display()))?;
     let mut out = std::io::BufWriter::with_capacity(1 << 20, file);
     let mut hasher = sha2::Sha256::new();
     let mut buf = vec![0u8; 256 * 1024];
     let mut total = 0u64;
     loop {
-        let n = reader.read(&mut buf).map_err(|e| format!("o download foi interrompido: {e}"))?;
+        let n = reader.read(&mut buf).map_err(|e| tr!("o download foi interrompido: {e}", "the download was interrupted: {e}"))?;
         if n == 0 {
             break;
         }
         hasher.update(&buf[..n]);
-        out.write_all(&buf[..n]).map_err(|e| format!("não consegui gravar o download (disco cheio?): {e}"))?;
+        out.write_all(&buf[..n]).map_err(disk_full)?;
         total += n as u64;
         progress("download", total, asset.size);
     }
-    out.flush().map_err(|e| format!("não consegui gravar o download (disco cheio?): {e}"))?;
+    out.flush().map_err(disk_full)?;
     if asset.size != 0 && total != asset.size {
-        return Err(format!("o download veio incompleto ({total} de {} bytes)", asset.size));
+        return Err(tr!("o download veio incompleto ({total} de {} bytes)", "the download is incomplete ({total} of {} bytes)", asset.size));
     }
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn disk_full(e: std::io::Error) -> String {
+    tr!("não consegui gravar o download (disco cheio?): {e}", "could not write the download (disk full?): {e}")
+}
+
+fn bad_zip(e: impl std::fmt::Display) -> String {
+    tr!("zip inválido: {e}", "invalid zip: {e}")
+}
+
+fn unpack_failed(e: std::io::Error) -> String {
+    tr!("não consegui descompactar (disco cheio?): {e}", "could not unpack (disk full?): {e}")
 }
 
 /// Unpacks `zip` into `into`, refusing unsafe names; returns the files (relative), protected ones left out.
 pub fn unpack(zip: &Path, into: &Path) -> Result<Vec<PathBuf>, String> {
     let file = fs::File::open(zip).map_err(|e| e.to_string())?;
-    let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(|e| format!("zip inválido: {e}"))?;
+    let mut archive = zip::ZipArchive::new(std::io::BufReader::new(file)).map_err(bad_zip)?;
     let mut files: Vec<PathBuf> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let mut unpacked = 0u64;
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| format!("zip inválido: {e}"))?;
-        let name = entry.name().map_err(|e| format!("zip inválido: {e}"))?.into_owned();
+        let mut entry = archive.by_index(i).map_err(bad_zip)?;
+        let name = entry.name().map_err(bad_zip)?.into_owned();
         let rel = safe_relative(&name)
             .filter(|_| entry.enclosed_name().is_some())
-            .ok_or_else(|| format!("o zip tem um caminho inseguro: {name:?}"))?;
+            .ok_or_else(|| tr!("o zip tem um caminho inseguro: {name:?}", "the zip has an unsafe path: {name:?}"))?;
         if entry.is_dir() {
             continue;
         }
         if !entry.is_file() || entry.is_symlink() {
-            return Err(format!("o zip tem um link ou arquivo especial: {name:?}"));
+            return Err(tr!("o zip tem um link ou arquivo especial: {name:?}", "the zip has a link or special file: {name:?}"));
         }
         if is_protected(&rel) {
             continue;
         }
         if !seen.insert(rel.to_string_lossy().to_ascii_lowercase()) {
-            return Err(format!("o zip tem {name:?} duas vezes"));
+            return Err(tr!("o zip tem {name:?} duas vezes", "the zip has {name:?} twice"));
         }
         let size = entry.size();
         unpacked += size;
         if unpacked > MAX_UNPACKED {
-            return Err("o zip descompacta para mais do que o esperado".into());
+            return Err(tr!("o zip descompacta para mais do que o esperado", "the zip unpacks to more than expected"));
         }
         let dest = into.join(&rel);
         if let Some(p) = dest.parent() {
-            fs::create_dir_all(p).map_err(|e| format!("não consegui descompactar (disco cheio?): {e}"))?;
+            fs::create_dir_all(p).map_err(unpack_failed)?;
         }
-        let mut out = fs::File::create(&dest).map_err(|e| format!("não consegui descompactar (disco cheio?): {e}"))?;
+        let mut out = fs::File::create(&dest).map_err(unpack_failed)?;
         let written = std::io::copy(&mut (&mut entry).take(size + 1), &mut out)
-            .map_err(|e| format!("não consegui descompactar {name}: {e}"))?;
+            .map_err(|e| tr!("não consegui descompactar {name}: {e}", "could not unpack {name}: {e}"))?;
         if written != size {
-            return Err(format!("não consegui descompactar {name}: tamanho diferente"));
+            return Err(tr!("não consegui descompactar {name}: tamanho diferente", "could not unpack {name}: wrong size"));
         }
         files.push(rel);
     }
     if files.is_empty() {
-        return Err("o zip está vazio".into());
+        return Err(tr!("o zip está vazio", "the zip is empty"));
     }
     Ok(files)
 }
 
 /// The signed checksum of `zip_name` in a release, after checking the signature over the exact bytes.
 pub fn verified_sum(sums: &[u8], sig: &str, zip_name: &str) -> Result<String, String> {
-    gw2enhanced_core::signed::verify(sums, sig).map_err(|e| format!("assinatura inválida: {e}"))?;
-    let text = std::str::from_utf8(sums).map_err(|_| format!("{SUMS_ASSET} não é texto"))?;
-    expected_sum(text, zip_name).ok_or(format!("{zip_name} não está no {SUMS_ASSET}"))
+    gw2enhanced_core::signed::verify(sums, sig).map_err(|e| tr!("assinatura inválida: {e}", "invalid signature: {e}"))?;
+    let text = std::str::from_utf8(sums).map_err(|_| tr!("{SUMS_ASSET} não é texto", "{SUMS_ASSET} is not text"))?;
+    expected_sum(text, zip_name).ok_or_else(|| tr!("{zip_name} não está no {SUMS_ASSET}", "{zip_name} is not in {SUMS_ASSET}"))
 }
 
 /// Downloads, verifies and unpacks `package` of `release` into `stage` (emptied first); returns the folder with
 /// the package's files, ready for [`crate::setup::install`].
 pub fn fetch_package(release: &Release, package: &str, stage: &Path, progress: Progress) -> Result<PathBuf, String> {
     if !PACKAGES.contains(&package) {
-        return Err(format!("pacote desconhecido: {package}"));
+        return Err(tr!("pacote desconhecido: {package}", "unknown package: {package}"));
     }
-    let zip_name = asset_name(package, &release.version);
-    let asset = release.asset(&zip_name).ok_or(format!("a versão {} não tem o pacote {package}", release.version))?;
-    let sums = release
-        .asset(SUMS_ASSET)
-        .ok_or(format!("a versão {} não tem {SUMS_ASSET}: download sem verificação recusado", release.version))?;
-    let sig = release
-        .asset(SIG_ASSET)
-        .ok_or(format!("a versão {} não tem {SIG_ASSET}: download sem assinatura recusado", release.version))?;
+    let v = &release.version;
+    let zip_name = asset_name(package, v);
+    let asset = release
+        .asset(&zip_name)
+        .ok_or_else(|| tr!("a versão {v} não tem o pacote {package}", "version {v} has no {package} package"))?;
+    let sums = release.asset(SUMS_ASSET).ok_or_else(|| {
+        tr!(
+            "a versão {v} não tem {SUMS_ASSET}: download sem verificação recusado",
+            "version {v} has no {SUMS_ASSET}: unverified download refused"
+        )
+    })?;
+    let sig = release.asset(SIG_ASSET).ok_or_else(|| {
+        tr!(
+            "a versão {v} não tem {SIG_ASSET}: download sem assinatura recusado",
+            "version {v} has no {SIG_ASSET}: unsigned download refused"
+        )
+    })?;
     for a in [asset, sums, sig] {
         if !asset_url_ok(&a.url) {
-            return Err(format!("{} não vem das versões deste repositório: recusado", a.name));
+            return Err(tr!(
+                "{} não vem das versões deste repositório: recusado",
+                "{} does not come from this repository's releases: refused",
+                a.name
+            ));
         }
     }
     let _ = fs::remove_dir_all(stage);
-    fs::create_dir_all(stage).map_err(|e| format!("não consegui gravar na pasta do jogo: {e}"))?;
+    fs::create_dir_all(stage).map_err(|e| tr!("não consegui gravar na pasta do jogo: {e}", "could not write to the game folder: {e}"))?;
 
     progress("verify", 0, 0);
     let sums_bytes = read_small(sums, 1024 * 1024)?;
-    let sig_text = String::from_utf8(read_small(sig, 4096)?).map_err(|_| format!("{SIG_ASSET} não é texto"))?;
+    let sig_text = String::from_utf8(read_small(sig, 4096)?).map_err(|_| tr!("{SIG_ASSET} não é texto", "{SIG_ASSET} is not text"))?;
     let expected = verified_sum(&sums_bytes, &sig_text, &zip_name)?;
 
     let zip_path = stage.join(&zip_name);
     let actual = download_to(asset, &zip_path, progress)?;
     if actual != expected {
-        return Err("o arquivo baixado não confere com a soma assinada: recusado".into());
+        return Err(tr!(
+            "o arquivo baixado não confere com a soma assinada: recusado",
+            "the downloaded file does not match the signed checksum: refused"
+        ));
     }
     progress("unpack", 0, 0);
     let files_dir = stage.join("files");

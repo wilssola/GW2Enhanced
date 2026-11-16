@@ -176,38 +176,51 @@ pub fn status(game: &GameInstall) -> ProtonStatus {
 /// Adds the override to the game's launch options of every Steam account (Steam must be closed).
 pub fn apply(game: &GameInstall) -> Result<Vec<String>, String> {
     if crate::launch::steam_running() {
-        return Err("feche a Steam antes (ela regrava as opções de inicialização enquanto está aberta)".into());
+        return Err(tr!(
+            "feche a Steam antes (ela regrava as opções de inicialização enquanto está aberta)",
+            "close Steam first (it rewrites the launch options while it is open)"
+        ));
     }
-    let root = game.steam_root.as_deref().ok_or("não encontrei a pasta da Steam desta instalação")?;
+    let root = game
+        .steam_root
+        .as_deref()
+        .ok_or_else(|| tr!("não encontrei a pasta da Steam desta instalação", "could not find the Steam folder of this install"))?;
     let files = localconfig_files(root);
     if files.is_empty() {
-        return Err("não encontrei as configurações das contas da Steam (userdata); abra a Steam e entre na conta uma vez".into());
+        return Err(tr!(
+            "não encontrei as configurações das contas da Steam (userdata); abra a Steam e entre na conta uma vez",
+            "could not find the Steam account settings (userdata); open Steam and sign in once"
+        ));
     }
     let mut log = Vec::new();
     for file in files {
-        let text = std::fs::read_to_string(&file).map_err(|e| format!("não consegui ler {}: {e}", file.display()))?;
+        let text = std::fs::read_to_string(&file).map_err(|e| tr!("não consegui ler {}: {e}", "could not read {}: {e}", file.display()))?;
         let current = read_launch_options(&text).unwrap_or_default();
         if has_override(&current) {
-            log.push(format!("{}: já estava configurado", account_of(&file)));
+            log.push(tr!("{}: já estava configurado", "{}: already set", account_of(&file)));
             continue;
         }
         let new_text = vdf::set(&text, &launch_options_path(), &with_override(&current))?;
         let backup = file.with_file_name(LOCALCONFIG_BACKUP);
         if !backup.exists() {
-            std::fs::copy(&file, &backup).map_err(|e| format!("não consegui fazer a cópia de segurança: {e}"))?;
+            std::fs::copy(&file, &backup).map_err(|e| tr!("não consegui fazer a cópia de segurança: {e}", "could not make the backup: {e}"))?;
         }
         // Written next to it, then renamed: a half-written file never replaces Steam's.
         let tmp = file.with_extension("vdf.gw2enhanced-tmp");
-        std::fs::write(&tmp, new_text).map_err(|e| format!("não consegui gravar {}: {e}", tmp.display()))?;
-        std::fs::rename(&tmp, &file).map_err(|e| format!("não consegui gravar {}: {e}", file.display()))?;
-        log.push(format!("{}: opções de inicialização atualizadas (cópia em {LOCALCONFIG_BACKUP})", account_of(&file)));
+        std::fs::write(&tmp, new_text).map_err(|e| tr!("não consegui gravar {}: {e}", "could not write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &file).map_err(|e| tr!("não consegui gravar {}: {e}", "could not write {}: {e}", file.display()))?;
+        log.push(tr!(
+            "{}: opções de inicialização atualizadas (cópia em {LOCALCONFIG_BACKUP})",
+            "{}: launch options updated (backup in {LOCALCONFIG_BACKUP})",
+            account_of(&file)
+        ));
     }
     Ok(log)
 }
 
 fn account_of(localconfig: &Path) -> String {
     let id = localconfig.parent().and_then(Path::parent).and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
-    format!("conta {}", id.unwrap_or_default())
+    tr!("conta {}", "account {}", id.unwrap_or_default())
 }
 
 #[cfg(test)]

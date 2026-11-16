@@ -2,6 +2,11 @@
 
 use std::path::PathBuf;
 
+/// The dialog's title.
+fn title() -> String {
+    tr!("Selecione o Gw2-64.exe na pasta do Guild Wars 2", "Select Gw2-64.exe in the Guild Wars 2 folder")
+}
+
 /// Asks for `Gw2-64.exe`; returns its folder, or `None` when cancelled. `owner` is the parent window (or 0).
 /// Runs on its own thread (the dialog needs a single-threaded COM apartment).
 #[cfg(windows)]
@@ -18,11 +23,11 @@ pub fn pick_game_exe(owner: isize) -> Result<Option<PathBuf>, String> {
         filter.push(0);
         filter.extend(w("Gw2-64.exe"));
         filter.push(0);
-        filter.extend(w("Programas (*.exe)"));
+        filter.extend(w(crate::i18n::pick("Programas (*.exe)", "Programs (*.exe)")));
         filter.push(0);
         filter.extend(w("*.exe"));
         filter.extend([0, 0]);
-        let mut title = w("Selecione o Gw2-64.exe na pasta do Guild Wars 2");
+        let mut title = w(&title());
         title.push(0);
         let mut file = vec![0u16; 1024];
         let mut ofn: OPENFILENAMEW = std::mem::zeroed();
@@ -53,19 +58,19 @@ pub fn pick_game_exe(owner: isize) -> Result<Option<PathBuf>, String> {
 #[cfg(not(windows))]
 pub fn pick_game_exe(_owner: isize) -> Result<Option<PathBuf>, String> {
     use std::process::Command;
-    const TITLE: &str = "Selecione o Gw2-64.exe na pasta do Guild Wars 2";
+    let title = title();
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     let tries: [(&str, Vec<String>); 2] = [
         (
             "zenity",
             vec![
                 "--file-selection".into(),
-                format!("--title={TITLE}"),
+                format!("--title={title}"),
                 "--file-filter=Gw2-64.exe | Gw2-64.exe".into(),
                 "--file-filter=*.exe | *.exe".into(),
             ],
         ),
-        ("kdialog", vec!["--title".into(), TITLE.into(), "--getopenfilename".into(), home, "Gw2-64.exe *.exe".into()]),
+        ("kdialog", vec!["--title".into(), title.clone(), "--getopenfilename".into(), home, "Gw2-64.exe *.exe".into()]),
     ];
     for (prog, args) in tries {
         let Some(exe) = crate::launch::which(prog) else { continue };
@@ -77,5 +82,5 @@ pub fn pick_game_exe(_owner: isize) -> Result<Option<PathBuf>, String> {
         }
         return Ok(PathBuf::from(chosen).parent().map(|p| p.to_path_buf()));
     }
-    Err("não há um seletor de arquivos (instale o zenity ou o kdialog)".into())
+    Err(tr!("não há um seletor de arquivos (instale o zenity ou o kdialog)", "there is no file picker (install zenity or kdialog)"))
 }

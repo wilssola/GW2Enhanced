@@ -318,6 +318,13 @@ main { flex: 1; overflow-y: auto; padding: 4px 32px 28px; scrollbar-color: #5751
 .toggle input:checked::after { transform: translateX(18px); }
 .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
 .about p { margin: 0 0 6px; }
+.lang-card { display: flex; align-items: center; justify-content: space-between; gap: 12px 22px; flex-wrap: wrap; }
+.lang-card h3 { margin-bottom: 0; }
+.lang-card .small-note { margin-top: 6px; }
+.langs { display: flex; flex: 0 0 auto; }
+.langs .gbtn { min-width: 56px; }
+.langs .gbtn + .gbtn { margin-left: -1px; }
+.langs .gbtn[aria-pressed="true"] { background: linear-gradient(#a3191b, #6e0d0e); border-color: #4a0708; }
 
 /* ---------- play bar ---------- */
 .playbar {

@@ -9,6 +9,10 @@
 //! - [`vdf`]: Steam's KeyValues files.
 //! - [`app`]: the window (Tauri) and its commands.
 //! - [`cli`]: the command line (`GW2Enhanced-Installer "<folder>"`, `--uninstall`).
+//! - [`i18n`]: the messages in Brazilian Portuguese and English ([`tr!`]).
+
+#[macro_use]
+pub mod i18n;
 
 pub mod app;
 pub mod cli;
