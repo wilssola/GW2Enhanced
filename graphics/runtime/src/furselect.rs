@@ -45,8 +45,11 @@ pub const RECHECK_FRAMES: u64 = 18_000;
 /// Most atlases on trial (unmeasured, or due for a recheck) per frame: the others wait their turn, so a crowd entering the screen
 /// costs the shells of a couple of characters per frame instead of all of them at once.
 pub const MAX_TRIALS_PER_FRAME: usize = 6; // v19: a trial only measures (no strands): cheap enough for more
-/// Frames an atlas may stay on trial without a readback measuring it; then it counts as measured not fur (until `RECHECK_FRAMES`).
+/// Frames an atlas may stay on trial without a readback measuring it; then it gives its trial slot to the next atlas and waits
+/// `RETRY_FRAMES` for another (never "not fur" unmeasured: its shaders may still be compiling, minutes on a first start).
 pub const TRIAL_FRAMES: u64 = 30; // v19 (was 120): the readback lands a few frames after the draw
+/// Frames an atlas whose trial ended unmeasured waits before its next trial.
+pub const RETRY_FRAMES: u64 = 300;
 /// Entries not seen for this many frames are dropped (atlas pointers are reused by the engine after a character unloads).
 pub const STALE_FRAMES: u64 = 1800;
 /// Most atlases remembered.
@@ -107,6 +110,8 @@ pub struct Atlas {
     pub seen: u64,
     /// Frame its current trial began (0 = not on trial).
     pub trial: u64,
+    /// No new trial before this frame (a trial that ended unmeasured).
+    pub retry_at: u64,
 }
 
 /// The per-atlas memory (render thread only).
@@ -170,7 +175,7 @@ impl Book {
             let was = old.measured > 0 && self.is_proven(&old);
             let first = old.measured == 0;
             let proved_at = if proof { frame } else { old.proved_at };
-            let e = Atlas { measured: frame, proved_at, weight: w, band: b, seen: old.seen.max(frame), trial: 0 };
+            let e = Atlas { measured: frame, proved_at, weight: w, band: b, seen: old.seen.max(frame), trial: 0, retry_at: 0 };
             let now = self.is_proven(&e);
             self.map.insert(atlas, e);
             if first || was != now {
@@ -206,10 +211,12 @@ impl Book {
         } else if a.measured != 0 && frame.saturating_sub(a.measured) <= RECHECK_FRAMES {
             Err("atlas measured as not fur")
         } else if a.trial != 0 && frame.saturating_sub(a.trial) > TRIAL_FRAMES {
-            // Never measured during its trial (no footprint on screen, readback lost): not fur until the next recheck.
-            e.measured = frame;
+            // Never measured during its trial (shaders still compiling, no footprint on screen, readback lost): another trial later.
             e.trial = 0;
-            Err("atlas measured as not fur")
+            e.retry_at = frame + RETRY_FRAMES;
+            Err("waiting for its turn to be measured")
+        } else if frame < a.retry_at {
+            Err("waiting for its turn to be measured")
         } else if self.trials.contains(&atlas) {
             Ok(())
         } else if self.trials.len() < MAX_TRIALS_PER_FRAME {

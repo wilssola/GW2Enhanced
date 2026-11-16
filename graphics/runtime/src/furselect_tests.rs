@@ -195,7 +195,7 @@ fn fur_trials_are_limited_per_frame_so_a_crowd_does_not_get_shells_at_once() {
 }
 
 #[test]
-fn fur_a_trial_without_a_measurement_ends_as_not_fur_until_the_recheck() {
+fn fur_a_trial_without_a_measurement_is_tried_again_later_and_never_counts_as_not_fur() {
     let mut b = Book::new();
     b.tick();
     let a = 0x4000usize;
@@ -204,7 +204,13 @@ fn fur_a_trial_without_a_measurement_ends_as_not_fur_until_the_recheck() {
         b.tick();
         let _ = b.verdict(a);
     }
-    assert_eq!(b.verdict(a), Err("atlas measured as not fur"), "no readback measured it during its trial");
+    assert_eq!(b.verdict(a), Err("waiting for its turn to be measured"), "no readback measured it during its trial: it waits");
+    for _ in 0..RETRY_FRAMES {
+        b.tick();
+    }
+    assert_eq!(b.verdict(a), Ok(()), "on trial again (its shaders were still compiling the first time)");
+    b.note(&[(a, s0(1.0, 0.11, 74.0))]);
+    assert!(b.proven(a), "and proven by the measurement of the second trial");
     // A fur readback during a later trial proves it.
     let mut b = Book::new();
     b.tick();
