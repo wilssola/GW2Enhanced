@@ -178,3 +178,52 @@ fn fur_select_log_lines_are_once_per_group() {
     assert!(!first_time(k));
     assert!(first_time(GroupKey { verdict: "y", ..k }));
 }
+
+#[test]
+fn fur_trials_are_limited_per_frame_so_a_crowd_does_not_get_shells_at_once() {
+    let mut b = Book::new();
+    b.tick();
+    // A crowd of unmeasured atlases: only MAX_TRIALS_PER_FRAME get the shells this frame, the same ones may draw again.
+    let crowd: Vec<usize> = (1..=6).map(|i| i * 0x1000).collect();
+    let ok: Vec<bool> = crowd.iter().map(|&a| b.verdict(a).is_ok()).collect();
+    assert_eq!(ok.iter().filter(|o| **o).count(), MAX_TRIALS_PER_FRAME);
+    assert_eq!(b.verdict(crowd[0]), Ok(()), "a second draw of an atlas on trial");
+    assert_eq!(b.verdict(crowd[5]), Err("waiting for its turn to be measured"));
+    // The next frame, the waiting ones get their turn.
+    b.tick();
+    assert_eq!(b.verdict(crowd[5]), Ok(()));
+}
+
+#[test]
+fn fur_a_trial_without_a_measurement_ends_as_not_fur_until_the_recheck() {
+    let mut b = Book::new();
+    b.tick();
+    let a = 0x4000usize;
+    assert_eq!(b.verdict(a), Ok(()));
+    for _ in 0..=TRIAL_FRAMES {
+        b.tick();
+        let _ = b.verdict(a);
+    }
+    assert_eq!(b.verdict(a), Err("atlas measured as not fur"), "no readback measured it during its trial");
+    // A fur readback during a later trial proves it.
+    let mut b = Book::new();
+    b.tick();
+    assert_eq!(b.verdict(a), Ok(()));
+    b.note(&[(a, s0(1.0, 0.11, 74.0))]);
+    assert!(b.proven(a));
+    for _ in 0..TRIAL_FRAMES * 2 {
+        b.tick();
+        assert_eq!(b.verdict(a), Ok(()), "a proven atlas is not on trial");
+    }
+}
+
+#[test]
+fn fur_mixed_draw_keeps_horns_and_claws_bare() {
+    // A body drawn with its armour on a proven atlas; a tan keratin texel (horn, claw) in the gloss band, saturated against a greyish
+    // coat: the colour tests keep it bare, as on a full fur draw.
+    let s = s0(0.25, 0.06, 140.0);
+    let s1 = [0.60, 0.2, 0.5, 30.0];
+    let keratin = [0.40, 0.45, 0.70, 0.10];
+    assert!(strand_weight(keratin, 35.0, s, s1, true, true) < 0.01, "horn / claw keratin on a mixed draw");
+    assert!(strand_weight(FUR, 30.0, s, s1, true, true) > 0.95, "the coat keeps its fur");
+}

@@ -36,8 +36,14 @@ pub const PROOF_WEIGHT: f32 = 0.5;
 /// A proof holds this many frames after the last readback that gave it (the readback runs every frame the shells draw; ~10 s at
 /// 60 fps: the head may leave the screen while the body stays, and an atlas pointer is not reused for another character that soon).
 pub const PROOF_FRAMES: u64 = 600;
-/// An atlas measured as not fur is skipped by the content rule for this many frames, then measured again.
-pub const RECHECK_FRAMES: u64 = 600;
+/// An atlas measured as not fur is skipped by the content rule for this many frames (~5 min at 60 fps), then measured again. Short
+/// rechecks drew the full shells on every non-fur character of a crowd every few seconds (stutter in cities).
+pub const RECHECK_FRAMES: u64 = 18_000;
+/// Most atlases on trial (unmeasured, or due for a recheck) per frame: the others wait their turn, so a crowd entering the screen
+/// costs the shells of a couple of characters per frame instead of all of them at once.
+pub const MAX_TRIALS_PER_FRAME: usize = 2;
+/// Frames an atlas may stay on trial without a readback measuring it; then it counts as measured not fur (until `RECHECK_FRAMES`).
+pub const TRIAL_FRAMES: u64 = 120;
 /// Entries not seen for this many frames are dropped (atlas pointers are reused by the engine after a character unloads).
 pub const STALE_FRAMES: u64 = 1800;
 /// Most atlases remembered.
@@ -96,6 +102,8 @@ pub struct Atlas {
     pub band: f32,
     /// Frame this atlas was last bound by a candidate draw.
     pub seen: u64,
+    /// Frame its current trial began (0 = not on trial).
+    pub trial: u64,
 }
 
 /// The per-atlas memory (render thread only).
@@ -103,6 +111,8 @@ pub struct Atlas {
 pub struct Book {
     pub frame: u64,
     pub map: HashMap<usize, Atlas>,
+    /// Atlases on trial this frame (at most `MAX_TRIALS_PER_FRAME`).
+    pub trials: Vec<usize>,
 }
 
 impl Book {
@@ -113,6 +123,7 @@ impl Book {
     /// A new frame; drops stale entries now and then.
     pub fn tick(&mut self) {
         self.frame += 1;
+        self.trials.clear();
         if self.frame % 64 == 0 {
             let f = self.frame;
             self.map.retain(|_, a| f.saturating_sub(a.seen.max(a.measured)) <= STALE_FRAMES);
@@ -153,7 +164,7 @@ impl Book {
             let was = old.measured > 0 && self.is_proven(&old);
             let first = old.measured == 0;
             let proved_at = if w >= PROOF_WEIGHT { frame } else { old.proved_at };
-            let e = Atlas { measured: frame, proved_at, weight: w, band: b, seen: old.seen.max(frame) };
+            let e = Atlas { measured: frame, proved_at, weight: w, band: b, seen: old.seen.max(frame), trial: 0 };
             let now = self.is_proven(&e);
             self.map.insert(atlas, e);
             if first || was != now {
@@ -169,22 +180,43 @@ impl Book {
     }
 
     /// The content rule's second half: may a candidate draw on `atlas` go into the fur mask (and be recorded for the shells)?
-    /// Unmeasured: yes (to be measured). Proven: yes. Measured as not fur: no, until `RECHECK_FRAMES` have passed since.
+    /// Proven: yes. Unmeasured (or due for a recheck): on trial, at most `MAX_TRIALS_PER_FRAME` atlases a frame and for
+    /// `TRIAL_FRAMES` at most. Measured as not fur: no, until `RECHECK_FRAMES` have passed since.
     pub fn verdict(&mut self, atlas: usize) -> Result<(), &'static str> {
         let frame = self.frame;
-        let Some(a) = self.map.get(&atlas).copied() else {
-            if self.map.len() < MAX_ATLASES {
-                self.map.insert(atlas, Atlas { seen: frame, ..Atlas::default() });
+        let a = match self.map.get(&atlas).copied() {
+            Some(a) => a,
+            None => {
+                if self.map.len() >= MAX_ATLASES {
+                    return Err("too many atlases");
+                }
+                Atlas::default()
             }
-            return Ok(());
         };
-        if let Some(e) = self.map.get_mut(&atlas) {
-            e.seen = frame;
-        }
-        if a.measured == 0 || self.is_proven(&a) || frame.saturating_sub(a.measured) > RECHECK_FRAMES {
-            return Ok(());
-        }
-        Err("atlas measured as not fur")
+        let mut e = Atlas { seen: frame, ..a };
+        let result = if self.is_proven(&a) {
+            e.trial = 0;
+            Ok(())
+        } else if a.measured != 0 && frame.saturating_sub(a.measured) <= RECHECK_FRAMES {
+            Err("atlas measured as not fur")
+        } else if a.trial != 0 && frame.saturating_sub(a.trial) > TRIAL_FRAMES {
+            // Never measured during its trial (no footprint on screen, readback lost): not fur until the next recheck.
+            e.measured = frame;
+            e.trial = 0;
+            Err("atlas measured as not fur")
+        } else if self.trials.contains(&atlas) {
+            Ok(())
+        } else if self.trials.len() < MAX_TRIALS_PER_FRAME {
+            self.trials.push(atlas);
+            if e.trial == 0 {
+                e.trial = frame.max(1);
+            }
+            Ok(())
+        } else {
+            Err("waiting for its turn to be measured")
+        };
+        self.map.insert(atlas, e);
+        result
     }
 }
 
