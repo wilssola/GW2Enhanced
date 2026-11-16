@@ -14,4 +14,4 @@ base64 = "0.22"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_System_LibraryLoader"] }
 
 [dev-dependencies]
-getrandom = "0.2"
+getrandom = "0.4"
