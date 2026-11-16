@@ -357,17 +357,15 @@ pub async fn correction(req: &mut Request, ctx: &Ctx) -> HResult {
     ctx.batch(buckets.statements(ctx)?).await?;
     verify_turnstile(ctx, req, &c.turnstile).await?;
     let id = translation_id(&c.text_key, &c.lang, &c.tr);
-    // The same text suggested before (perhaps still in review, so not public): answered like a new suggestion and
-    // nothing is written, so the answer tells nothing about suggestions in review.
-    if let Some((_, _, review)) = db::translation_target(ctx, &id).await? {
-        return json(202, &json!({ "translation_id": id, "review": review }));
-    }
     ensure_writes(ctx, budget::CORRECTION_ROWS + budget::bytes_units(c.tr.len())).await?;
     let stmts = ctx.qs(q::correction(&id, &c.text_key, &c.lang, &c.tr, &who.ip, &ctx.now()))?;
     ctx.batch(stmts).await?;
     let (_, _, review) = db::translation_target(ctx, &id)
         .await?
         .ok_or_else(|| api_err(500, "internal"))?;
+    // The same text suggested before goes through the same path (the insert ignores the duplicate) and gets the same
+    // answer as a new one: only a public state is told, anything still in review (or refused) reads as `pending`.
+    let review = if review == "passed" { "passed" } else { "pending" };
     json(202, &json!({ "translation_id": id, "review": review }))
 }
 
