@@ -390,6 +390,63 @@ pub fn compile_ps(hlsl: &str, entry: &str) -> Result<Vec<u8>, String> {
 
 /// Compiles HLSL for the given target profile (`ps_5_0`, `vs_5_0`, ...).
 pub fn compile(hlsl: &str, entry: &str, profile: &str) -> Result<Vec<u8>, String> {
+    #[cfg(test)]
+    {
+        test_cache::compile(hlsl, entry, profile)
+    }
+    #[cfg(not(test))]
+    {
+        compile_now(hlsl, entry, profile)
+    }
+}
+
+/// Tests only: every compiled shader is kept in memory and on disk (the system temp folder), keyed by its source, entry and
+/// profile, so a test run compiles each shader once and a second run compiles none. Failed compiles are not kept.
+#[cfg(test)]
+mod test_cache {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    fn key(hlsl: &str, entry: &str, profile: &str) -> String {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in hlsl.bytes().chain([0]).chain(entry.bytes()).chain([0]).chain(profile.bytes()) {
+            h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+        format!("{h:016x}-{}-{entry}-{profile}", hlsl.len())
+    }
+
+    pub fn compile(hlsl: &str, entry: &str, profile: &str) -> Result<Vec<u8>, String> {
+        static MEM: OnceLock<Mutex<HashMap<String, Vec<u8>>>> = OnceLock::new();
+        let k = key(hlsl, entry, profile);
+        let mem = MEM.get_or_init(Default::default);
+        if let Some(v) = mem.lock().unwrap_or_else(|e| e.into_inner()).get(&k) {
+            return Ok(v.clone());
+        }
+        let dir = std::env::temp_dir().join("gw2graphics-test-shaders");
+        let file = dir.join(format!("{k}.dxbc"));
+        let r = match std::fs::read(&file) {
+            Ok(v) if !v.is_empty() => Ok(v),
+            _ => {
+                let r = super::compile_now(hlsl, entry, profile);
+                if let Ok(v) = &r {
+                    let _ = std::fs::create_dir_all(&dir);
+                    let tmp = dir.join(format!("{k}.{:?}.tmp", std::thread::current().id()));
+                    if std::fs::write(&tmp, v).is_ok() {
+                        let _ = std::fs::rename(&tmp, &file);
+                    }
+                }
+                r
+            }
+        };
+        if let Ok(v) = &r {
+            mem.lock().unwrap_or_else(|e| e.into_inner()).insert(k, v.clone());
+        }
+        r
+    }
+}
+
+/// `D3DCompile` itself.
+fn compile_now(hlsl: &str, entry: &str, profile: &str) -> Result<Vec<u8>, String> {
     let f = d3d_compile_fn().ok_or_else(|| "d3dcompiler_47.dll or D3DCompile not available".to_string())?;
     let entry_c = format!("{entry}\0");
     let profile_c = format!("{profile}\0");
