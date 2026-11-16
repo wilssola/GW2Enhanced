@@ -1,11 +1,14 @@
 # Nexus Mods page: GW2 Remastered
 
-Text and file list for the mod page. The files are made by `tools/package_nexus.py` (see its docstring).
+Text and file list for the mod page. The HD pack files are made by `tools/package_nexus.py` (see its docstring); the
+mod itself is the `Textures` zip of the GitHub release. The other pages: [translation](../../translated/docs/nexus-mod.md),
+[graphics](../../graphics/docs/nexus-mod.md), [GW2 Enhanced, all three](../../enhanced/docs/nexus-mod.md).
 
 ## Files to upload
 
 | File | Category | Description |
 |---|---|---|
+| `GW2Enhanced-Textures-<version>.zip` (from the GitHub release) | Main files | The mod (`msimg32.dll`) and its installer. **Required**, together with the HD pack. |
 | `GW2Enhanced-HD-Textures-part1of4.zip` .. `part4of4.zip` | Main files | HD textures, main pack. **Required.** Download all four parts. |
 | `GW2Enhanced-HD-Composite4x-part1of2.zip`, `part2of2.zip` | Optional files | 4x armor and skin for your character. Download both parts. |
 | `GW2Enhanced-HD-Character4x.zip` | Optional files | 4x face and hair for your character. |
@@ -24,7 +27,7 @@ The art style is kept: no recolouring, no restyle, no new materials. Every HD te
 
 [size=4][b]Installation instructions[/b][/size]
 [list=1]
-[*]Download GW2 Remastered (the "Textures" package, or "All" for every GW2 Enhanced feature) from [url=https://github.com/wilssola/GW2Enhanced/releases]GitHub Releases[/url] and extract it into the game folder (the one with Gw2-64.exe). The installer can do this step for you.
+[*]Download the mod, [b]GW2Enhanced-Textures[/b], from the Files tab (or from [url=https://github.com/wilssola/GW2Enhanced/releases]GitHub Releases[/url]) and extract it into the game folder (the one with Gw2-64.exe), or run the installer inside it, which finds the folder for you.
 [*]Download [b]every part[/b] of the main HD pack from the Files tab and extract them all into the [b]game folder[/b]. You get GW2Remastered\pack\ next to Gw2-64.exe.
 [*]Optional: extract the 4x packs the same way (Composite4x: both parts; Character4x).
 [*]Start the game and press [b]Shift+Home[/b]. The Textures tab shows how many HD textures were found.
