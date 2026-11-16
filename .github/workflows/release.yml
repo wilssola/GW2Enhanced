@@ -196,7 +196,7 @@ jobs:
           --checksums-output dist/SHA256SUMS.txt
           --output dist/notes.md
       # The sign job gets only this file (a few hundred bytes), never the build.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sha256sums
           path: dist/SHA256SUMS.txt
@@ -263,7 +263,7 @@ jobs:
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: dist/GW2Enhanced-Installer-*
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-installer
           path: dist/GW2Enhanced-Installer-*
