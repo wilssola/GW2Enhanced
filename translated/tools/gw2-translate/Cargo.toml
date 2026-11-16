@@ -8,5 +8,5 @@ license = "MIT"
 [dependencies]
 anyhow = "1"
 serde_json = "1"
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "3", features = ["json"] }
 version = { package = "gw2translated", path = "../.." }
