@@ -193,7 +193,10 @@ mod tests {
         let o = super::os();
         println!("RAM working {} private {} | VRAM used {} budget {}", super::fmt(o.ram_working), super::fmt(o.ram_private), super::fmt(o.vram_used), super::fmt(o.vram_budget));
         assert!(o.ram_working > 0 && o.ram_private > 0);
-        assert!(o.vram_budget > 0, "DXGI adapter not found or query failed");
+        // CI runners have no GPU of their own (only the software adapter, which reports no budget).
+        if std::env::var_os("CI").is_none() {
+            assert!(o.vram_budget > 0, "DXGI adapter not found or query failed");
+        }
     }
 
     #[test]
