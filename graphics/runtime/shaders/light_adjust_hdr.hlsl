@@ -1040,7 +1040,9 @@ float3 shell_look(float3 enc, float3 raw, float shade, uint key, float2 uv, floa
     bool base = hh <= 0.0;
     bool inside = shell_presence(fur_texel(uv, int2(0, 0))) >= 0.5; // over a fur draw (also a horn / claw texel of it)
     float3 root = shell_root_colour(apx * sc);
-    float3 src = base ? lc : root * ((inside && !front) ? saturate(shade) * saturate(shade) : 1.0);
+    // v19: a strand stands above the skin and takes half the skin's occlusion (it took the AO x contact factor squared: strands in a
+    // crease or near the floor came out much darker than the coat).
+    float3 src = base ? lc : root * ((inside && !front) ? lerp(1.0, saturate(shade), 0.5) : 1.0);
     float rd = saturate(shp.y);
     float u = 1.0 - hh;
     // Self-shadowing of the coat: a fragment deeper in the coat than the average visible one is darker, a shallower one (the tips)

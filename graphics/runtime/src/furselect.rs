@@ -33,6 +33,9 @@ pub const MIN_COLOUR_SIZE: u32 = 512;
 pub const MIN_NORMAL_SIZE: u32 = 128;
 /// A draw whose strict draw weight (shellfur `draw_weight`) reaches this proves its atlas (half of the band ramp 0.40..0.60).
 pub const PROOF_WEIGHT: f32 = 0.5;
+/// v19: and at least this share of that draw's footprint in the fur gloss band. Measured: charr fur 84..100 %, human skin 30 % at
+/// most, leather armour up to 60 %; a scaly or leathery creature must not prove, so the bar sits well above leather.
+pub const PROOF_BAND: f32 = 0.75;
 /// A proof holds this many frames after the last readback that gave it (the readback runs every frame the shells draw; ~10 s at
 /// 60 fps: the head may leave the screen while the body stays, and an atlas pointer is not reused for another character that soon).
 pub const PROOF_FRAMES: u64 = 600;
@@ -41,9 +44,9 @@ pub const PROOF_FRAMES: u64 = 600;
 pub const RECHECK_FRAMES: u64 = 18_000;
 /// Most atlases on trial (unmeasured, or due for a recheck) per frame: the others wait their turn, so a crowd entering the screen
 /// costs the shells of a couple of characters per frame instead of all of them at once.
-pub const MAX_TRIALS_PER_FRAME: usize = 2;
+pub const MAX_TRIALS_PER_FRAME: usize = 6; // v19: a trial only measures (no strands): cheap enough for more
 /// Frames an atlas may stay on trial without a readback measuring it; then it counts as measured not fur (until `RECHECK_FRAMES`).
-pub const TRIAL_FRAMES: u64 = 120;
+pub const TRIAL_FRAMES: u64 = 30; // v19 (was 120): the readback lands a few frames after the draw
 /// Entries not seen for this many frames are dropped (atlas pointers are reused by the engine after a character unloads).
 pub const STALE_FRAMES: u64 = 1800;
 /// Most atlases remembered.
@@ -139,31 +142,34 @@ impl Book {
     /// after the last readback that had one (the head may leave the screen while the body stays). Returns the atlases whose verdict
     /// changed: (atlas, its entry, measured for the first time, proven now) (for the log).
     pub fn note(&mut self, draws: &[(usize, [f32; 4])]) -> Vec<(usize, Atlas, bool, bool)> {
-        let mut per: Vec<(usize, f32, f32)> = Vec::new();
+        // (atlas, best weight, best band share, ONE draw passed both bars)
+        let mut per: Vec<(usize, f32, f32, bool)> = Vec::new();
         for &(atlas, s0) in draws {
             if atlas == 0 || !(s0[2] >= 16.0) {
                 continue;
             }
             let w = if s0[3].is_finite() { s0[3] } else { 0.0 };
             let b = if s0[0].is_finite() { s0[0] } else { 0.0 };
+            let proof = w >= PROOF_WEIGHT && b >= PROOF_BAND;
             match per.iter_mut().find(|p| p.0 == atlas) {
                 Some(p) => {
                     p.1 = p.1.max(w);
                     p.2 = p.2.max(b);
+                    p.3 |= proof;
                 }
-                None => per.push((atlas, w, b)),
+                None => per.push((atlas, w, b, proof)),
             }
         }
         let mut changed = Vec::new();
         let frame = self.frame.max(1);
-        for (atlas, w, b) in per {
+        for (atlas, w, b, proof) in per {
             if !self.map.contains_key(&atlas) && self.map.len() >= MAX_ATLASES {
                 continue;
             }
             let old = self.map.get(&atlas).copied().unwrap_or_default();
             let was = old.measured > 0 && self.is_proven(&old);
             let first = old.measured == 0;
-            let proved_at = if w >= PROOF_WEIGHT { frame } else { old.proved_at };
+            let proved_at = if proof { frame } else { old.proved_at };
             let e = Atlas { measured: frame, proved_at, weight: w, band: b, seen: old.seen.max(frame), trial: 0 };
             let now = self.is_proven(&e);
             self.map.insert(atlas, e);

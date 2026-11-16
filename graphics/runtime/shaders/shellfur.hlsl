@@ -747,10 +747,14 @@ float ft_texel_weight(float4 ft, float hue, float4 s0, float4 s1, bool colour)
     float ker = ft_box(15.0, 55.0, 5.0, hue) * ft_box(0.22, 0.65, 0.04, ft.y) * ft_box(0.25, 0.90, 0.04, ft.z) * differs * gate;
     float red_differs = max(smoothstep(0.15, 0.25, ft.y - s1.y), smoothstep(10.0, 18.0, ft_hue_dist(hue, s1.w)) * smoothstep(0.35, 0.45, ft.y));
     float red = (1.0 - smoothstep(15.0, 25.0, ft_hue_dist(hue, 0.0))) * smoothstep(0.30, 0.40, ft.y) * red_differs;
+    // v19, grey keratin: a horn or claw of no colour (grey, saturation under ~0.2) a stop or more darker or brighter than the coat
+    // (a value of 0.3..0.5 against a coat at 0.85); the coat's own shading stays well within a stop.
+    float grey = (1.0 - smoothstep(0.16, 0.24, ft.y)) * smoothstep(0.6, 1.0, abs(log2((ft.z + 0.02) / (s1.z + 0.02))));
     if (colour) // v15: off on the triangles of a limb island that only its colours excluded (a two-tone coat; furisland.rs LIMB_*)
     {
         w *= 1.0 - ker;
         w *= 1.0 - red;
+        w *= 1.0 - grey;
     }
     return saturate(w);
 }
@@ -803,8 +807,11 @@ float dev_at(int2 p, int2 mx)
 // strand took ITS colour (the tail fur seen "through" the arm, the floor-coloured streaks under the tail, the yellow band of the staff).
 // The tolerance is the D24 rounding + this draw's depth bias (q4: constant, slope-scaled, clamped) + 5 % of a pixel of the plane's slope
 // (float rounding of the anchor) + pl.z (a triangle too small for a plane).
-bool root_visible(float2 apx, float zdev, float4 pl, float zlin, out float za, out float dmatch)
+// v19: `hit` = the pixel whose depth matched (its centre): the strand takes its colour THERE. At a silhouette the anchor itself can be
+// the background, whose colour the strands then took; the matched pixel is the body.
+bool root_visible(float2 apx, float zdev, float4 pl, float zlin, out float za, out float dmatch, out float2 hit)
 {
+    hit = apx;
     uint w, h;
     dev_depth_ps.GetDimensions(w, h);
     int2 b = int2(floor(apx));
@@ -838,6 +845,8 @@ bool root_visible(float2 apx, float zdev, float4 pl, float zlin, out float za, o
         bp = clamp(bp, int2(0, 0), mx);
         za = lin_at(float2(bp) + 0.5);
         dmatch = dev_at(bp, mx);
+        if (any(bp != b))
+            hit = float2(bp) + 0.5;
         return best <= tol;
     }
     za = lin_at(apx);
@@ -924,7 +933,8 @@ float ps_shell(GOut i, out float depth : SV_Depth) : SV_Target
     float2 dx = ddx(uv), dy = ddy(uv); // before any discard
     float zr = i.b.y;
     float za, dmatch;
-    if (!root_visible(i.a.xy, i.b.w, i.d, zr, za, dmatch))
+    float2 hit;
+    if (!root_visible(i.a.xy, i.b.w, i.d, zr, za, dmatch, hit))
         discard;
     if (!valid_depth(za))
         za = zr;
@@ -956,7 +966,7 @@ float ps_shell(GOut i, out float depth : SV_Depth) : SV_Target
     float score = h > 0.0 ? cov * (0.75 + 0.25 * h) : 0.2 * cov;
     depth = 1.0 - 0.5 * saturate(score) - 1e-4;
     float hq = clamp(1.0 + floor(h * 125.0 + 0.5), 1.0, 126.0);
-    float2 off = clamp(floor((i.a.xy - i.pos.xy) * 4.0 + 0.5) + 512.0, 0.0, 1023.0);
+    float2 off = clamp(floor((hit - i.pos.xy) * 4.0 + 0.5) + 512.0, 0.0, 1023.0);
     uint key = ((uint)hq << 24) | ((uint)aq << 20) | ((uint)off.x << 10) | (uint)off.y;
     // v13 (KEY_FRONT, shellfur::KEY_FRONT): the surface under this strand fragment lies clearly BEHIND its root (FRONT_DEPTH_ABS x
     // the fragment tolerance + FRONT_DEPTH_REL x the relative one: 2 cm + 0.6 %): the strand floats in front of it (head / neck fur

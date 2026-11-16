@@ -184,14 +184,14 @@ fn fur_trials_are_limited_per_frame_so_a_crowd_does_not_get_shells_at_once() {
     let mut b = Book::new();
     b.tick();
     // A crowd of unmeasured atlases: only MAX_TRIALS_PER_FRAME get the shells this frame, the same ones may draw again.
-    let crowd: Vec<usize> = (1..=6).map(|i| i * 0x1000).collect();
+    let crowd: Vec<usize> = (1..=MAX_TRIALS_PER_FRAME + 2).map(|i| i * 0x1000).collect();
     let ok: Vec<bool> = crowd.iter().map(|&a| b.verdict(a).is_ok()).collect();
     assert_eq!(ok.iter().filter(|o| **o).count(), MAX_TRIALS_PER_FRAME);
     assert_eq!(b.verdict(crowd[0]), Ok(()), "a second draw of an atlas on trial");
-    assert_eq!(b.verdict(crowd[5]), Err("waiting for its turn to be measured"));
+    assert_eq!(b.verdict(crowd[MAX_TRIALS_PER_FRAME + 1]), Err("waiting for its turn to be measured"));
     // The next frame, the waiting ones get their turn.
     b.tick();
-    assert_eq!(b.verdict(crowd[5]), Ok(()));
+    assert_eq!(b.verdict(crowd[MAX_TRIALS_PER_FRAME + 1]), Ok(()));
 }
 
 #[test]
@@ -226,4 +226,48 @@ fn fur_mixed_draw_keeps_horns_and_claws_bare() {
     let keratin = [0.40, 0.45, 0.70, 0.10];
     assert!(strand_weight(keratin, 35.0, s, s1, true, true) < 0.01, "horn / claw keratin on a mixed draw");
     assert!(strand_weight(FUR, 30.0, s, s1, true, true) > 0.95, "the coat keeps its fur");
+}
+
+#[test]
+fn fur_leather_or_scales_never_prove_an_atlas_and_unproven_draws_get_no_strands() {
+    let mut b = Book::new();
+    b.tick();
+    let (leather, charr) = (0x5000usize, 0x6000usize);
+    // A leathery / scaly body: 60 % of its footprint in the fur gloss band (the most measured on leather), textured.
+    b.note(&[(leather, s0(0.60, 0.08, 120.0))]);
+    assert!(!b.proven(leather), "60 % in the band is leather, not fur");
+    // Two draws, each passing one bar only, do not add up to a proof.
+    b.note(&[(leather, [0.74, 0.08, 120.0, 0.9]), (leather, [0.90, 0.08, 120.0, 0.1])]);
+    assert!(!b.proven(leather));
+    // A charr's fur: 84 % and more.
+    b.note(&[(charr, s0(0.84, 0.08, 120.0))]);
+    assert!(b.proven(charr));
+    // Strands: a fur_ps draw always (its draw test decides); a content-rule draw only on a proven atlas.
+    assert!(crate::shellfur::shells_allowed(false, leather));
+}
+
+#[test]
+fn fur_grey_horn_on_a_light_coat_stays_bare_and_the_coat_keeps_its_fur() {
+    use crate::shellfur::texel_weight_opt;
+    // A light coat: gloss 0.42, saturation 0.08, value 0.85, hue 30.
+    let s0 = s0(0.9, 0.08, 200.0);
+    let s1 = [0.42, 0.08, 0.85, 30.0];
+    // Its grey horn: same gloss band, streaked (not flat), no colour, value 0.38.
+    let horn = [0.42, 0.06, 0.38, 0.06];
+    assert!(texel_weight_opt(horn, 30.0, s0, s1, true) < 0.05, "a grey horn gets no strands");
+    // The coat itself, with its usual shading (0.70..0.95), keeps them.
+    for v in [0.70f32, 0.85, 0.95] {
+        assert!(texel_weight_opt([0.42, 0.08, v, 0.06], 30.0, s0, s1, true) > 0.9, "coat value {v}");
+    }
+}
+
+#[test]
+fn fur_a_crowd_shares_one_strand_budget() {
+    use crate::shellfur::{FRAME_SHELL_BUDGET, shell_share};
+    assert_eq!(shell_share(16, 1), 16, "one character: the full count");
+    assert_eq!(shell_share(16, 48), 16, "48 draws fit the budget");
+    assert_eq!(shell_share(16, 60), 12, "more: fewer each");
+    assert_eq!(shell_share(16, 96), 12, "never under 12 (fewer show the layers as bands)");
+    assert!(60 * shell_share(16, 60) <= FRAME_SHELL_BUDGET);
+    assert_eq!(shell_share(16, 0), 16);
 }
