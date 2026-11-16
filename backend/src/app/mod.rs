@@ -278,6 +278,7 @@ async fn route(req: &mut Request, ctx: &Ctx) -> HResult {
         (Method::Post, ["v1", "corrections"]) => public::correction(req, ctx).await,
         (Method::Get, ["v1", "stats"]) => public::stats(req, ctx).await,
         (Method::Get, ["v1", "download"]) => public::download(req, ctx).await,
+        (Method::Get, ["v1", "github", "latest"]) => public::github_latest(req, ctx).await,
         (Method::Get, ["v1", "public-key"]) => public::public_key(ctx),
         (Method::Get, ["v1", "releases", lang, "latest"]) => public::latest(ctx, lang).await,
         (Method::Get, ["v1", "releases", lang, version, name]) => public::release_file(req, ctx, lang, version, name).await,

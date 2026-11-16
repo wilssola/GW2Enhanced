@@ -531,3 +531,64 @@ async fn release_object(ctx: &Ctx, lang: &str, version: u64, name: &str) -> HRes
     apply_headers(&mut r, Kind::Asset)?;
     Ok(r)
 }
+
+thread_local! {
+    /// The last `/v1/github/latest` answer of this isolate: (fetched at ms, reuse for ms, status, body).
+    static GH_LATEST: std::cell::RefCell<Option<(u64, u64, u16, String)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// `GET /v1/github/latest`: the latest GitHub release's version and every file with its direct link (the site's download
+/// list). Reused from the isolate's memory, then the edge cache, for `ghrelease::CACHE_SECS`; GitHub is called at most
+/// once per isolate and colo in that time, and nothing touches D1. `GITHUB_TOKEN` (optional secret) raises GitHub's limit.
+pub async fn github_latest(req: &Request, ctx: &Ctx) -> HResult {
+    use crate::ghrelease;
+    let reply = |status: u16, body: &str, secs: u64| -> HResult {
+        let mut r = Response::ok(body)?.with_status(status);
+        r.headers_mut().set("content-type", "application/json; charset=utf-8")?;
+        r.headers_mut().set("cache-control", &format!("public, max-age=60, s-maxage={secs}"))?;
+        apply_headers(&mut r, crate::headers::Kind::Json)?;
+        Ok(r)
+    };
+    let now = ctx.now_ms.max(0) as u64;
+    if let Some((at, ttl, status, body)) = GH_LATEST.with(|c| c.borrow().clone())
+        && now.saturating_sub(at) < ttl
+    {
+        return reply(status, &body, ttl / 1000);
+    }
+    let url = req.url()?;
+    let key = format!("{}/v1/github/latest", url.origin().ascii_serialization());
+    let cache = Cache::default();
+    if let Ok(Some(hit)) = cache.get(&key, false).await {
+        return Ok(hit);
+    }
+    let headers = Headers::new();
+    headers.set("accept", "application/vnd.github+json")?;
+    headers.set("user-agent", "gw2enhanced-site")?;
+    if let Some(t) = ctx.secret("GITHUB_TOKEN") {
+        headers.set("authorization", &format!("Bearer {t}"))?;
+    }
+    let mut init = RequestInit::new();
+    init.with_method(Method::Get).with_headers(headers);
+    let (status, body, secs) = match Fetch::Request(Request::new_with_init(ghrelease::LATEST_URL, &init)?).send().await {
+        Ok(mut resp) => {
+            let code = resp.status_code();
+            let text = resp.text().await.unwrap_or_default();
+            let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+            match (code, ghrelease::reduce(&v)) {
+                (200, Some(r)) => (200, r.to_string(), ghrelease::CACHE_SECS),
+                (404, _) | (200, None) => (404, json!({"error": "no_release"}).to_string(), ghrelease::EMPTY_CACHE_SECS),
+                _ => (502, json!({"error": "github_unavailable"}).to_string(), 60),
+            }
+        }
+        Err(_) => (502, json!({"error": "github_unavailable"}).to_string(), 60),
+    };
+    GH_LATEST.with(|c| *c.borrow_mut() = Some((now, secs * 1000, status, body.clone())));
+    let mut r = reply(status, &body, secs)?;
+    if status != 502
+        && let Ok(copy) = r.cloned()
+    {
+        // A failed cache write only costs the next reader a GitHub call.
+        let _ = cache.put(&key, copy).await;
+    }
+    Ok(r)
+}

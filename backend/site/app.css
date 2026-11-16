@@ -665,3 +665,12 @@ dialog textarea {
 }
 /* the correction dialog's "same as the current translation" hint */
 .note.warn { color: var(--crimson); font-weight: 600; }
+
+/* every file of the latest release, with its direct link */
+.downloads { margin-top: 18px; }
+.dl-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px 18px; }
+.dl-list a { display: flex; flex-direction: column; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, .15); text-decoration: none; color: var(--ink); }
+.dl-list a:hover, .dl-list a:focus-visible { border-color: var(--crimson); }
+.dl-name { font-weight: 700; }
+.dl-file { font-size: .85rem; color: var(--ink-muted); overflow-wrap: anywhere; }
+.dl-note { margin-top: 12px; color: var(--page-muted); }

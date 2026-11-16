@@ -83,6 +83,20 @@
       "vote.titleDown": "Votar contra esta tradução",
       "vote.confirm": "Confirme que você é humano para registrar o voto.",
       "vote.done": "Voto registrado. Obrigado!",
+      "dl.title": "Todos os arquivos da v{0}",
+      "dl.win": "Instalador e launcher para Windows",
+      "dl.appimage": "Instalador e launcher para Linux (AppImage)",
+      "dl.deb": "Instalador e launcher para Linux (.deb, Debian e Ubuntu)",
+      "dl.sums": "Somas SHA-256 dos arquivos",
+      "dl.sig": "Assinatura das somas",
+      "dl.none": "A primeira versão ainda não foi publicada: o botão abre a página de versões no GitHub.",
+      "dl.pkg.All": "Mod completo (tradução, texturas HD e gráficos)",
+      "dl.pkg.Translation": "Só a tradução",
+      "dl.pkg.Translation-CPU": "Só a tradução, tradutor no processador",
+      "dl.pkg.Translation-CUDA": "Só a tradução, tradutor em placas NVIDIA (CUDA)",
+      "dl.pkg.Translation-DirectML": "Só a tradução, tradutor em qualquer placa DirectX 12",
+      "dl.pkg.Textures": "Só as texturas HD",
+      "dl.pkg.Graphics": "Só os gráficos",
       "fix.yours": "Sua tradução",
       "fix.title": "Sugerir tradução",
       "fix.note": "Mantenha as marcações do jogo iguais às do original. Sua sugestão passa por revisão antes de aparecer.",
@@ -189,6 +203,20 @@
       "vote.titleDown": "Vote against this translation",
       "vote.confirm": "Confirm that you're human to cast your vote.",
       "vote.done": "Vote recorded. Thank you!",
+      "dl.title": "Every file of v{0}",
+      "dl.win": "Installer and launcher for Windows",
+      "dl.appimage": "Installer and launcher for Linux (AppImage)",
+      "dl.deb": "Installer and launcher for Linux (.deb, Debian and Ubuntu)",
+      "dl.sums": "SHA-256 sums of the files",
+      "dl.sig": "Signature of the sums",
+      "dl.none": "The first version is not published yet: the button opens the releases page on GitHub.",
+      "dl.pkg.All": "Full mod (translation, HD textures and graphics)",
+      "dl.pkg.Translation": "Translation only",
+      "dl.pkg.Translation-CPU": "Translation only, translator on the CPU",
+      "dl.pkg.Translation-CUDA": "Translation only, translator on NVIDIA cards (CUDA)",
+      "dl.pkg.Translation-DirectML": "Translation only, translator on any DirectX 12 card",
+      "dl.pkg.Textures": "HD textures only",
+      "dl.pkg.Graphics": "Graphics only",
       "fix.yours": "Your translation",
       "fix.title": "Suggest a translation",
       "fix.note": "Keep the game's markup the same as the original. Your suggestion is reviewed before it appears.",
@@ -397,7 +425,7 @@
       "inst.tech.2": "There are also standalone packages: only the translation (with the translator on the processor, on NVIDIA cards or on any DirectX 12 card), only the textures, only the graphics, or everything together.",
       "inst.tech.3": "Every version on GitHub comes with the SHA-256 checksum of all files and a provenance attestation. Automatic updates are only installed if the downloaded file matches the checksum.",
       "band.title": "Ready to play in Portuguese?",
-      "band.text": "Free and open source. The button opens the latest version on GitHub: installer for Windows, AppImage and .deb for Linux. Every version is listed in the {0}, and developers can read the {1}.",
+      "band.text": "Free and open source. The button downloads the installer and launcher for your system straight from GitHub (Windows, or the AppImage on Linux); every file of the version is listed right below, one by one. Every version is listed in the {0}, and developers can read the {1}.",
       "band.releases": "GitHub releases",
       "band.source": "source code",
       "foot.1": "{0} It is not made, endorsed, supported by or affiliated with ArenaNet, LLC or NCSOFT Corporation. It only changes what your computer displays: it sends nothing to the game servers and gives no one an advantage. Third-party programs that connect to the game are used {1}; read {2} and the game's User Agreement before using it.",
@@ -1113,6 +1141,55 @@
     }
   }
 
+  // The latest release's files, each with its direct GitHub link (`/v1/github/latest`, cached by the server). The main buttons
+  // stay on /v1/download (counted, then the installer for the visitor's system); with no release published yet they open the
+  // releases page instead, so they never lead to a missing file.
+  const RELEASES_PAGE = "https://github.com/wilssola/GW2Enhanced/releases";
+  function assetLabel(name) {
+    const m = /^GW2Enhanced-([A-Za-z-]+)-\d[\w.-]*\.zip$/.exec(name);
+    if (m) return has("dl.pkg." + m[1]) ? t("dl.pkg." + m[1]) : m[1];
+    if (/Installer-windows-x64\.exe$/.test(name)) return t("dl.win");
+    if (/Installer-linux-amd64\.AppImage$/.test(name)) return t("dl.appimage");
+    if (/Installer-linux-amd64\.deb$/.test(name)) return t("dl.deb");
+    if (name === "SHA256SUMS.txt") return t("dl.sums");
+    if (name === "SHA256SUMS.txt.sig") return t("dl.sig");
+    return name;
+  }
+  function mb(bytes) { return (bytes / 1048576).toLocaleString(ui, { maximumFractionDigits: bytes < 10485760 ? 1 : 0 }) + " MB"; }
+  async function loadDownloads() {
+    let rel = null, none = false;
+    try {
+      const r = await fetch("/v1/github/latest", { headers: { accept: "application/json" } });
+      if (r.ok) rel = await r.json(); else none = r.status === 404;
+    } catch (_) { /* offline: the buttons keep their server link */ }
+    if (!rel || !Array.isArray(rel.assets) || !rel.assets.length) {
+      if (none) for (const a of document.querySelectorAll("a[data-dl]")) { a.href = RELEASES_PAGE; a.rel = "noopener"; }
+      const note = $("#dl-note");
+      if (none) {
+        note.hidden = false;
+        const set = () => { note.textContent = t("dl.none"); };
+        set();
+        relabel.push(set);
+      }
+      return;
+    }
+    const order = (n) => /Installer/.test(n) ? 0 : /\.zip$/.test(n) ? 1 : 2;
+    const assets = rel.assets.filter((a) => typeof a.name === "string" && typeof a.url === "string" && a.url.startsWith(RELEASES_PAGE + "/download/"))
+      .sort((a, b) => order(a.name) - order(b.name));
+    const list = $("#dl-list");
+    const draw = () => {
+      $("#dl-title").textContent = t("dl.title", String(rel.version || ""));
+      list.replaceChildren(...assets.map((a) => {
+        const link = el("a", { href: a.url, rel: "nofollow" });
+        link.append(text("span", "dl-name", assetLabel(a.name)), text("span", "dl-file", a.name + (a.size ? " · " + mb(a.size) : "")));
+        return el("li", {}, link);
+      }));
+    };
+    draw();
+    relabel.push(draw);
+    $("#downloads").hidden = false;
+  }
+
   function init() {
     setupLang();
     renderGalleries();
@@ -1120,6 +1197,7 @@
     setupNav();
     setupList();
     loadStats();
+    loadDownloads();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

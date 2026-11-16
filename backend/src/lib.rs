@@ -8,6 +8,7 @@
 pub mod api;
 pub mod budget;
 pub mod chunk;
+pub mod ghrelease;
 pub mod hash;
 pub mod headers;
 pub mod images;
