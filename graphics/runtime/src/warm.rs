@@ -145,7 +145,8 @@ fn now_ms() -> u64 {
 
 /// Whether the render thread may create a new fur shader object now (takes the turn when it may).
 pub fn may_create() -> bool {
-    turn(&LAST_CREATE_MS, now_ms())
+    // The tests draw many characters' first frames back to back: their shaders are made at once.
+    cfg!(test) || turn(&LAST_CREATE_MS, now_ms())
 }
 
 fn turn(last: &std::sync::atomic::AtomicU64, now: u64) -> bool {

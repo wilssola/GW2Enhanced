@@ -1341,7 +1341,7 @@ pub struct PsCb {
 /// drawn this frame and the mod is on; otherwise all zero (the composite is skipped: bit-identical).
 pub fn composite_cb_values(ready: bool, c: &ShellCfg) -> [[f32; 4]; 2] {
     let c = c.clamped();
-    if !ready || c.shells == 0 {
+    if !ready {
         return [[0.0; 4]; 2];
     }
     [[1.0, c.root_dark, c.rim, c.debug as f32], [c.detail, 0.0, 0.0, 0.0]]
@@ -1659,6 +1659,13 @@ pub fn configure(c: &ShellCfg) {
     crate::ao::set_depth_consumer(crate::ao::DEPTH_FOR_FUR, ON.load(Relaxed));
 }
 
+/// Tests only: the shells off again after a test drew some, so the next test (fur mask, other effects) starts without them.
+#[cfg(test)]
+pub(crate) fn test_off() {
+    ON.store(false, Relaxed);
+    crate::ao::set_depth_consumer(crate::ao::DEPTH_FOR_FUR, false);
+}
+
 /// Start: the config, and the strand pixel shader compiled on a background thread.
 pub fn init(c: &ShellCfg) {
     configure(c);
@@ -1803,8 +1810,8 @@ pub fn status_text() -> String {
 
 fn status_core(c: &ShellCfg) -> String {
     let c = c.clone();
-    if c.shells == 0 {
-        return format!("off (fur_shells {})", c.shells);
+    if crate::toggles::master_off() {
+        return "off (graphics off)".to_string();
     }
     if FAILED.load(Relaxed) {
         return "failed (see log), off".to_string();
@@ -1885,8 +1892,8 @@ fn gate_of(f: &Frame) -> String {
 /// `status_furlook=` / `status_rim=` suffix (v11): the gate of the last frame in one line.
 pub fn gate_text() -> String {
     let c = cfg();
-    if c.shells == 0 {
-        return "gate: none (shells off: the old look / rim on the whole mask, no classification)".to_string();
+    if crate::toggles::master_off() {
+        return "gate: none (graphics off: the old look / rim on the whole mask, no classification)".to_string();
     }
     let l = LAST.lock().unwrap_or_else(|e| e.into_inner());
     match l.as_ref() {
@@ -2606,7 +2613,7 @@ unsafe fn ps_srv_count(ctx: Obj) -> u32 {
 /// `ctx` must be the game's live immediate context with the draw's state bound.
 /// `auto`: admitted by the content rule (furselect.rs), not by `fur_ps`: measured, and drawn only once its atlas is proven fur.
 pub unsafe fn on_fur_draw(ctx: Obj, call: Call, ps: u32, vs: Option<u32>, vcb0: u32, vs_ptr: usize, auto: bool) -> bool {
-    if !ON.load(Relaxed) || !!crate::toggles::master_off() || FAILED.load(Relaxed) {
+    if !ON.load(Relaxed) || crate::toggles::master_off() || FAILED.load(Relaxed) {
         return false;
     }
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {

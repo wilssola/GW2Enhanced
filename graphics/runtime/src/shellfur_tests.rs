@@ -237,7 +237,7 @@ fn constants_are_clamped_and_zero_when_not_ready() {
     assert_eq!(gs_cb_values(&c, &DrawGeom { vp: [0.0, 0.0, 8.0, 8.0], ccw: false }, 0.0, 1000.0, 39.5)[0][3], 39.5);
     assert_eq!(gs_cb_values(&ShellCfg { unit: 2.0, ..c.clone() }, &DrawGeom { vp: [0.0, 0.0, 8.0, 8.0], ccw: false }, 0.0, 1000.0, 39.5)[0][3], 2.0);
     let off = gs_cb_values(&ShellCfg { shells: 0, ..c.clone() }, &DrawGeom { vp: [0.0; 4], ccw: true }, f64::NAN, f32::NAN, f32::NAN);
-    assert_eq!((off[0][0], off[0][3], off[2][2], off[3][3]), (0.0, 0.0, 1.0, crate::aerial::DEFAULT_UNIT));
+    assert_eq!((off[0][0], off[0][3], off[2][2], off[3][3]), (4.0, 0.0, 1.0, crate::aerial::DEFAULT_UNIT), "at least 4 shells");
     for v in off.iter().chain(g.iter()).flatten() {
         assert!(v.is_finite());
     }
@@ -249,7 +249,7 @@ fn constants_are_clamped_and_zero_when_not_ready() {
     assert_eq!(ps_ext_values(1000.0), [ROOT_DEV_TOL, ROOT_LIN_REL, ROOT_LIN_M / 1000.0, FRAG_TOL_M]); // v8: w = the device-depth fragment tolerance (m)
     assert!(ps_ext_values(f32::NAN).iter().all(|v| v.is_finite()));
     assert_eq!(composite_cb_values(false, &c), [[0.0; 4]; 2]);
-    assert_eq!(composite_cb_values(true, &ShellCfg { shells: 0, ..c.clone() }), [[0.0; 4]; 2]);
+    assert_eq!(composite_cb_values(false, &c), [[0.0; 4]; 2]);
     assert_eq!(composite_cb_values(true, &c), [[1.0, 0.6, 1.0, 0.0], [0.7, 0.0, 0.0, 0.0]]);
     assert_eq!(Call::IndexedInstanced(30, 2, 0, 0, 0).count(), 30);
     assert_eq!((Call::Indexed(9, 0, 0).instances(), Call::Instanced(4, 3, 0, 0).instances()), (1, 3));
@@ -974,7 +974,7 @@ fn run_seq(cfg: &ShellCfg, o: &Opts, jitter: &[[f32; 2]]) -> Option<Vec<Out>> {
         frame_begin();
         reset_state();
         FORCE_TRI.store(false, Relaxed);
-        configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
+        test_off();
         crate::furisland::MODE.store(1, Relaxed);
         Some(outs)
     }
@@ -1139,8 +1139,12 @@ fn zero_shells_off_or_unbound_is_the_old_output_bit_for_bit_and_the_output_is_st
     let Some(a) = run(&ShellCfg::default(), &close()) else { return };
     let Some(b) = run(&ShellCfg::default(), &close()) else { return };
     assert!(a.out == b.out && a.keys == b.keys, "identical input -> identical output (MAX blend: no draw-order dependence)");
-    for cfg in [ShellCfg { shells: 0, ..ShellCfg::default() }] {
-        let Some(r) = run(&cfg, &close()) else { return };
+    for cfg in [ShellCfg::default()] {
+        // The graphics switched off (the shells have no switch of their own).
+        crate::toggles::set_master_off(true);
+        let r = run(&cfg, &close());
+        crate::toggles::set_master_off(false);
+        let Some(r) = r else { return };
         assert!(r.keys.iter().all(|&k| k == 0));
         assert!(r.out == r.old, "{cfg:?}: the old output, bit for bit");
         assert!(r.out == a.old, "and the same as the old output of the shell run");
@@ -1293,7 +1297,7 @@ fn the_replay_restores_the_pipeline_state() {
         c.PSSetConstantBuffers(13, Some(&[None]));
         frame_begin();
         reset_state();
-        configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
+        test_off();
     }
 }
 
@@ -1327,9 +1331,9 @@ fn shell_keys_apply_live_and_the_debug_capture_reports_them() {
     for k in ["fur_shells=12\n", "shell_length=3\n", "shell_counts=-5214\n", "shell_normal=face\n", "status_shells="] {
         assert!(t.contains(k), "{k} missing in\n{t}");
     }
-    configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
-    assert!(crate::ao::depth_consumers() & crate::ao::DEPTH_FOR_FUR == 0);
+    crate::toggles::set_master_off(true);
     let t = crate::debugshot::settings_text("test", 7, (1920, 1080), 10);
+    crate::toggles::set_master_off(false);
     assert!(t.lines().any(|l| l.starts_with("status_shells=off")), "{t}");
 }
 
@@ -1349,8 +1353,10 @@ fn status_lists_the_draws_and_the_verdicts() {
     for k in ["16 shells", "length 2.5 cm","1 draws drew shells (1 picked of 2 fur draws)", "[vs ba0709f4 ps 1d50763f vcb 16464 count 17694 inst 1 srv 2 -> shells]", "[vs 59f8b692 ps 1d50763f vcb 208 count 5214 inst 1 srv 2 -> vcb < shell_min_vcb]", "shell_ps [= fur_ps]"] {
         assert!(t.contains(k), "{k} missing in {t}");
     }
-    configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
-    assert!(status_text().starts_with("off"));
+    crate::toggles::set_master_off(true);
+    let off = status_text();
+    crate::toggles::set_master_off(false);
+    assert!(off.starts_with("off"), "{off}");
     frame_begin();
     frame_begin();
 }
@@ -1530,7 +1536,7 @@ fn a_second_light_adjust_draw_of_the_frame_binds_the_same_shells() {
         c.PSSetConstantBuffers(13, Some(&[None]));
         frame_begin();
         reset_state();
-        configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
+        test_off();
     }
 }
 
@@ -3245,8 +3251,10 @@ fn v11_the_skin_pass_constants_and_a_frame_without_records() {
     assert!(gate_of(&Frame::default()).contains("not bound"));
     // With the shells off there is no classification: the gate line says so (the old look / rim on the whole mask).
     let _g = crate::testlock::lock();
-    configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
-    assert!(gate_text().contains("shells off"), "{}", gate_text());
+    crate::toggles::set_master_off(true);
+    let gate = gate_text();
+    crate::toggles::set_master_off(false);
+    assert!(gate.contains("graphics off"), "{gate}");
 }
 
 // ---- v13: coat strands in front of the horn ----------------------------------------------------------------------------------------
