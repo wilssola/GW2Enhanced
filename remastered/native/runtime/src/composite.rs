@@ -21,8 +21,9 @@ pub static SCALE: AtomicU32 = AtomicU32::new(2);
 /// Read when a composite is created, so a change applies to characters built after it.
 pub static ALL_4X: AtomicBool = AtomicBool::new(false);
 /// On the character select (from the start of the game until a composite of a character in the world, and again when a preview without
-/// a character is built): no 4x at all there, neither composites nor the local player's model textures. A 4x model texture loaded on the
-/// select had its first resize refused (2048 -> 1024) and the scene stayed black, as with the 4x composites before.
+/// a character is built) the textures mod stays out of the way, as if switched off: no 4x, nothing served from the pack, no prefetch.
+/// The select loads while the system can be short of commit, and our cache and files made the game's own texture allocations fail:
+/// a black scene that switching the mod off and on again, once the select had loaded, cleared.
 pub static AT_SELECT: AtomicBool = AtomicBool::new(true);
 
 /// Records where the game is from a character composite's constructor (`select` = no character and none controlled).

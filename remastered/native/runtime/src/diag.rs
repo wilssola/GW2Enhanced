@@ -442,6 +442,11 @@ const PREFETCH_MIN_FREE_COMMIT: u64 = 12 << 30;
 
 fn prefetch(list: Vec<(u8, u32, [u8; 8])>) {
     use rayon::prelude::*;
+    // Only once a character is in the world: on the character select the game loads its own textures, and the commit the RAM cache
+    // takes then (2+ GB on a system near its commit limit) left them unallocated (black character select).
+    while crate::composite::AT_SELECT.load(std::sync::atomic::Ordering::Relaxed) {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
     use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
     let t0 = Instant::now();
     let Ok(pool) = rayon::ThreadPoolBuilder::new()
@@ -832,6 +837,9 @@ unsafe extern "system" fn block_cb(data: *const u8, size: u64, offset: u32, file
             let ckey = (src * 2 + is_comp as u8, file_id);
             if let Some((path, src_bytes, hd_w)) = (if src == 1 { &PACK4 } else if src == 2 { &PACK_CHAR4X } else { &PACK })
                 .get()
+                // Nothing from the pack on the character select (as with the mod off: the pieces get the plain upscale below): its textures
+                // load while the system is short of commit, and our files there made the game's own allocations fail (black scene).
+                .filter(|_| !crate::composite::AT_SELECT.load(std::sync::atomic::Ordering::Relaxed))
                 .filter(|_| if is_comp { crate::overlay::pieces_on() } else { crate::overlay::enabled() })
                 .and_then(|p| p.get(&file_id))
                 .filter(|e| scale_ok(e.2))
