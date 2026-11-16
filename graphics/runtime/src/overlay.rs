@@ -991,7 +991,10 @@ impl Overlay {
             self.cfg.shell = c.clone();
             sf::configure(&c);
         }
-        ui.text_wrapped(trf!("Shells: {}", "Camadas: {}", sf::status_text()));
+        ui.text_wrapped(trf!("Shells: {}", "Camadas: {}", sf::summary_text()));
+        if ui.collapsing_header(tr("Shell details###shell-details", "Detalhes das camadas###shell-details"), TreeNodeFlags::empty()) {
+            ui.text_wrapped(sf::status_text());
+        }
         ui.separator();
     }
 

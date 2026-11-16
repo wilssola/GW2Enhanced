@@ -206,11 +206,8 @@ pub const RIM_RANGE: (f32, f32) = (0.0, 2.0);
 pub const RIM_DEFAULT: f32 = 1.0;
 pub const UNIT_RANGE: (f32, f32) = (0.01, 1000.0);
 /// v14: 0 (was 4096: skinned draws only). The rigid 208-byte draws (vs 59f8b692) are NPC charr bodies and heads too (count 1824 / 1140:
-/// 28 % of a crowd frame's fur pixels); the hair cards among them are rejected by the per-draw test (gloss band) like every draw. A saved
-/// 4096 (the old default) reads as 0 (`Selector::new`); any other value is honoured.
+/// 28 % of a crowd frame's fur pixels); the hair cards among them are rejected by the per-draw test (gloss band) like every draw.
 pub const MIN_VCB_DEFAULT: u32 = 0;
-/// The pre-v14 default of `shell_min_vcb`, saved in every config of v1..v13: treated as "no limit" (v14).
-pub const MIN_VCB_LEGACY: u32 = 4096;
 
 impl Default for ShellCfg {
     fn default() -> Self {
@@ -875,8 +872,7 @@ pub struct Selector {
 impl Selector {
     pub fn new(c: &ShellCfg) -> Selector {
         let (take, leave) = parse_counts(&c.counts);
-        let min_vcb = if c.min_vcb == MIN_VCB_LEGACY { MIN_VCB_DEFAULT } else { c.min_vcb };
-        Selector { ps: crate::furmask::parse_hashes(&c.ps), vs: crate::furmask::parse_hashes(&c.vs), min_vcb, take, leave }
+        Selector { ps: crate::furmask::parse_hashes(&c.ps), vs: crate::furmask::parse_hashes(&c.vs), min_vcb: c.min_vcb, take, leave }
     }
 
     /// `Ok` = shells; `Err(why)` for the per-draw list of the status line.
@@ -1791,6 +1787,18 @@ fn reasons_text(f: &Frame) -> String {
 }
 
 /// `status_shells=`: settings, what the last frame did and every fur draw with the selector's verdict.
+/// The overlay's one-line summary of the shells (the full `status_text` sits in a collapsed section below it).
+pub fn summary_text() -> String {
+    let c = cfg();
+    let core = status_core(&c);
+    let mut parts = core.split("; ");
+    let head = parts.next().unwrap_or_default();
+    let Some(last) = parts.find(|p| p.starts_with("last frame:")) else {
+        return head.split(", ").next().unwrap_or_default().to_string();
+    };
+    format!("{}; {last}", head.split(", ").next().unwrap_or_default())
+}
+
 pub fn status_text() -> String {
     let c = cfg();
     let stats = STATS_SHOW.lock().map(|g| g.clone()).unwrap_or_default();
@@ -1840,7 +1848,7 @@ fn status_core(c: &ShellCfg) -> String {
         "selector: shell_ps [{}], shell_vs [{}], shell_min_vcb {}, shell_counts [{}]",
         if c.ps.is_empty() { "= fur_ps" } else { c.ps.as_str() },
         if c.vs.is_empty() { "any" } else { c.vs.as_str() },
-        if c.min_vcb == MIN_VCB_LEGACY { format!("{} (the pre-v14 default: in effect 0)", c.min_vcb) } else { c.min_vcb.to_string() },
+        c.min_vcb,
         if c.counts.is_empty() { "all" } else { c.counts.as_str() }
     );
     let l = LAST.lock().unwrap_or_else(|e| e.into_inner());

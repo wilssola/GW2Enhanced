@@ -87,8 +87,6 @@ fn selector_takes_the_skinned_fur_draws_and_the_counts() {
     assert_eq!(s.verdict(0x1d50763f, Some(0xba0709f4), 16464, 17694), Ok(()));
     assert_eq!(s.verdict(0x1d50763f, Some(0x59f8b692), 208, 5214), Ok(()));
     assert_eq!(MIN_VCB_DEFAULT, 0);
-    let legacy = Selector::new(&ShellCfg { min_vcb: MIN_VCB_LEGACY, ..ShellCfg::default() });
-    assert_eq!(legacy.verdict(0x1d50763f, Some(0x59f8b692), 208, 1824), Ok(()));
     let strict = Selector::new(&ShellCfg { min_vcb: 8192, ..ShellCfg::default() });
     assert_eq!(strict.verdict(0x1d50763f, Some(0x59f8b692), 208, 1824), Err("vcb < shell_min_vcb"));
     let s = Selector::new(&ShellCfg { ps: "1d50763f".into(), vs: "ba0709f4".into(), counts: "-3033".into(), ..ShellCfg::default() });
@@ -2530,13 +2528,12 @@ fn v7_buffers_changed_between_record_and_replay_never_ghost() {
     let Some(dr) = run(&ShellCfg::default(), &Opts { dynamic_vb: true, stale: 0.25, ..o }) else { return };
     println!("dynamic vertex buffer rewritten after the draw: {} replayed, {} keys", dr.replayed, dr.keys.iter().filter(|&&k| k != 0).count());
     assert!(dr.replayed == 1 && dr.keys == base.keys, "the replay draws the copy taken at the draw, not the rewritten buffer");
-    // v14: a RIGID draw (vcb 208, the game's 59f8b692 NPC bodies) gets shells like the skinned one (the default and a saved 4096); a
-    // shell_min_vcb other than the old default still leaves it out.
+    // v14: a RIGID draw (vcb 208, the game's 59f8b692 NPC bodies) gets shells like the skinned one by default; a shell_min_vcb above
+    // its 208 bytes leaves it out.
     let Some(r) = run(&ShellCfg::default(), &Opts { rigid: true, ..o }) else { return };
-    let Some(r4) = run(&ShellCfg { min_vcb: MIN_VCB_LEGACY, ..ShellCfg::default() }, &Opts { rigid: true, ..o }) else { return };
     let Some(r8) = run(&ShellCfg { min_vcb: 8192, ..ShellCfg::default() }, &Opts { rigid: true, ..o }) else { return };
-    println!("rigid draw: {} / {} / {} replayed (default, 4096, 8192)", r.replayed, r4.replayed, r8.replayed);
-    assert!(r.replayed == 1 && r.keys == base.keys && r4.keys == base.keys, "the rigid draw is replayed like the skinned one");
+    println!("rigid draw: {} / {} replayed (default, 8192)", r.replayed, r8.replayed);
+    assert!(r.replayed == 1 && r.keys == base.keys, "the rigid draw is replayed like the skinned one");
     assert!(r8.replayed == 0 && r8.keys.iter().all(|&k| k == 0));
     // v15: the vertex and index buffers are DYNAMIC RINGS (other data before the mesh, base vertex 6000, start index 9000, both rewritten
     // with garbage after the draw): only the draw's windows are copied, the call rebased: the same keys as the plain mesh.
