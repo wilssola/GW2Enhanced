@@ -10,7 +10,7 @@ build = "build.rs"
 # `system`: links the official CTranslate2 DLL fetched by scripts/fetch-ctranslate2.ps1
 # (fast CPU kernels + CUDA). `cuda-dynamic-loading`: cuBLAS is only loaded when a
 # CUDA device is requested (and keeps ct2rs from linking cuBLAS statically).
-ct2rs = { version = "0.10", default-features = false, features = ["sentencepiece", "system", "cuda-dynamic-loading"] }
+ct2rs = { version = "0.11", default-features = false, features = ["sentencepiece", "system", "cuda-dynamic-loading"] }
 # DirectML mode. `load-dynamic`: onnxruntime.dll is only loaded when that mode is
 # requested (scripts/fetch-directml.ps1). Pinned: this version talks to ONNX
 # Runtime 1.24, the last one with a DirectML build on NuGet.
