@@ -157,7 +157,7 @@ pub struct Config {
     /// Fur diagnostics painted on the pixels of the fur mask only: 0 off, 1 mesh uv as colour, 2 strand pattern, 3 rim band, 4 strand fade.
     /// RUNTIME ONLY like `debug_view`: parsed (hot reload applies it) but `to_ini` always writes 0 and the start ignores it.
     pub fur_view: u8,
-    /// Shell fur (`docs/shell-fur.md`, `shellfur.rs`): the keys `fur_shell`, `fur_shells`, `shell_*`.
+    /// Shell fur (`docs/shell-fur.md`, `shellfur.rs`): the keys `fur_shells`, `shell_*`.
     pub shell: crate::shellfur::ShellCfg,
     /// v17: the per-effect switches (`<effect>_enabled`, toggles.rs).
     pub toggles: crate::toggles::Toggles,
@@ -1280,8 +1280,7 @@ subsurface_strength=nan");
             fur_rim: 0.75,
             fur_sss: 0.5,
             fur_view: 0, // runtime only: never written, so it cannot round-trip
-            shell: crate::shellfur::ShellCfg {
-                on: 0,
+            shell: crate::shellfur::ShellCfg {
                 shells: 24,
                 length: 6.5,
                 density: 1200.0,

@@ -19,7 +19,7 @@ use windows::core::Interface;
 fn shell_keys_default_parse_clamp_and_round_trip() {
     let d = ShellCfg::default();
     // v10: 2.5 cm strands (was 4) and the LOD scaled with them (12.5 m, was 20).
-    assert_eq!((d.on, d.shells, d.length, d.density, d.thickness, d.root_dark, d.wind, d.lod, d.rim), (1, 16, 2.5, 1200.0, 0.6, 0.6, 0.15, 12.5, 1.0));
+    assert_eq!((d.shells, d.length, d.density, d.thickness, d.root_dark, d.wind, d.lod, d.rim), (16, 2.5, 1200.0, 0.6, 0.6, 0.15, 12.5, 1.0));
     assert_eq!((d.detail, d.clump), (0.7, 0.5));
     assert_eq!((d.ps.as_str(), d.vs.as_str(), d.min_vcb, d.counts.as_str(), d.normal.as_str(), d.unit, d.debug), ("", "", 0, "", "face", 0.0, 0)); // v14: shell_min_vcb 0 (was 4096)
     assert_eq!(crate::config::Config::default().shell, d);
@@ -27,7 +27,7 @@ fn shell_keys_default_parse_clamp_and_round_trip() {
         "fur_shell=0\nfur_shells=24\nshell_length=6\nshell_density=1500\nshell_thickness=0.5\nshell_root_dark=0.3\nshell_wind=0.8\nshell_lod_distance=40\nshell_rim=1.5\nshell_ps=1D50763F\nshell_vs=ba0709f4\nshell_min_vcb=16000\nshell_counts=17694, -5214\nshell_normal=TEXCOORD4\nshell_unit=39.37\nshell_debug=1\nshell_detail=0.25\nshell_clump=0.9",
     )
     .shell;
-    assert_eq!((c.on, c.shells, c.length, c.density, c.thickness, c.root_dark, c.wind, c.lod, c.rim), (0, 24, 6.0, 1500.0, 0.5, 0.3, 0.8, 40.0, 1.5));
+    assert_eq!((c.shells, c.length, c.density, c.thickness, c.root_dark, c.wind, c.lod, c.rim), (24, 6.0, 1500.0, 0.5, 0.3, 0.8, 40.0, 1.5));
     assert_eq!((c.ps.as_str(), c.vs.as_str(), c.min_vcb, c.counts.as_str(), c.normal.as_str(), c.unit, c.debug), ("1d50763f", "ba0709f4", 16000, "17694, -5214", "texcoord4", 39.37, 1));
     assert_eq!((c.detail, c.clump), (0.25, 0.9));
     let c = crate::config::Config::parse("shell_detail=7\nshell_clump=-2").shell;
@@ -36,21 +36,21 @@ fn shell_keys_default_parse_clamp_and_round_trip() {
     assert_eq!((c.detail, c.clump), (DETAIL_DEFAULT, CLUMP_DEFAULT), "NaN / garbage = the default");
     // Clamped.
     let c = crate::config::Config::parse("fur_shell=7\nfur_shells=99\nshell_length=99\nshell_density=1\nshell_thickness=5\nshell_root_dark=-1\nshell_wind=4\nshell_lod_distance=0\nshell_rim=9\nshell_min_vcb=-4\nshell_unit=99999\nshell_debug=3").shell;
-    assert_eq!((c.on, c.shells, c.length, c.density, c.thickness, c.root_dark, c.wind, c.lod, c.rim, c.min_vcb, c.unit, c.debug), (1, 32, 20.0, 50.0, 1.0, 0.0, 1.0, 2.0, 2.0, 0, 1000.0, 2));
+    assert_eq!((c.shells, c.length, c.density, c.thickness, c.root_dark, c.wind, c.lod, c.rim, c.min_vcb, c.unit, c.debug), (32, 20.0, 50.0, 1.0, 0.0, 1.0, 2.0, 2.0, 0, 1000.0, 2));
     assert_eq!(crate::config::Config::parse("fur_shells=2").shell.shells, 4, "1..3 become the smallest real count");
-    assert_eq!(crate::config::Config::parse("fur_shells=0").shell.shells, 0, "0 = off");
+    assert_eq!(crate::config::Config::parse("fur_shells=0").shell.shells, 4, "v19: the shells are always on");
     // NaN / garbage = the default (NaN-safe), shell_unit 0 / negative / garbage = auto.
     let c = crate::config::Config::parse("fur_shell=x\nfur_shells=nan\nshell_length=NaN\nshell_density=inf\nshell_thickness=\nshell_root_dark=abc\nshell_wind=nan\nshell_lod_distance=-inf\nshell_rim=x\nshell_unit=-3\nshell_normal=garbage7").shell;
     assert_eq!(c, ShellCfg { unit: 0.0, ..ShellCfg::default() });
     assert_eq!(crate::config::Config::parse("shell_unit=abc").shell.unit, 0.0);
     // The ini block: every key once, with its comment, and it parses back to the same values.
-    let x = ShellCfg { on: 0, shells: 12, length: 2.5, density: 600.0, thickness: 0.4, root_dark: 0.5, wind: 0.1, lod: 12.0, rim: 0.5, ps: "aabbccdd".into(), vs: "11223344".into(), min_vcb: 208, counts: "-5214".into(), normal: "texcoord2".into(), unit: 1.0, debug: 1, detail: 0.4, clump: 0.2, fur_mask: "t2.l>".into(), fur_threshold: 0.3, fur_soft: 0.08, uv_exclude: "0.1 0.2 0.3 0.4; 0.5 0.6 0.7 0.8@17694".into(), auto: 0 };
+    let x = ShellCfg { shells: 12, length: 2.5, density: 600.0, thickness: 0.4, root_dark: 0.5, wind: 0.1, lod: 12.0, rim: 0.5, ps: "aabbccdd".into(), vs: "11223344".into(), min_vcb: 208, counts: "-5214".into(), normal: "texcoord2".into(), unit: 1.0, debug: 1, detail: 0.4, clump: 0.2, fur_mask: "t2.l>".into(), fur_threshold: 0.3, fur_soft: 0.08, uv_exclude: "0.1 0.2 0.3 0.4; 0.5 0.6 0.7 0.8@17694".into(), auto: 0 };
     let t = crate::config::Config { shell: x.clone(), ..crate::config::Config::default() }.to_ini();
     for k in KEYS {
         assert_eq!(t.lines().filter(|l| l.starts_with(&format!("{k}="))).count(), 1, "{k} once in\n{t}");
     }
     assert!(t.contains("# Shell fur (docs/shell-fur.md)"));
-    assert!(t.find("fur_view=0\n").unwrap() < t.find("fur_shell=0\n").unwrap(), "after the fur look");
+    assert!(t.find("fur_view=0\n").unwrap() < t.find("fur_shells=").unwrap(), "after the fur look");
     assert_eq!(crate::config::Config::parse(&t).shell, x);
     assert_eq!(crate::config::Config::parse(&crate::config::Config::default().to_ini()), crate::config::Config::default());
     // clamped() (the overlay) is NaN-safe.
@@ -121,7 +121,7 @@ fn v15_the_dynamic_copy_windows() {
 fn v14_the_record_cap_and_the_triangle_budget() {
     // A crowd: draws arrive in the engine's order; each is admitted while fewer than MAX_RECS records and MAX_FRAME_TRIS triangles.
     // v16: 256 records / 800000 triangles (changed test: v14 pinned 64 / 400000, the replaced behaviour)
-    assert_eq!((MAX_RECS, MAX_FRAME_TRIS), (256, 800_000));
+    assert_eq!((MAX_RECS, MAX_FRAME_TRIS), (96, 300_000));
     assert_eq!(admit(0, 0, 1000), Ok(()));
     assert_eq!(admit(MAX_RECS - 1, 0, 1000), Ok(()));
     assert_eq!(admit(MAX_RECS, 0, 1000), Err("too many shell draws this frame (cap)"));
@@ -140,13 +140,13 @@ fn v14_the_record_cap_and_the_triangle_budget() {
         }
         k
     };
-    // v16: also a frame with 136 and the largest seen (247) take every draw.
-    for (n, want) in [(82usize, 82usize), (130, 130), (47, 47), (136, 136), (247, 247)] {
+    // v19: up to 96 draws (the near characters: the engine draws near to far); v16 took every draw of the largest frames (247).
+    for (n, want) in [(82usize, 82usize), (130, 96), (47, 47), (136, 96), (247, 96)] {
         assert_eq!(crowd(n, 1100), want);
         println!("a frame of {n} fur draws: v13 {} records, v14/v15 {}, v16 {}", n.min(24), n.min(64), crowd(n, 1100));
     }
-    assert_eq!(crowd(130, 5898), 130);
-    assert_eq!(crowd(300, 1100), MAX_RECS, "past 256 the cap holds (the hysteresis then keeps last frame's draws: WARP test)");
+    assert_eq!(crowd(130, 5898), (MAX_FRAME_TRIS / 5898) as usize, "large meshes: the triangle budget");
+    assert_eq!(crowd(300, 1100), MAX_RECS, "past the cap it holds (the hysteresis then keeps last frame's draws: WARP test)");
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn constants_are_clamped_and_zero_when_not_ready() {
     // The frame's measured unit goes to the geometry shader; a fixed shell_unit wins over it.
     assert_eq!(gs_cb_values(&c, &DrawGeom { vp: [0.0, 0.0, 8.0, 8.0], ccw: false }, 0.0, 1000.0, 39.5)[0][3], 39.5);
     assert_eq!(gs_cb_values(&ShellCfg { unit: 2.0, ..c.clone() }, &DrawGeom { vp: [0.0, 0.0, 8.0, 8.0], ccw: false }, 0.0, 1000.0, 39.5)[0][3], 2.0);
-    let off = gs_cb_values(&ShellCfg { on: 0, ..c.clone() }, &DrawGeom { vp: [0.0; 4], ccw: true }, f64::NAN, f32::NAN, f32::NAN);
+    let off = gs_cb_values(&ShellCfg { shells: 0, ..c.clone() }, &DrawGeom { vp: [0.0; 4], ccw: true }, f64::NAN, f32::NAN, f32::NAN);
     assert_eq!((off[0][0], off[0][3], off[2][2], off[3][3]), (0.0, 0.0, 1.0, crate::aerial::DEFAULT_UNIT));
     for v in off.iter().chain(g.iter()).flatten() {
         assert!(v.is_finite());
@@ -806,7 +806,7 @@ fn run_seq(cfg: &ShellCfg, o: &Opts, jitter: &[[f32; 2]]) -> Option<Vec<Out>> {
             let ctx2 = c.clone();
             m.draw(g.dev.as_raw(), c.as_raw(), true, &|| ctx2.DrawIndexed(n, ring_i, ring_v as i32), Some((&key, &uvb))).expect("mask draw");
             let (vs_hash, vcb_bytes) = if o.rigid { (0x59f8b692u32, 208u32) } else { (0xba0709f4, 16464) };
-            on_fur_draw(c.as_raw(), Call::Indexed(n, ring_i, ring_v as i32), 0x1d50763f, Some(vs_hash), vcb_bytes, vs.as_raw() as usize);
+            on_fur_draw(c.as_raw(), Call::Indexed(n, ring_i, ring_v as i32), 0x1d50763f, Some(vs_hash), vcb_bytes, vs.as_raw() as usize, false);
             c.DrawIndexed(n, ring_i, ring_v as i32);
             if o.ring {
                 // the engine rewrites both rings for its next draws (Map WRITE_DISCARD) before the replay
@@ -831,7 +831,7 @@ fn run_seq(cfg: &ShellCfg, o: &Opts, jitter: &[[f32; 2]]) -> Option<Vec<Out>> {
                 }
                 let ctx3 = c.clone();
                 m.draw(g.dev.as_raw(), c.as_raw(), false, &|| ctx3.DrawIndexed(n2, 0, 0), Some((&key, &uvb))).expect("mask draw 2");
-                on_fur_draw(c.as_raw(), Call::Indexed(n2, 0, 0), 0x1d50763f, Some(0xba0709f4), 16464, vs.as_raw() as usize);
+                on_fur_draw(c.as_raw(), Call::Indexed(n2, 0, 0), 0x1d50763f, Some(0xba0709f4), 16464, vs.as_raw() as usize, false);
                 c.DrawIndexed(n2, 0, 0);
             }
             // v7: the engine rewrites the vertex buffer after the draw (the recorded buffer now holds another mesh).
@@ -974,7 +974,7 @@ fn run_seq(cfg: &ShellCfg, o: &Opts, jitter: &[[f32; 2]]) -> Option<Vec<Out>> {
         frame_begin();
         reset_state();
         FORCE_TRI.store(false, Relaxed);
-        configure(&ShellCfg { on: 0, ..ShellCfg::default() });
+        configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
         crate::furisland::MODE.store(1, Relaxed);
         Some(outs)
     }
@@ -1139,7 +1139,7 @@ fn zero_shells_off_or_unbound_is_the_old_output_bit_for_bit_and_the_output_is_st
     let Some(a) = run(&ShellCfg::default(), &close()) else { return };
     let Some(b) = run(&ShellCfg::default(), &close()) else { return };
     assert!(a.out == b.out && a.keys == b.keys, "identical input -> identical output (MAX blend: no draw-order dependence)");
-    for cfg in [ShellCfg { shells: 0, ..ShellCfg::default() }, ShellCfg { on: 0, ..ShellCfg::default() }] {
+    for cfg in [ShellCfg { shells: 0, ..ShellCfg::default() }] {
         let Some(r) = run(&cfg, &close()) else { return };
         assert!(r.keys.iter().all(|&k| k == 0));
         assert!(r.out == r.old, "{cfg:?}: the old output, bit for bit");
@@ -1262,7 +1262,7 @@ fn the_replay_restores_the_pipeline_state() {
         c.PSSetConstantBuffers(0, Some(&[Some(cb.clone())]));
         c.IASetIndexBuffer(&ib, DXGI_FORMAT_R16_UINT, 4);
         // A recorded draw (the same state, a full-screen triangle; whether it gets a geometry shader does not matter here).
-        on_fur_draw(c.as_raw(), Call::Draw(3, 0), 1, Some(2), 16464, vs.as_ref().unwrap().as_raw() as usize);
+        on_fur_draw(c.as_raw(), Call::Draw(3, 0), 1, Some(2), 16464, vs.as_ref().unwrap().as_raw() as usize, false);
         assert_eq!(recorded(), 1);
         let lin = tex(&g, 16, 16, DXGI_FORMAT_R32_FLOAT, (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32, D3D11_USAGE_DEFAULT, 0, None);
         light_adjust_inner(c.as_raw(), Some(lin.as_raw()), 1000.0);
@@ -1293,7 +1293,7 @@ fn the_replay_restores_the_pipeline_state() {
         c.PSSetConstantBuffers(13, Some(&[None]));
         frame_begin();
         reset_state();
-        configure(&ShellCfg { on: 0, ..ShellCfg::default() });
+        configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
     }
 }
 
@@ -1324,10 +1324,10 @@ fn shell_keys_apply_live_and_the_debug_capture_reports_them() {
     assert_eq!((c.shells, c.length, c.counts.as_str()), (12, 3.0, "-5214"));
     assert!(crate::ao::depth_consumers() & crate::ao::DEPTH_FOR_FUR != 0, "the shells read the linear depth");
     let t = crate::debugshot::settings_text("test", 7, (1920, 1080), 10);
-    for k in ["fur_shell=1\n", "fur_shells=12\n", "shell_length=3\n", "shell_counts=-5214\n", "shell_normal=face\n", "status_shells="] {
+    for k in ["fur_shells=12\n", "shell_length=3\n", "shell_counts=-5214\n", "shell_normal=face\n", "status_shells="] {
         assert!(t.contains(k), "{k} missing in\n{t}");
     }
-    configure(&ShellCfg { on: 0, ..ShellCfg::default() });
+    configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
     assert!(crate::ao::depth_consumers() & crate::ao::DEPTH_FOR_FUR == 0);
     let t = crate::debugshot::settings_text("test", 7, (1920, 1080), 10);
     assert!(t.lines().any(|l| l.starts_with("status_shells=off")), "{t}");
@@ -1349,7 +1349,7 @@ fn status_lists_the_draws_and_the_verdicts() {
     for k in ["16 shells", "length 2.5 cm","1 draws drew shells (1 picked of 2 fur draws)", "[vs ba0709f4 ps 1d50763f vcb 16464 count 17694 inst 1 srv 2 -> shells]", "[vs 59f8b692 ps 1d50763f vcb 208 count 5214 inst 1 srv 2 -> vcb < shell_min_vcb]", "shell_ps [= fur_ps]"] {
         assert!(t.contains(k), "{k} missing in {t}");
     }
-    configure(&ShellCfg { on: 0, ..ShellCfg::default() });
+    configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
     assert!(status_text().starts_with("off"));
     frame_begin();
     frame_begin();
@@ -1530,7 +1530,7 @@ fn a_second_light_adjust_draw_of_the_frame_binds_the_same_shells() {
         c.PSSetConstantBuffers(13, Some(&[None]));
         frame_begin();
         reset_state();
-        configure(&ShellCfg { on: 0, ..ShellCfg::default() });
+        configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
     }
 }
 
@@ -3245,8 +3245,8 @@ fn v11_the_skin_pass_constants_and_a_frame_without_records() {
     assert!(gate_of(&Frame::default()).contains("not bound"));
     // With the shells off there is no classification: the gate line says so (the old look / rim on the whole mask).
     let _g = crate::testlock::lock();
-    configure(&ShellCfg { on: 0, ..ShellCfg::default() });
-    assert!(gate_text().contains("fur_shell off"), "{}", gate_text());
+    configure(&ShellCfg { shells: 0, ..ShellCfg::default() });
+    assert!(gate_text().contains("shells off"), "{}", gate_text());
 }
 
 // ---- v13: coat strands in front of the horn ----------------------------------------------------------------------------------------

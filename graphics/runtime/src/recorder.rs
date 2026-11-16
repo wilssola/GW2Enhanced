@@ -467,6 +467,10 @@ pub fn frame_end(hooks: &Hooks) {
     crate::furmask::frame_begin();
     crate::shellfur::frame_begin();
     crate::furpick::frame_begin();
+    // v19: frames without the scene (loading screens, the character select) make the fur's shader objects (furwarm.rs).
+    if !st.enabled {
+        crate::furwarm::on_idle_frame(picked.ctx as crate::d3d::Obj);
+    }
     let sw = gate::switches(user, st.enabled, output::mode());
     shaders::set_enabled(sw.substitutes);
     resolve::set_enabled(sw.resolve);

@@ -20,12 +20,11 @@ pub enum Fx {
     LocalTone,
     Lens,
     Grading,
-    Shells,
     FurLook,
     Rim,
 }
 
-pub const ALL: [Fx; 15] = [Fx::Bloom, Fx::Highlight, Fx::Ao, Fx::Halo, Fx::Ssr, Fx::Shafts, Fx::Contact, Fx::Aerial, Fx::Exposure, Fx::LocalTone, Fx::Lens, Fx::Grading, Fx::Shells, Fx::FurLook, Fx::Rim];
+pub const ALL: [Fx; 14] = [Fx::Bloom, Fx::Highlight, Fx::Ao, Fx::Halo, Fx::Ssr, Fx::Shafts, Fx::Contact, Fx::Aerial, Fx::Exposure, Fx::LocalTone, Fx::Lens, Fx::Grading, Fx::FurLook, Fx::Rim];
 
 impl Fx {
     pub fn index(self) -> usize {
@@ -47,7 +46,6 @@ impl Fx {
             Fx::LocalTone => "localtone_enabled",
             Fx::Lens => "lens_enabled",
             Fx::Grading => "grade_enabled",
-            Fx::Shells => "shell_enabled",
             Fx::FurLook => "fur_look_enabled",
             Fx::Rim => "rim_enabled",
         }
@@ -68,7 +66,6 @@ impl Fx {
             Fx::LocalTone => "local tone",
             Fx::Lens => "lens",
             Fx::Grading => "grading",
-            Fx::Shells => "shell fur",
             Fx::FurLook => "fur look",
             Fx::Rim => "rim light",
         }
@@ -77,11 +74,11 @@ impl Fx {
 
 /// The saved switches (config.ini): true = on.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Toggles(pub [bool; 15]);
+pub struct Toggles(pub [bool; 14]);
 
 impl Default for Toggles {
     fn default() -> Self {
-        Toggles([true; 15])
+        Toggles([true; 14])
     }
 }
 
@@ -128,7 +125,7 @@ impl Toggles {
     }
 }
 
-static ON: [AtomicBool; 15] = [const { AtomicBool::new(true) }; 15];
+static ON: [AtomicBool; 14] = [const { AtomicBool::new(true) }; 14];
 static MASTER_OFF: AtomicBool = AtomicBool::new(false);
 
 /// Applies the saved switches (start, hot reload, overlay). Returns whether the bloom switch changed (its shader is re-installed).

@@ -399,6 +399,8 @@ static CUR_PS: AtomicU32 = AtomicU32::new(0);
 static AUTO_MATCH: AtomicBool = AtomicBool::new(false);
 /// Hash of that pixel shader (valid while `AUTO_MATCH`).
 static AUTO_PS: AtomicU32 = AtomicU32::new(0);
+/// v19: the draw being masked was admitted by the content rule (another creature): its generated shaders are not made during play.
+static CUR_AUTO: AtomicBool = AtomicBool::new(false);
 /// The mask must be cleared by the next masked draw (a new frame started).
 static FRESH: AtomicBool = AtomicBool::new(true);
 /// At least one draw went into the mask this frame.
@@ -1147,6 +1149,61 @@ enum UvPsState {
     Failed(String),
 }
 static UV_PS: Mutex<Option<HashMap<String, UvPsState>>> = Mutex::new(None);
+
+/// v19 (furwarm.rs): a generated pixel shader compiled in an earlier session.
+pub fn preload_ps(key: &str, blob: &[u8]) {
+    UV_PS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).entry(key.to_string()).or_insert(UvPsState::Ready(Arc::new(blob.to_vec())));
+}
+
+/// v19 (furwarm.rs): on a frame without the scene, makes up to `max` generated pixel shaders known to the registry.
+pub unsafe fn prewarm(ctx: Obj, max: usize) -> usize {
+    let Some(Ok(blob)) = BLOB.get() else { return 0 };
+    if FAILED.load(Relaxed) {
+        return 0;
+    }
+    let ready: Vec<(String, Arc<Vec<u8>>)> = UV_PS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|m| m.iter().filter_map(|(k, v)| if let UvPsState::Ready(b) = v { Some((k.clone(), b.clone())) } else { None }).collect())
+        .unwrap_or_default();
+    if ready.is_empty() {
+        return 0;
+    }
+    unsafe {
+        let mut dev: Obj = std::ptr::null_mut();
+        let get_device: unsafe extern "system" fn(Obj, *mut Obj) = std::mem::transmute(vfn(ctx, vt::CHILD_GET_DEVICE));
+        get_device(ctx, &mut dev);
+        if dev.is_null() {
+            return 0;
+        }
+        let _ig = IgnoreScope::new();
+        let made = 'run: {
+            let Ok(mut g) = STATE.try_lock() else { break 'run 0 };
+            if g.as_ref().is_some_and(|m| m.device != dev as usize) {
+                *g = None;
+            }
+            if g.is_none() {
+                *g = Mask::new(dev, blob);
+            }
+            let Some(m) = g.as_mut() else { break 'run 0 };
+            let mut made = 0;
+            for (k, b) in ready {
+                if made >= max {
+                    break;
+                }
+                if m.uv_ps.iter().any(|e| e.0 == k) {
+                    continue;
+                }
+                m.uv_shader(dev, &k, &b, true);
+                made += 1;
+            }
+            made
+        };
+        release(dev);
+        made
+    }
+}
 /// Why the last draw had no uv (for the status line) and which element the last built shader reads.
 static UV_WHY: Mutex<String> = Mutex::new(String::new());
 static UV_DESC: Mutex<String> = Mutex::new(String::new());
@@ -1270,10 +1327,14 @@ fn cached_shader(key: String, pending: &'static str, build: impl FnOnce() -> Res
             }
             m.insert(key.clone(), UvPsState::Pending);
             let k2 = key.clone();
-            let spawned = std::thread::Builder::new().name("gw2g-furuv-compile".into()).spawn(move || {
+            let spawned = crate::warm::compile_job(move || {
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(build)).unwrap_or_else(|_| Err("panic while building".to_string()));
                 let st = match r {
-                    Ok(b) => UvPsState::Ready(Arc::new(b)),
+                    Ok(b) => {
+                        crate::warm::pixel(&b);
+                        crate::furwarm::remember(1, &k2, vec![b.clone()]);
+                        UvPsState::Ready(Arc::new(b))
+                    }
                     Err(e) => UvPsState::Failed(e),
                 };
                 UV_PS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(k2, st);
@@ -1409,6 +1470,7 @@ unsafe fn rim_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], rim_blob: &[u8], vs_
     if dev.is_null() {
         return;
     }
+    crate::warm::note_device(dev);
     let result = 'run: {
         let Ok(mut g) = STATE.try_lock() else { break 'run Ok(false) };
         if g.as_ref().is_some_and(|m| m.device != dev as usize) {
@@ -1511,6 +1573,7 @@ unsafe fn auto_admit(ctx: Obj, ps: u32, vs: Option<u32>, vcb0: u32, count: u32) 
 /// `fur_ps`: the content rule decides (v18).
 #[allow(clippy::too_many_arguments)]
 unsafe fn fur_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], vs_hash: Option<u32>, vcb0: u32, vs_ptr: usize, call: crate::shellfur::Call, auto: bool) {
+    CUR_AUTO.store(auto, Relaxed);
     if auto {
         if !unsafe { auto_admit(ctx, AUTO_PS.load(Relaxed), vs_hash, vcb0, call.count()) } {
             return;
@@ -1561,6 +1624,7 @@ unsafe fn fur_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], vs_hash: Option<u32>
     if dev.is_null() {
         return;
     }
+    crate::warm::note_device(dev);
     let probing = !HL_ACTIVE.load(Relaxed) && crate::furprobe::tagging();
     let probe_idx = if probing { crate::furprobe::next_index() } else { 0 };
     let probe_tex = if probing && crate::furprobe::collecting() { unsafe { crate::furprobe::textures(ctx) } } else { Default::default() };
@@ -1634,7 +1698,7 @@ unsafe fn fur_draw(ctx: Obj, issue: &dyn Fn(), blob: &[u8], vs_hash: Option<u32>
             DRAWN.store(true, Relaxed);
             CUR_DRAWS.fetch_add(1, Relaxed);
             // Shell fur (shellfur.rs): a masked fur draw may also be recorded for the shells, replayed at the light-adjust draw.
-            let shells = !HL_ACTIVE.load(Relaxed) && unsafe { crate::shellfur::on_fur_draw(ctx, call, ps_hash, vs_hash, vcb0, vs_ptr) };
+            let shells = !HL_ACTIVE.load(Relaxed) && unsafe { crate::shellfur::on_fur_draw(ctx, call, ps_hash, vs_hash, vcb0, vs_ptr, auto) };
             if probing {
                 crate::furprobe::push_draw(probe_idx, ps_hash, vs_hash, vcb0, call, shells, probe_tex);
             }
@@ -1766,6 +1830,7 @@ unsafe fn run_checks(m: &mut Mask, ctx: Obj, fur: bool, rim: bool) {
     if dev.is_null() {
         return;
     }
+    crate::warm::note_device(dev);
     for (on, ch) in [(fur, false), (rim, true)] {
         if !on {
             continue;
@@ -2069,6 +2134,7 @@ unsafe fn probe(m: &Mask, ctx: Obj, fur: bool, rim: bool) {
     if dev.is_null() {
         return;
     }
+    crate::warm::note_device(dev);
     let mut parts = Vec::new();
     for (on, ch) in [(fur, false), (rim, true)] {
         if on && m.device == dev as usize {
@@ -2413,7 +2479,7 @@ impl Mask {
             // farther layer of the same mesh rasterised later passes the read-only test too. The mask (a = 1) does not care, but the
             // stamp must be the NEAREST fragment (the one the engine's depth keeps): blended with MIN (MAX for reversed Z), the
             // mask itself not blended. The static fallbacks stamp -1 unblended (see STAMP_CLEAR_LESS).
-            let gen_ps = uv.and_then(|(key, blob)| self.uv_shader(dev, key, blob));
+            let gen_ps = uv.and_then(|(key, blob)| self.uv_shader(dev, key, blob, false));
             set_rt(ctx, 2, rtvs.as_ptr(), dsv);
             set_blend(ctx, if gen_ps.is_some() { stamp_bs.unwrap_or(nul) } else { nul }, [1.0f32; 4].as_ptr(), 0xffff_ffff);
             set_depth(ctx, dss, 0);
@@ -2498,13 +2564,18 @@ impl Mask {
     }
 
     /// The device object of the uv pixel shader `key` (created on first use; `None` when the device refuses it).
-    unsafe fn uv_shader(&mut self, dev: Obj, key: &str, blob: &[u8]) -> Option<Obj> {
+    unsafe fn uv_shader(&mut self, dev: Obj, key: &str, blob: &[u8], now: bool) -> Option<Obj> {
         if let Some((_, s)) = self.uv_ps.iter().find(|(k, _)| k == key) {
             return Some(*s);
         }
-        if self.uv_ps.len() >= MAX_GEN_PS {
+        if !now && CUR_AUTO.load(Relaxed) && !crate::warm::active() {
+            crate::furwarm::defer(); // v19: another creature's shader waits for a frame without the scene (furwarm.rs)
             return None;
         }
+        if self.uv_ps.len() >= MAX_GEN_PS || !(now || crate::warm::may_create()) {
+            return None; // v19: not this frame (the static mask shader stands in)
+        }
+        let t = std::time::Instant::now();
         let mut ps: Obj = std::ptr::null_mut();
         unsafe {
             let create_ps: unsafe extern "system" fn(Obj, *const u8, usize, Obj, *mut Obj) -> i32 = std::mem::transmute(vfn(dev, vt::DEV_CREATE_PIXEL_SHADER));
@@ -2512,6 +2583,7 @@ impl Mask {
                 return None;
             }
         }
+        crate::warm::note_render_create("uv pixel shader", t);
         self.uv_ps.push((key.to_string(), ps));
         Some(ps)
     }

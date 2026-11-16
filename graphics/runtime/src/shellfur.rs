@@ -76,11 +76,13 @@ const SHELL_FORMAT: u32 = 41;
 /// v16: 256 (v14: 64, v13: 24). Black Citadel frames have 47..247 fur draws (one frame: 136, 72 of them
 /// past v15's cap of 64, chosen by the engine's draw order: which character lost its fur changed with the camera angle, screenshots
 /// 86 / 87). Every fur draw of those frames fits now; the LOD ends the far ones in the geometry shader at once.
-pub const MAX_RECS: usize = 256;
+/// v19: 96. With fur_auto every charr NPC of a crowd gets the passes (stats, shells, skin): 247 draws x 16 shells stalled the game.
+/// The engine draws the characters near to far, so the cap keeps the near ones; the hysteresis keeps the choice stable.
+pub const MAX_RECS: usize = 96;
 /// v16: the triangles all records of a frame may hold together (v14: 400000; the crowd frames record 60k for 64 draws, ~250k for 247).
 /// Past it, or past MAX_RECS, a draw that had shells in the previous frame takes the slot of one that did not (`Shell::victim`): the
 /// choice stays stable across frames instead of following the draw order.
-pub const MAX_FRAME_TRIS: u32 = 800_000;
+pub const MAX_FRAME_TRIS: u32 = 300_000; // v19 (v16: 800000)
 /// v14: a DYNAMIC vertex / index buffer is copied at the draw (a mod-owned DEFAULT buffer, pooled per record) when it is at most this
 /// big; the frame's copies together at most DYN_FRAME_BYTES. Larger: refused as before (fail open).
 pub const DYN_MAX_BYTES: u32 = 4 << 20;
@@ -127,8 +129,6 @@ pub const TAN_HALF_FOV: f32 = crate::ao::TAN_HALF_FOV;
 /// The shell-fur keys of config.ini (`Config::shell`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShellCfg {
-    /// `fur_shell` 0/1: the shells on (1, default) or off (the old fur look only).
-    pub on: u8,
     /// `fur_shells` 0, 4..32 (16): layers, the base layer included; 0 = off.
     pub shells: u32,
     /// `shell_length` cm (0.5..20, 2.5; v9 and before 4): strand length.
@@ -215,7 +215,6 @@ pub const MIN_VCB_LEGACY: u32 = 4096;
 impl Default for ShellCfg {
     fn default() -> Self {
         ShellCfg {
-            on: 1,
             shells: SHELLS_DEFAULT,
             length: LENGTH_DEFAULT,
             density: DENSITY_DEFAULT,
@@ -243,8 +242,8 @@ impl Default for ShellCfg {
 }
 
 /// Every key, in the order of config.ini.
-pub const KEYS: [&str; 23] = [
-    "fur_shell", "fur_shells", "shell_length", "shell_density", "shell_thickness", "shell_root_dark", "shell_wind", "shell_lod_distance", "shell_rim", "shell_ps", "shell_vs", "shell_min_vcb",
+pub const KEYS: [&str; 22] = [
+    "fur_shells", "shell_length", "shell_density", "shell_thickness", "shell_root_dark", "shell_wind", "shell_lod_distance", "shell_rim", "shell_ps", "shell_vs", "shell_min_vcb",
     "shell_counts", "shell_normal", "shell_unit", "shell_debug", "shell_detail", "shell_clump", "shell_fur_mask", "shell_fur_threshold", "shell_fur_soft", "shell_uv_exclude", "fur_auto",
 ];
 
@@ -658,13 +657,13 @@ fn clamp_or(v: f32, r: (f32, f32), d: f32) -> f32 {
     if v.is_finite() { v.clamp(r.0, r.1) } else { d }
 }
 
-/// `fur_shells`: 0 stays 0 (off), 1..3 become 4, at most 32.
+/// `fur_shells`: 4..32 (0..3 become 4).
 pub fn clamp_shells(v: f32) -> u32 {
     if !v.is_finite() {
         return SHELLS_DEFAULT;
     }
     let n = v.round().clamp(0.0, MAX_SHELLS as f32) as u32;
-    if n == 0 { 0 } else { n.max(4) }
+    n.max(4)
 }
 
 /// A list value: no control characters, lower case, at most 400 characters.
@@ -686,7 +685,6 @@ impl ShellCfg {
     pub fn set(&mut self, key: &str, v: &str) -> bool {
         let d = ShellCfg::default();
         match key {
-            "fur_shell" => self.on = num(v, 0.0, 1.0, d.on as f32).round() as u8,
             "fur_shells" => self.shells = clamp_shells(v.trim().parse::<f32>().unwrap_or(f32::NAN)),
             "shell_length" => self.length = num(v, LENGTH_RANGE.0, LENGTH_RANGE.1, d.length),
             "shell_density" => self.density = num(v, DENSITY_RANGE.0, DENSITY_RANGE.1, d.density),
@@ -721,7 +719,6 @@ impl ShellCfg {
     pub fn clamped(&self) -> ShellCfg {
         let d = ShellCfg::default();
         ShellCfg {
-            on: self.on.min(1),
             shells: clamp_shells(self.shells as f32),
             length: clamp_or(self.length, LENGTH_RANGE, d.length),
             density: clamp_or(self.density, DENSITY_RANGE, d.density),
@@ -752,7 +749,7 @@ impl ShellCfg {
         format!(
             concat!(
                 "# Shell fur (docs/shell-fur.md): real strands on the fur draws (the fur mask's draws that the shell selector picks), drawn with the engine's mesh\n",
-                "# extruded fur_shells times; needs fur_strength > 0 and a fur_ps selection. fur_shell 1 (default) = on, 0 = only the old fur look. fur_shells 0 or 4..32\n",
+                "# extruded fur_shells times; needs fur_strength > 0 and a fur_ps selection. fur_shells 4..32\n",
                 "# (16 = default; layers incl. the base, 0 = off), shell_length 0.5..20 cm (2.5), shell_density 50..4000 strand cells per uv unit (1200), shell_thickness\n",
                 "# 0.1..1 root diameter of a strand (0.6), shell_root_dark 0..1 (0.6: the roots and the skin between the strands darker, the tips brighter, the coat's average kept), shell_wind 0..1 (0.15), shell_lod_distance\n",
                 "# 2..100 m (12.5: none beyond, shorter and fainter from half of it), shell_rim 0..2 (1) back light against a bright background (never in the dark),\n",
@@ -773,7 +770,6 @@ impl ShellCfg {
                 "# fur_auto 1 (default) = every charr, not only the fur_ps shaders: skinned draws of any pixel shader that sample a character composite\n",
                 "# (BC3 colour + BC5 normal) are tested too, and the draws of an atlas proven charr fur (head, body, arms, tail of one character) get fur on\n",
                 "# their fur texels even when the draw is half armour; the log says per draw group and per atlas why (furselect: lines). 0 = fur_ps only.\n",
-                "fur_shell={}\n",
                 "fur_shells={}\n",
                 "shell_length={}\n",
                 "shell_density={}\n",
@@ -797,7 +793,7 @@ impl ShellCfg {
                 "shell_uv_exclude={}\n",
                 "fur_auto={}\n",
             ),
-            self.on, self.shells, self.length, self.density, self.thickness, self.root_dark, self.wind, self.lod, self.rim, self.ps, self.vs, self.min_vcb, self.counts, self.normal, self.unit, self.debug, self.detail, self.clump,
+            self.shells, self.length, self.density, self.thickness, self.root_dark, self.wind, self.lod, self.rim, self.ps, self.vs, self.min_vcb, self.counts, self.normal, self.unit, self.debug, self.detail, self.clump,
             self.fur_mask, self.fur_threshold, self.fur_soft, self.uv_exclude, self.auto
         )
     }
@@ -808,14 +804,13 @@ impl ShellCfg {
         macro_rules! c {
             ($($f:ident => $k:expr),*) => { $( if a.$f != b.$f { v.push($k); } )* };
         }
-        c!(on => "fur_shell", shells => "fur_shells", length => "shell_length", density => "shell_density", thickness => "shell_thickness", root_dark => "shell_root_dark", wind => "shell_wind", lod => "shell_lod_distance", rim => "shell_rim", ps => "shell_ps", vs => "shell_vs", min_vcb => "shell_min_vcb", counts => "shell_counts", normal => "shell_normal", unit => "shell_unit", debug => "shell_debug", detail => "shell_detail", clump => "shell_clump", fur_mask => "shell_fur_mask", fur_threshold => "shell_fur_threshold", fur_soft => "shell_fur_soft", uv_exclude => "shell_uv_exclude", auto => "fur_auto");
+        c!(shells => "fur_shells", length => "shell_length", density => "shell_density", thickness => "shell_thickness", root_dark => "shell_root_dark", wind => "shell_wind", lod => "shell_lod_distance", rim => "shell_rim", ps => "shell_ps", vs => "shell_vs", min_vcb => "shell_min_vcb", counts => "shell_counts", normal => "shell_normal", unit => "shell_unit", debug => "shell_debug", detail => "shell_detail", clump => "shell_clump", fur_mask => "shell_fur_mask", fur_threshold => "shell_fur_threshold", fur_soft => "shell_fur_soft", uv_exclude => "shell_uv_exclude", auto => "fur_auto");
         v
     }
 
     /// Takes the value of `key` from `new` (the hot reload's merge: the other keys keep the slider values).
     pub fn take(&mut self, key: &str, new: &ShellCfg) {
         match key {
-            "fur_shell" => self.on = new.on,
             "fur_shells" => self.shells = new.shells,
             "shell_length" => self.length = new.length,
             "shell_density" => self.density = new.density,
@@ -1068,6 +1063,60 @@ enum GsState {
 }
 
 static GS_REG: Mutex<Option<HashMap<String, GsState>>> = Mutex::new(None);
+
+/// v19 (furwarm.rs): a geometry shader set compiled in an earlier session (shell, measure, uv-space, triangle capture).
+pub fn preload_gs(key: &str, b: &[Vec<u8>]) {
+    let blobs = GsBlobs { shell: b[0].clone(), measure: b[1].clone(), uvspace: b[2].clone(), tri: b[3].clone() };
+    GS_REG.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).entry(key.to_string()).or_insert(GsState::Ready(Arc::new(blobs)));
+}
+
+/// v19 (furwarm.rs): on a frame without the scene, makes up to `max` geometry shader sets known to the registry; returns how many.
+pub unsafe fn prewarm(ctx: Obj, max: usize) -> usize {
+    let Some(Ok(blobs)) = PS_BLOB.get() else { return 0 };
+    if FAILED.load(Relaxed) || !ON.load(Relaxed) {
+        return 0;
+    }
+    let ready: Vec<(String, Arc<GsBlobs>)> = GS_REG
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|m| m.iter().filter_map(|(k, v)| if let GsState::Ready(b) = v { Some((k.clone(), b.clone())) } else { None }).collect())
+        .unwrap_or_default();
+    if ready.is_empty() {
+        return 0;
+    }
+    unsafe {
+        let dev = device_of(ctx);
+        if dev.is_null() {
+            return 0;
+        }
+        let _ig = IgnoreScope::new();
+        let made = 'run: {
+            let Ok(mut g) = STATE.try_lock() else { break 'run 0 };
+            if g.as_ref().is_some_and(|s| s.device != dev as usize) {
+                *g = None;
+            }
+            if g.is_none() {
+                *g = Shell::new(dev, blobs);
+            }
+            let Some(s) = g.as_mut() else { break 'run 0 };
+            let mut made = 0;
+            for (k, b) in ready {
+                if made >= max {
+                    break;
+                }
+                if s.gs.iter().any(|e| e.0 == k) {
+                    continue;
+                }
+                s.gs_object(dev, &k, &b, true);
+                made += 1;
+            }
+            made
+        };
+        release(dev);
+        made
+    }
+}
 const GS_PENDING: &str = "compiling the geometry shader";
 /// Geometry shaders kept (vertex layouts x normal choices).
 const MAX_GS: usize = 64;
@@ -1092,10 +1141,14 @@ fn gs_for(vs_ptr: usize) -> Result<(String, Arc<GsBlobs>), String> {
             }
             m.insert(key.clone(), GsState::Pending);
             let k2 = key.clone();
-            let spawned = std::thread::Builder::new().name("gw2g-shell-compile".into()).spawn(move || {
+            let spawned = crate::warm::compile_job(move || {
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build_gs(&sig, uv, normal))).unwrap_or_else(|_| Err("panic while building".to_string()));
                 let st = match r {
                     Ok(b) => {
+                        crate::warm::geometry(&b.shell);
+                        crate::warm::geometry(&b.measure);
+                        crate::warm::geometry(&b.uvspace);
+                        crate::furwarm::remember(0, &k2, vec![b.shell.clone(), b.measure.clone(), b.uvspace.clone(), b.tri.clone()]);
                         log!("shellfur: geometry shader built (vertex outputs: {}, normal {})", sig.text(), normal.map_or("face".to_string(), |n| format!("{}{}", sig.elems[n].name, sig.elems[n].index)));
                         GsState::Ready(Arc::new(b))
                     }
@@ -1140,7 +1193,7 @@ pub fn gs_cb_values(c: &ShellCfg, g: &DrawGeom, time: f64, depth_unit: f32, unit
     let (w, h) = (g.vp[2].max(1.0), g.vp[3].max(1.0));
     let p11 = 1.0 / TAN_HALF_FOV;
     let p00 = p11 * h / w;
-    let n = if c.on == 0 { 0.0 } else { c.shells as f32 };
+    let n = c.shells as f32;
     let du = if depth_unit.is_finite() && depth_unit > 0.0 { depth_unit } else { crate::aerial::DEFAULT_UNIT };
     let u = if c.unit > 0.0 { c.unit } else if unit.is_finite() && unit > 0.0 { unit } else { 0.0 };
     [
@@ -1209,6 +1262,26 @@ pub fn ps_rect_values(d: &Discrim, count: u32) -> [[f32; 4]; 1 + MAX_UV_RECTS] {
 
 /// v18: `q4.w` of the strand / skin pixel shader: 1 when the record's atlas is a proven charr atlas (furselect.rs), so a draw that is
 /// only partly fur (skin + armour in one draw) gets fur on its fur texels (`ft_mixed_weight`); 0 = the draw test alone (v17).
+/// v19: may a record's strands be drawn? A `fur_ps` draw always (its own draw test decides per texel); a content-rule draw only
+/// once its atlas is proven fur (until then it is only measured).
+/// v19: the shells a frame draws in all (records x shells): past it the shells of each record shrink (never under SHARE_MIN_SHELLS:
+/// fewer show the layers as horizontal bands), so a crowd shares one budget. A record is one draw (a character has several).
+pub const FRAME_SHELL_BUDGET: u32 = 768;
+pub const SHARE_MIN_SHELLS: u32 = 12;
+
+/// The shells each of `n` fur draws gets this frame (`want` = `fur_shells`).
+pub fn shell_share(want: u32, n: usize) -> u32 {
+    if n == 0 {
+        return want;
+    }
+    let each = FRAME_SHELL_BUDGET / n as u32;
+    want.min(each.max(SHARE_MIN_SHELLS))
+}
+
+pub fn shells_allowed(auto: bool, atlas: usize) -> bool {
+    !auto || crate::furselect::proven(atlas)
+}
+
 pub fn mixed_flag(atlas: usize) -> f32 {
     if auto_configured() && crate::furselect::proven(atlas) { 1.0 } else { 0.0 }
 }
@@ -1268,7 +1341,7 @@ pub struct PsCb {
 /// drawn this frame and the mod is on; otherwise all zero (the composite is skipped: bit-identical).
 pub fn composite_cb_values(ready: bool, c: &ShellCfg) -> [[f32; 4]; 2] {
     let c = c.clamped();
-    if !ready || c.on == 0 || c.shells == 0 {
+    if !ready || c.shells == 0 {
         return [[0.0; 4]; 2];
     }
     [[1.0, c.root_dark, c.rim, c.debug as f32], [c.detail, 0.0, 0.0, 0.0]]
@@ -1426,9 +1499,12 @@ pub fn texel_weight_opt(ft: [f32; 4], hue: f32, s0: [f32; 4], s1: [f32; 4], colo
     let ker = bx(15.0, 55.0, 5.0, hue) * bx(0.22, 0.65, 0.04, ft[1]) * bx(0.25, 0.90, 0.04, ft[2]) * differs * gate;
     let red_differs = smooth(0.15, 0.25, ft[1] - s1[1]).max(smooth(10.0, 18.0, hue_dist(hue, s1[3])) * smooth(0.35, 0.45, ft[1]));
     let red = (1.0 - smooth(15.0, 25.0, hue_dist(hue, 0.0))) * smooth(0.30, 0.40, ft[1]) * red_differs;
+    // v19, grey keratin (mirror of `ft_texel_weight`): a colourless horn or claw a stop or more off the coat's value.
+    let grey = (1.0 - smooth(0.16, 0.24, ft[1])) * smooth(0.6, 1.0, ((ft[2] + 0.02) / (s1[2] + 0.02)).log2().abs());
     if colour {
         w *= 1.0 - ker;
         w *= 1.0 - red;
+        w *= 1.0 - grey;
     }
     w.clamp(0.0, 1.0)
 }
@@ -1531,7 +1607,7 @@ impl UnitTrack {
 
 static CFG: Mutex<Option<ShellCfg>> = Mutex::new(None);
 static SEL: Mutex<Option<Selector>> = Mutex::new(None);
-/// The shells are wanted (fur_shell 1, fur_shells > 0): one atomic per fur draw when off.
+/// The shells are wanted (fur_shells > 0): one atomic per fur draw when off.
 static ON: AtomicBool = AtomicBool::new(false);
 /// `fur_auto` (v18, furselect.rs).
 static AUTO: AtomicBool = AtomicBool::new(true);
@@ -1558,7 +1634,7 @@ pub(crate) static FORCE_TRI: AtomicBool = AtomicBool::new(false);
 /// The content rule of furselect.rs is wanted: `fur_auto` 1 and the shells can run (the draw test that decides lives in their statistics
 /// pass: without the shells a candidate of another shader would get the old fur look untested).
 pub fn auto_on() -> bool {
-    AUTO.load(Relaxed) && ON.load(Relaxed) && !FAILED.load(Relaxed) && crate::toggles::on(crate::toggles::Fx::Shells) && matches!(PS_BLOB.get(), Some(Ok(_)))
+    AUTO.load(Relaxed) && ON.load(Relaxed) && !FAILED.load(Relaxed) && !crate::toggles::master_off() && matches!(PS_BLOB.get(), Some(Ok(_)))
 }
 
 pub fn auto_configured() -> bool {
@@ -1573,7 +1649,7 @@ pub fn cfg() -> ShellCfg {
 /// Applies the config (start, hot reload, overlay).
 pub fn configure(c: &ShellCfg) {
     let c = c.clamped();
-    ON.store(c.on != 0 && c.shells > 0, Relaxed);
+    ON.store(c.shells > 0, Relaxed);
     AUTO.store(c.auto != 0, Relaxed);
     *SEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Selector::new(&c));
     *DISCRIM.lock().unwrap_or_else(|e| e.into_inner()) = Discrim::new(&c);
@@ -1727,8 +1803,8 @@ pub fn status_text() -> String {
 
 fn status_core(c: &ShellCfg) -> String {
     let c = c.clone();
-    if c.on == 0 || c.shells == 0 {
-        return format!("off (fur_shell {}, fur_shells {})", c.on, c.shells);
+    if c.shells == 0 {
+        return format!("off (fur_shells {})", c.shells);
     }
     if FAILED.load(Relaxed) {
         return "failed (see log), off".to_string();
@@ -1809,8 +1885,8 @@ fn gate_of(f: &Frame) -> String {
 /// `status_furlook=` / `status_rim=` suffix (v11): the gate of the last frame in one line.
 pub fn gate_text() -> String {
     let c = cfg();
-    if c.on == 0 || c.shells == 0 {
-        return "gate: none (fur_shell off: the old look / rim on the whole mask, no classification)".to_string();
+    if c.shells == 0 {
+        return "gate: none (shells off: the old look / rim on the whole mask, no classification)".to_string();
     }
     let l = LAST.lock().unwrap_or_else(|e| e.into_inner());
     match l.as_ref() {
@@ -1926,6 +2002,9 @@ struct Rec {
     copied: bool,
     /// v16: the draw's identity across frames (atlas, vertex shader, index count, topology): the hysteresis of the record budget.
     id: u64,
+    /// v19: admitted by the content rule (`fur_auto`), not by `fur_ps`: its coat statistics are measured, but no strand is drawn
+    /// (shells, skin pass) until its atlas is proven fur, so a scaly or leathery creature never shows fur, not even for a frame.
+    auto: bool,
 }
 
 impl Rec {
@@ -2326,14 +2405,15 @@ impl Shell {
 
     /// (shell, measurement, uv-space, v9 stream-output capture) geometry shader objects of a vertex layout, created on first use; null
     /// on failure.
-    unsafe fn gs_object(&mut self, dev: Obj, key: &str, blobs: &GsBlobs) -> (Obj, Obj, Obj, Obj) {
+    unsafe fn gs_object(&mut self, dev: Obj, key: &str, blobs: &GsBlobs, now: bool) -> (Obj, Obj, Obj, Obj) {
         let nul: Obj = std::ptr::null_mut();
         if let Some((_, g, m, u, t)) = self.gs.iter().find(|(k, _, _, _, _)| k == key) {
             return (*g, *m, *u, *t);
         }
-        if self.gs.len() >= MAX_GS {
-            return (nul, nul, nul, nul);
+        if self.gs.len() >= MAX_GS || !(now || crate::warm::may_create()) {
+            return (nul, nul, nul, nul); // v19: not this frame (no shells for that draw until its turn)
         }
+        let t0 = std::time::Instant::now();
         unsafe {
             let create_gs: unsafe extern "system" fn(Obj, *const u8, usize, Obj, *mut Obj) -> i32 = std::mem::transmute(vfn(dev, 13));
             let mut g: Obj = nul;
@@ -2358,6 +2438,7 @@ impl Shell {
             if create_gs(dev, blobs.uvspace.as_ptr(), blobs.uvspace.len(), nul, &mut u) < 0 {
                 u = nul;
             }
+            crate::warm::note_render_create("geometry shader set", t0);
             self.gs.push((key.to_string(), g, m, u, t));
             (g, m, u, t)
         }
@@ -2523,8 +2604,9 @@ unsafe fn ps_srv_count(ctx: Obj) -> u32 {
 ///
 /// # Safety
 /// `ctx` must be the game's live immediate context with the draw's state bound.
-pub unsafe fn on_fur_draw(ctx: Obj, call: Call, ps: u32, vs: Option<u32>, vcb0: u32, vs_ptr: usize) -> bool {
-    if !ON.load(Relaxed) || !crate::toggles::on(crate::toggles::Fx::Shells) || FAILED.load(Relaxed) {
+/// `auto`: admitted by the content rule (furselect.rs), not by `fur_ps`: measured, and drawn only once its atlas is proven fur.
+pub unsafe fn on_fur_draw(ctx: Obj, call: Call, ps: u32, vs: Option<u32>, vcb0: u32, vs_ptr: usize, auto: bool) -> bool {
+    if !ON.load(Relaxed) || !!crate::toggles::master_off() || FAILED.load(Relaxed) {
         return false;
     }
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
@@ -2532,7 +2614,7 @@ pub unsafe fn on_fur_draw(ctx: Obj, call: Call, ps: u32, vs: Option<u32>, vcb0: 
         let verdict = SEL.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map_or(Err("no selector"), |s| s.verdict(ps, vs, vcb0, call.count()));
         let mut info = DrawInfo { vs, ps, vcb0, count: call.count(), instances: call.instances(), srvs: ps_srv_count(ctx), verdict: verdict.err(), shells: false };
         if verdict.is_ok() {
-            match record(ctx, call, vs_ptr) {
+            match record(ctx, call, vs_ptr, auto) {
                 Ok(()) => {
                     info.shells = true;
                     dump_vs(vs_ptr, vs);
@@ -2593,7 +2675,7 @@ fn dump_vs(vs_ptr: usize, hash: Option<u32>) {
     });
 }
 
-unsafe fn record(ctx: Obj, call: Call, vs_ptr: usize) -> Result<(), &'static str> {
+unsafe fn record(ctx: Obj, call: Call, vs_ptr: usize, auto: bool) -> Result<(), &'static str> {
     let Some(Ok(blobs)) = PS_BLOB.get() else { return Err("strand shader not compiled yet") };
     unsafe {
         let dev = device_of(ctx);
@@ -2643,6 +2725,7 @@ unsafe fn record(ctx: Obj, call: Call, vs_ptr: usize) -> Result<(), &'static str
                 rsd: [0; 10],
                 copied: false,
                 id: 0,
+                auto,
             };
             type GetShader = unsafe extern "system" fn(Obj, *mut Obj, *mut Obj, *mut u32);
             let get_vs: GetShader = std::mem::transmute(vfn(ctx, vt::CTX_VS_GET_SHADER));
@@ -3053,7 +3136,7 @@ pub(crate) unsafe fn light_adjust_inner(ctx: Obj, depth: Option<Obj>, depth_unit
         'run: {
             let Ok(mut g) = STATE.try_lock() else { break 'run };
             let Some(s) = g.as_mut() else { break 'run };
-            let ready = ON.load(Relaxed) && crate::toggles::on(crate::toggles::Fx::Shells) && crate::gate::user_enabled() && !crate::furmask::highlighting();
+            let ready = ON.load(Relaxed) && !crate::toggles::master_off() && crate::gate::user_enabled() && !crate::furmask::highlighting();
             if ready && !s.skin_none.srv.is_null() {
                 skin = s.skin_none.srv;
                 skin_kind = SKIN_NONE;
@@ -3230,7 +3313,15 @@ unsafe fn replay(s: &mut Shell, dev: Obj, ctx: Obj, dsrv: Obj, c: &ShellCfg, dep
         for (i, slot) in gss.iter_mut().enumerate().take(s.recs.len()) {
             match gs_for(s.recs[i].vs_ptr) {
                 Ok((key, blobs)) => {
-                    *slot = s.gs_object(dev, &key, &blobs);
+                    // v19: a content-rule draw (another creature) never makes its shader objects during play: the driver takes
+                    // tens of ms each on the game's single-threaded device. They are made on the next frame without the scene
+                    // (a loading screen, the character select: furwarm.rs); until then that draw has no shells.
+                    *slot = if s.recs[i].auto && !crate::warm::active() && !s.gs.iter().any(|e| e.0 == key) {
+                        crate::furwarm::defer();
+                        (nul, nul, nul, nul)
+                    } else {
+                        s.gs_object(dev, &key, &blobs, false)
+                    };
                     if slot.0.is_null() {
                         failed += 1;
                     }
@@ -3421,14 +3512,20 @@ unsafe fn replay(s: &mut Shell, dev: Obj, ctx: Obj, dsrv: Obj, c: &ShellCfg, dep
         set_gs_srv(ctx, 0, 1, &dsrv);
         set_gs_cb(ctx, 0, 1, &s.cb_gs);
         let mut drawn = 0u32;
+        // v19: the frame's strands are shared out: many fur draws on screen get fewer shells each (shell_share).
+        let n_fur = (0..s.recs.len()).filter(|&i| !gss[i].0.is_null() && shells_allowed(s.recs[i].auto, s.recs[i].tex0 as usize)).count();
+        let shared = ShellCfg { shells: shell_share(c.shells, n_fur), ..c.clone() };
         for i in 0..s.recs.len() {
             let (gs, _, _, _) = gss[i];
             if gs.is_null() {
                 continue;
             }
             let r = &s.recs[i];
+            if !shells_allowed(r.auto, r.tex0 as usize) {
+                continue;
+            }
             let geom = DrawGeom { vp: [r.vp.x, r.vp.y, r.vp.w, r.vp.h], ccw: r.ccw };
-            if !write_cb(ctx, s.cb_gs, &gs_cb_values(c, &geom, time, depth_unit, unit)) {
+            if !write_cb(ctx, s.cb_gs, &gs_cb_values(&shared, &geom, time, depth_unit, unit)) {
                 continue;
             }
             let mut rects = ps_rect_values(&disc, r.call.count());
@@ -3469,6 +3566,9 @@ unsafe fn replay(s: &mut Shell, dev: Obj, ctx: Obj, dsrv: Obj, c: &ShellCfg, dep
                     continue;
                 }
                 let r = &s.recs[i];
+                if !shells_allowed(r.auto, r.tex0 as usize) {
+                    continue;
+                }
                 let geom = DrawGeom { vp: [r.vp.x, r.vp.y, r.vp.w, r.vp.h], ccw: r.ccw };
                 if !write_cb(ctx, s.cb_gs, &skin_gs_cb_values(c, &geom, time, depth_unit, unit)) {
                     continue;

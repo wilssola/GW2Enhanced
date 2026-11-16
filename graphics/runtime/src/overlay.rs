@@ -335,7 +335,6 @@ impl Overlay {
         }
         if section(ui, tr("Fur###sec-fur", "Pelagem###sec-fur"), false) {
             self.fx_toggle(ui, crate::toggles::Fx::FurLook, tr("Fur look", "Visual da pelagem"));
-            self.fx_toggle(ui, crate::toggles::Fx::Shells, tr("Shell fur", "Pelagem em camadas"));
             self.sec_fur(ui);
         }
         if section(ui, tr("Rim light & skin###sec-rim", "Luz de contorno e pele###sec-rim"), false) {
@@ -945,13 +944,8 @@ impl Overlay {
         ));
         let mut c = self.cfg.shell.clone();
         let mut changed = false;
-        let mut on = c.on != 0;
-        if ui.checkbox(tr("Shell fur on (fur_shell)", "Pelagem em camadas ligada (fur_shell)"), &mut on) {
-            c.on = on as u8;
-            changed = true;
-        }
         let mut n = c.shells as i32;
-        if ui.slider(tr("Shells (fur_shells, 0 = off)", "Camadas (fur_shells, 0 = desligado)"), 0, sf::MAX_SHELLS as i32, &mut n) {
+        if ui.slider(tr("Shells (fur_shells)", "Camadas (fur_shells)"), 4, sf::MAX_SHELLS as i32, &mut n) {
             c.shells = sf::clamp_shells(n as f32);
             changed = true;
         }

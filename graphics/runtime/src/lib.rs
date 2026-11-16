@@ -41,6 +41,8 @@ mod shellfur;
 mod furprobe;
 mod furisland;
 mod furselect;
+mod warm;
+mod furwarm;
 mod depthstats;
 mod halo;
 mod datapath;
