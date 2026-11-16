@@ -3,12 +3,12 @@
 Adapted from Zapive's release tooling. Writes the release notes and SHA256SUMS.txt (in `sha256sum` format, which
 the in-game updater parses) for the GW2Enhanced-<Package>-<version>.zip assets.
 
-Output layout (Markdown, Portuguese headings: the players are pt-BR):
+Output layout (Markdown, English):
 
-    ## Alterações importantes     (breaking changes, with migration text)
-    ## Novidades / Melhorias / Correções / Segurança / Outras alterações
-    ## Contribuidores            (+ full compare link)
-    ## Downloads e verificação (SHA-256)   (only with --assets-dir)
+    ## Breaking changes          (with migration text)
+    ## New features / Improvements / Fixes / Security / Other changes
+    ## Contributors              (+ full compare link)
+    ## Downloads and verification (SHA-256)   (only with --assets-dir)
 
 Everything that is only useful on the GitHub page (the download table and the
 verification steps) lives under the SHA-256 heading, so an in-game "what's new"
@@ -24,27 +24,27 @@ from pathlib import Path
 import re
 import subprocess
 
-BREAKING_SECTION = "Alterações importantes"
+BREAKING_SECTION = "Breaking changes"
 SECTIONS = (
     BREAKING_SECTION,
-    "Novidades",
-    "Melhorias",
-    "Correções",
-    "Segurança",
-    "Outras alterações",
+    "New features",
+    "Improvements",
+    "Fixes",
+    "Security",
+    "Other changes",
 )
 IGNORED_TYPES = {"chore", "ci", "build", "test", "docs", "style", "bump"}
 CATEGORIES = {
-    "feat": "Novidades",
-    "perf": "Melhorias",
-    "refactor": "Melhorias",
-    "fix": "Correções",
-    "security": "Segurança",
+    "feat": "New features",
+    "perf": "Improvements",
+    "refactor": "Improvements",
+    "fix": "Fixes",
+    "security": "Security",
 }
 # Types whose commit body (first paragraph) is shown under the entry.
 DETAILED_TYPES = {"feat", "fix", "perf", "security"}
 DETAIL_LIMIT = 400
-DOWNLOADS_HEADING = "Downloads e verificação (SHA-256)"
+DOWNLOADS_HEADING = "Downloads and verification (SHA-256)"
 
 CONVENTIONAL = re.compile(
     r"^(?P<type>[a-z]+)(?:\((?P<scope>[^()\r\n]+)\))?(?P<breaking>!)?:\s+(?P<text>\S.*)$"
@@ -120,10 +120,10 @@ def _build_entries(commits):
                 continue
             text = match.group("text")
             scope = (match.group("scope") or "").strip() or None
-            section = CATEGORIES.get(kind, "Outras alterações")
+            section = CATEGORIES.get(kind, "Other changes")
         else:
             text = subject
-            section = "Outras alterações"
+            section = "Other changes"
         pr = commit.pr
         suffix = PR_SUFFIX.search(text)
         if suffix:
@@ -169,7 +169,7 @@ def _render_entry(entry, repository):
     if entry["detail"]:
         lines.append("  - " + _safe(entry["detail"]))
     if entry["migration"]:
-        lines.append("  - **Migração:** " + _safe(entry["migration"]))
+        lines.append("  - **Migration:** " + _safe(entry["migration"]))
     return "\n".join(lines)
 
 
@@ -210,16 +210,16 @@ def generate_notes(commits, repository=None, compare=None):
     footer = []
     people = _contributors(entries)
     if people:
-        footer.append("## Contribuidores\n\n" + "Obrigado a " + ", ".join(people) + ".")
+        footer.append("## Contributors\n\n" + "Thanks to " + ", ".join(people) + ".")
     if repository and compare:
         previous, tag = compare
         base = "https://github.com/" + repository
         if previous:
             footer.append(
-                "**Changelog completo**: [%s...%s](%s/compare/%s...%s)" % (previous, tag, base, previous, tag)
+                "**Full changelog**: [%s...%s](%s/compare/%s...%s)" % (previous, tag, base, previous, tag)
             )
         else:
-            footer.append("**Código desta versão**: [%s](%s/tree/%s)" % (tag, base, tag))
+            footer.append("**Code of this version**: [%s](%s/tree/%s)" % (tag, base, tag))
     if footer:
         # The compare link belongs to the contributors block, not a section of its own.
         blocks.append("\n\n".join(footer))
@@ -228,13 +228,13 @@ def generate_notes(commits, repository=None, compare=None):
 
 # Package (as in GW2Enhanced-<Package>-<version>.zip, README "Downloads") -> what it has. Order = table order.
 PACKAGES = (
-    ("All", "Os três mods; tradutor local com todos os modos (CPU, CUDA, DirectML)"),
-    ("Translation", "Só a tradução; tradutor local com todos os modos"),
-    ("Translation-CPU", "Só a tradução; tradutor local no processador (o menor)"),
-    ("Translation-CUDA", "Só a tradução; tradutor local em placas NVIDIA (CUDA)"),
-    ("Translation-DirectML", "Só a tradução; tradutor local em qualquer placa DirectX 12 (AMD, Intel, NVIDIA)"),
-    ("Textures", "Só o runtime das texturas HD (o pacote HD é baixado à parte, no Nexus Mods)"),
-    ("Graphics", "Só os gráficos (HDR, bloom, oclusão, reflexos...)"),
+    ("All", "All three mods; local translator with every mode (CPU, CUDA, DirectML)"),
+    ("Translation", "Translation only; local translator with every mode"),
+    ("Translation-CPU", "Translation only; local translator on the processor (the smallest)"),
+    ("Translation-CUDA", "Translation only; local translator on NVIDIA cards (CUDA)"),
+    ("Translation-DirectML", "Translation only; local translator on any DirectX 12 card (AMD, Intel, NVIDIA)"),
+    ("Textures", "HD textures runtime only (the HD pack is a separate download, on Nexus Mods)"),
+    ("Graphics", "Graphics only (HDR, bloom, occlusion, reflections...)"),
 )
 ASSET = re.compile(r"GW2Enhanced-(?P<package>[A-Za-z]+(?:-[A-Za-z]+)?)-(?P<version>\d[^/\\]*)\.zip")
 
@@ -287,31 +287,31 @@ def downloads_section(files, repository=None, tag=None):
             rows.append((info, "[%s](%s)" % (name, url) if url else "`%s`" % name, size))
     lines = ["## " + DOWNLOADS_HEADING, ""]
     if rows:
-        lines += ["| Pacote | Arquivo | Conteúdo | Tamanho |", "| --- | --- | --- | --- |"]
+        lines += ["| Package | File | Contents | Size |", "| --- | --- | --- | --- |"]
         for (_, package, kind), link, size in sorted(rows, key=lambda r: (r[0][0], r[1])):
             lines.append("| %s | %s | %s | %s |" % (package, link, kind, _format_size(size)))
         lines.append("")
-    attest = "gh attestation verify GW2Enhanced-<pacote>-<versão>.zip --repo " + (repository or "<dono>/<repo>")
+    attest = "gh attestation verify GW2Enhanced-<package>-<version>.zip --repo " + (repository or "<owner>/<repo>")
     lines += [
-        "Instalação: feche o jogo e extraia o zip na pasta do jogo (a do `Gw2-64.exe`), ou rode o "
-        "`GW2Enhanced-Installer.exe` que vem dentro dele. Quem já usa o GW2 Enhanced recebe esta versão "
-        "pela atualização automática, que baixa o mesmo pacote e confere o SHA-256 antes de instalar.",
+        "Installing: close the game and extract the zip into the game folder (the one with `Gw2-64.exe`), or run "
+        "the `GW2Enhanced-Installer.exe` inside it. Players who already use GW2 Enhanced get this version through "
+        "the automatic update, which downloads the same package and checks its SHA-256 before installing.",
         "",
-        "### Como verificar o download",
+        "### How to check the download",
         "",
-        "Baixe também `SHA256SUMS.txt` e compare:",
+        "Download `SHA256SUMS.txt` too and compare:",
         "",
         "```powershell",
-        "# Windows (PowerShell): o resultado deve ser igual à linha do arquivo em SHA256SUMS.txt",
-        "Get-FileHash .\\GW2Enhanced-<pacote>-<versão>.zip -Algorithm SHA256",
+        "# Windows (PowerShell): the result must equal the file's line in SHA256SUMS.txt",
+        "Get-FileHash .\\GW2Enhanced-<package>-<version>.zip -Algorithm SHA256",
         "```",
         "",
         "```sh",
-        "# Linux/macOS/Git Bash (confere apenas os arquivos que você baixou)",
+        "# Linux/macOS/Git Bash (checks only the files you downloaded)",
         "sha256sum --ignore-missing -c SHA256SUMS.txt",
         "```",
         "",
-        "Cada zip tem um atestado de procedência (qual commit e qual execução do GitHub Actions o gerou):",
+        "Every zip has a provenance attestation (which commit and which GitHub Actions run produced it):",
         "",
         "```sh",
         attest,

@@ -34,12 +34,12 @@ class GenerateNotesTests(unittest.TestCase):
             ("custom(ui): Ajustar janela", ""),
         ])
         self.assertEqual(notes, (
-            "## Alterações importantes\n\n- Remover API antiga\n\n"
-            "## Novidades\n\n- **chat**: Adicionar busca\n\n"
-            "## Melhorias\n\n- Reduzir latência\n- **ui**: Simplificar navegação\n\n"
-            "## Correções\n\n- **sync**: Corrigir sincronização (#12)\n\n"
-            "## Segurança\n\n- Validar origem\n\n"
-            "## Outras alterações\n\n- Atualizar janela principal\n- **ui**: Ajustar janela\n"
+            "## Breaking changes\n\n- Remover API antiga\n\n"
+            "## New features\n\n- **chat**: Adicionar busca\n\n"
+            "## Improvements\n\n- Reduzir latência\n- **ui**: Simplificar navegação\n\n"
+            "## Fixes\n\n- **sync**: Corrigir sincronização (#12)\n\n"
+            "## Security\n\n- Validar origem\n\n"
+            "## Other changes\n\n- Atualizar janela principal\n- **ui**: Ajustar janela\n"
         ))
 
     def test_maintenance_merges_and_version_bumps_are_ignored(self):
@@ -57,18 +57,18 @@ class GenerateNotesTests(unittest.TestCase):
             ("Mensagem livre", "BREAKING CHANGE: migração necessária"),
         ])
         self.assertEqual(notes.count("## "), 1)
-        self.assertTrue(notes.startswith("## Alterações importantes\n"))
+        self.assertTrue(notes.startswith("## Breaking changes\n"))
         self.assertIn("- Mensagem livre\n", notes)
         self.assertEqual(notes.count("\n- "), 4)
-        self.assertIn("  - **Migração:** contrato removido", notes)
-        self.assertIn("  - **Migração:** migração necessária", notes)
+        self.assertIn("  - **Migration:** contrato removido", notes)
+        self.assertIn("  - **Migration:** migração necessária", notes)
 
     def test_migration_text_spans_the_whole_paragraph(self):
         notes = generate_notes([(
             "feat(storage)!: Alterar o formato",
             "Motivo.\n\nBREAKING CHANGE: o histórico antigo\nprecisa ser exportado.\n\nOutro parágrafo",
         )])
-        self.assertIn("  - **Migração:** o histórico antigo precisa ser exportado.\n", notes)
+        self.assertIn("  - **Migration:** o histórico antigo precisa ser exportado.\n", notes)
         self.assertNotIn("Outro parágrafo", notes)
 
     def test_deduplication_and_breaking_priority(self):
@@ -78,12 +78,12 @@ class GenerateNotesTests(unittest.TestCase):
             ("chore!: MELHORAR BUSCA", ""),
             ("feat: Melhorar busca", ""),
         ])
-        self.assertEqual(notes, "## Alterações importantes\n\n- MELHORAR BUSCA\n")
+        self.assertEqual(notes, "## Breaking changes\n\n- MELHORAR BUSCA\n")
 
     def test_nonconventional_subjects_are_preserved_without_body(self):
         subjects = ["Melhorar interface: busca", "fix:sem espaço", "Bump version to 2", "Merge branch 'topic'"]
         notes = generate_notes([(subject, "Texto que não deve aparecer") for subject in subjects])
-        self.assertEqual(notes, "## Outras alterações\n\n" + "\n".join(
+        self.assertEqual(notes, "## Other changes\n\n" + "\n".join(
             "- " + s for s in subjects if not s.startswith("Merge")) + "\n")
 
     def test_first_body_paragraph_only_for_feat_fix_perf_security(self):
@@ -127,9 +127,9 @@ class GenerateNotesTests(unittest.TestCase):
             Commit("fix: D", "", SHA, "github-actions[bot]", "bot@example.invalid", None),
         ]
         notes = generate_notes(commits, REPO, ("v1.0.0", "v1.1.0"))
-        self.assertIn("Obrigado a [@ana](https://github.com/ana), Bruno B.", notes)
+        self.assertIn("Thanks to [@ana](https://github.com/ana), Bruno B.", notes)
         self.assertTrue(notes.endswith(
-            "**Changelog completo**: "
+            "**Full changelog**: "
             "[v1.0.0...v1.1.0](https://github.com/owner/repo/compare/v1.0.0...v1.1.0)\n"))
         first = generate_notes(commits, REPO, (None, "v1.0.0"))
         self.assertIn("/tree/v1.0.0", first)
@@ -165,7 +165,7 @@ class DownloadsTests(unittest.TestCase):
         self.assertIn("2.0 KiB", section)
         self.assertIn("sha256sum --ignore-missing -c SHA256SUMS.txt", section)
         self.assertIn("Get-FileHash", section)
-        self.assertIn("gh attestation verify GW2Enhanced-<pacote>-<versão>.zip --repo owner/repo", section)
+        self.assertIn("gh attestation verify GW2Enhanced-<package>-<version>.zip --repo owner/repo", section)
 
     def test_heading_stays_hidden_from_the_in_app_changelog(self):
         # An in-game "what's new" view drops any section whose heading contains "sha-256".
@@ -221,8 +221,8 @@ class GitHistoryTests(unittest.TestCase):
         subprocess.run(command, check=True)
         self.assertEqual(output.read_bytes(), first)
         text = first.decode("utf-8")
-        self.assertTrue(text.startswith("## Alterações importantes\n\n- Corrigir ação ("))
-        self.assertIn("  - **Migração:** formato novo\n", text)
+        self.assertTrue(text.startswith("## Breaking changes\n\n- Corrigir ação ("))
+        self.assertIn("  - **Migration:** formato novo\n", text)
         self.assertIn("[v1.0.0...v2.0.0](https://github.com/owner/repo/compare/v1.0.0...v2.0.0)", text)
         self.assertNotIn("Não publicada", text)
         self.assertEqual(read_commits(self.repo, "v2.0.0", "v2.0.0"), [])
