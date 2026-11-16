@@ -55,8 +55,10 @@ pub fn current_scale(c: usize) -> u32 {
 /// `own`: the local player's model (ctor flag bit 0, set for the controlled
 /// character and its UI previews, or the AvCharModel character == controlled).
 /// Bit 3 (0x8) = half-resolution composite: never 4×.
-pub fn on_player_ctor(composite: usize, flags: u32, own: bool) -> u32 {
-    let hd = if ENABLED_4X.load(Ordering::Relaxed) && ALLOW_4X.load(Ordering::Relaxed) && flags & 8 == 0 && (own || ALL_4X.load(Ordering::Relaxed)) {
+/// `select`: built before any character exists in the world (the character select's previews): always 2×. A 4×
+/// atlas there left the whole character select black; the world builds its own composites later.
+pub fn on_player_ctor(composite: usize, flags: u32, own: bool, select: bool) -> u32 {
+    let hd = if wants_4x(flags, own, select) {
         4
     } else {
         2
@@ -66,6 +68,18 @@ pub fn on_player_ctor(composite: usize, flags: u32, own: bool) -> u32 {
         N_4X.fetch_add(1, Ordering::Relaxed);
     }
     hd
+}
+
+fn wants_4x(flags: u32, own: bool, select: bool) -> bool {
+    ENABLED_4X.load(Ordering::Relaxed)
+        && ALLOW_4X.load(Ordering::Relaxed)
+        && scale_rule(flags, own, select, ALL_4X.load(Ordering::Relaxed))
+}
+
+/// The 4× rule without the switches: not half-resolution, not the character select, and the local player's (or
+/// every player's with `composite_4x_all`).
+fn scale_rule(flags: u32, own: bool, select: bool, all: bool) -> bool {
+    flags & 8 == 0 && !select && (own || all)
 }
 
 /// Composite 4x switch (config `composite_4x=false` turns it off; default on).
@@ -267,8 +281,8 @@ unsafe extern "system" fn data_ctor(a: u64, b: u64, c: u64, d: u64, e: u64, f: u
 
 /// Player composite ctor (hooked in player_diag.rs): the first atlas is created
 /// inside the ctor, so the scale is stored and made current before the original runs.
-pub fn player_ctor<R>(composite: usize, flags: u32, own: bool, f: impl FnOnce() -> R) -> (R, u32) {
-    let s = on_player_ctor(composite, flags, own);
+pub fn player_ctor<R>(composite: usize, flags: u32, own: bool, select: bool, f: impl FnOnce() -> R) -> (R, u32) {
+    let s = on_player_ctor(composite, flags, own, select);
     (with_cur(s, f), s)
 }
 
@@ -411,4 +425,22 @@ pub fn install(img: &Image) -> bool {
         img.rva(blit)
     );
     ok
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::scale_rule;
+
+    #[test]
+    fn character_select_previews_stay_2x() {
+        // World: the local player (0x213) gets 4x, others too with composite_4x_all.
+        assert!(scale_rule(0x213, true, false, false));
+        assert!(scale_rule(0x12, false, false, true));
+        assert!(!scale_rule(0x12, false, false, false));
+        // Character select (0x3, no character yet): never 4x, whatever the switches.
+        assert!(!scale_rule(0x3, true, true, true));
+        assert!(!scale_rule(0x3, true, true, false));
+        // Half-resolution composites: never 4x.
+        assert!(!scale_rule(0x8 | 0x1, true, false, true));
+    }
 }
