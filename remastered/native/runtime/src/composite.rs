@@ -20,6 +20,19 @@ pub static SCALE: AtomicU32 = AtomicU32::new(2);
 /// 4× for every player on screen, not just the local one (config `composite_4x_all`).
 /// Read when a composite is created, so a change applies to characters built after it.
 pub static ALL_4X: AtomicBool = AtomicBool::new(false);
+/// On the character select (from the start of the game until a composite of a character in the world, and again when a preview without
+/// a character is built): no 4x at all there, neither composites nor the local player's model textures. A 4x model texture loaded on the
+/// select had its first resize refused (2048 -> 1024) and the scene stayed black, as with the 4x composites before.
+pub static AT_SELECT: AtomicBool = AtomicBool::new(true);
+
+/// Records where the game is from a character composite's constructor (`select` = no character and none controlled).
+pub fn note_select(select: bool, ch: usize, ctrl: usize) {
+    if select {
+        AT_SELECT.store(true, Ordering::Relaxed);
+    } else if ch != 0 || ctrl != 0 {
+        AT_SELECT.store(false, Ordering::Relaxed);
+    }
+}
 /// Composites built at 4× so far (overlay counter).
 pub static N_4X: AtomicU32 = AtomicU32::new(0);
 
@@ -442,5 +455,20 @@ mod scale_tests {
         assert!(!scale_rule(0x3, true, true, false));
         // Half-resolution composites: never 4x.
         assert!(!scale_rule(0x8 | 0x1, true, false, true));
+    }
+
+    #[test]
+    fn the_character_select_has_no_4x_until_a_character_is_in_the_world() {
+        use super::{AT_SELECT, note_select};
+        use std::sync::atomic::Ordering::Relaxed;
+        AT_SELECT.store(true, Relaxed);
+        note_select(true, 0, 0);
+        assert!(AT_SELECT.load(Relaxed), "a preview without a character");
+        note_select(false, 0x1000, 0);
+        assert!(!AT_SELECT.load(Relaxed), "the world: a character");
+        note_select(false, 0, 0x2000);
+        assert!(!AT_SELECT.load(Relaxed));
+        note_select(true, 0, 0);
+        assert!(AT_SELECT.load(Relaxed), "back on the character select");
     }
 }

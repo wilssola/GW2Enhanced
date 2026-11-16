@@ -87,6 +87,7 @@ unsafe extern "system" fn ctor_hook(a: u64, b: u64, c: u64, d: u64, e: u64, f: u
     let own = (c as u32 & 1) != 0 || (ch != 0 && ch == ctrl);
     // No character in the world yet (neither the model's nor the controlled one): the character select's previews.
     let select = ch == 0 && ctrl == 0;
+    crate::composite::note_select(select, ch as usize, ctrl as usize);
     let (r, scale) = crate::composite::player_ctor(a as usize, c as u32, own, select, || unsafe { CTOR.get().unwrap().call(a, b, c, d, e, f, g, h, i, j) });
     if budget() {
         log!("player-diag: composite {:#x} scale {scale}x", a);
