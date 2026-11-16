@@ -1243,7 +1243,8 @@ pub fn strand_weight(ft: [f32; 4], hue: f32, s0: [f32; 4], s1: [f32; 4], texel_t
             return wm * band;
         }
         let s1m = [MIXED_COAT_GLOSS, s1[1], s1[2], s1[3]];
-        return wm * band * texel_weight_opt(ft, hue, s0, s1m, false);
+        // The colour tests (keratin tan, red) stay on: they keep horns, claws and fangs bare.
+        return wm * band * texel_weight_opt(ft, hue, s0, s1m, true);
     }
     if !(w > 0.0) || !texel_tests {
         return w;

@@ -780,7 +780,8 @@ float strand_fur(float2 uv, float near_part)
         if (q2.w < 0.5)
             return wm * band;
         float4 s1m = float4(MIXED_COAT_GLOSS, s1.yzw);
-        return wm * band * ft_texel_weight(ft, hue, s0, s1m, false);
+        // The colour tests (keratin tan, red) stay on as on a fur draw: they are what keeps horns, claws and fangs bare.
+        return wm * band * ft_texel_weight(ft, hue, s0, s1m, !(near_part > 1.5));
     }
     return w * ft_texel_weight(ft, hue, s0, s1, !(near_part > 1.5));
 }
