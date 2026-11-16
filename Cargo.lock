@@ -1681,7 +1681,7 @@ dependencies = [
  "anyhow",
  "gw2translated",
  "serde_json",
- "ureq 2.12.1",
+ "ureq",
 ]
 
 [[package]]
@@ -1696,7 +1696,7 @@ dependencies = [
  "self_update",
  "serde_json",
  "sha2",
- "ureq 3.5.2",
+ "ureq",
  "windows-sys 0.61.2",
  "zip",
 ]
@@ -1724,7 +1724,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tempfile",
- "ureq 3.5.2",
+ "ureq",
  "windows-sys 0.61.2",
  "zip",
 ]
@@ -2216,7 +2216,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c67c52dd8f34d3647cafa714c464033b91b9c892aad518f49bebb3f96c1f78f"
 dependencies = [
  "intel-mkl-tool",
- "ureq 3.5.2",
+ "ureq",
 ]
 
 [[package]]
@@ -3112,7 +3112,7 @@ dependencies = [
  "flate2",
  "tar",
  "thiserror 2.0.21",
- "ureq 3.5.2",
+ "ureq",
 ]
 
 [[package]]
@@ -4100,7 +4100,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "ureq 3.5.2",
+ "ureq",
  "urlencoding",
  "zip",
  "zipsign-api",
@@ -4888,7 +4888,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -5339,24 +5339,6 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "2.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d"
-dependencies = [
- "base64 0.22.1",
- "flate2",
- "log",
- "once_cell",
- "rustls",
- "rustls-pki-types",
- "serde",
- "serde_json",
- "url",
- "webpki-roots 0.26.11",
-]
-
-[[package]]
-name = "ureq"
 version = "3.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ac5cecf619ca81f66a96482db09687c9f7465af65f4300a8c30cca05bd5a59d"
@@ -5373,7 +5355,7 @@ dependencies = [
  "serde_json",
  "ureq-proto",
  "utf8-zero",
- "webpki-roots 1.0.12",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -5693,15 +5675,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "293198dcebfb821155b5092ab94b5a82ff180eddd7241df3bd6e66a4ffd1a585"
 dependencies = [
  "rustls-pki-types",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "0.26.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
-dependencies = [
- "webpki-roots 1.0.12",
 ]
 
 [[package]]
