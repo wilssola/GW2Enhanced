@@ -177,24 +177,38 @@ mod tests {
     }
 }
 
-/// v19: the fur's shader compiles run one at a time on a single worker at the lowest priority (they used to start a thread each, at
-/// normal priority: a crowd of new characters compiled dozens at once and took the CPU from the game).
+/// v19: the fur's shader compiles run on a small pool (a quarter of the cores, 2..4 threads) below normal priority: a thread per
+/// compile at normal priority took the CPU from the game in a crowd, and a single thread at the lowest priority starved while the
+/// game ran (7 s a shader: the strands came minutes late on a first start).
 pub fn compile_job(job: impl FnOnce() + Send + 'static) -> Result<(), ()> {
-    use std::sync::mpsc::{Sender, channel};
-    static QUEUE: Mutex<Option<Sender<Box<dyn FnOnce() + Send>>>> = Mutex::new(None);
+    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::Arc;
+    type Job = Box<dyn FnOnce() + Send>;
+    static QUEUE: Mutex<Option<Sender<Job>>> = Mutex::new(None);
     let mut g = QUEUE.lock().unwrap_or_else(|e| e.into_inner());
     if g.is_none() {
-        let (tx, rx) = channel::<Box<dyn FnOnce() + Send>>();
-        let started = std::thread::Builder::new().name("gw2g-fur-compile".into()).spawn(move || {
-            unsafe {
-                use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_LOWEST};
-                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-            }
-            while let Ok(j) = rx.recv() {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(j));
-            }
-        });
-        if started.is_err() {
+        let (tx, rx) = channel::<Job>();
+        let rx: Arc<Mutex<Receiver<Job>>> = Arc::new(Mutex::new(rx));
+        let n = std::thread::available_parallelism().map_or(2, |n| n.get() / 4).clamp(2, 4);
+        let mut any = false;
+        for k in 0..n {
+            let rx = rx.clone();
+            any |= std::thread::Builder::new()
+                .name(format!("gw2g-fur-compile-{k}"))
+                .spawn(move || {
+                    unsafe {
+                        use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL};
+                        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+                    }
+                    loop {
+                        let j = rx.lock().unwrap_or_else(|e| e.into_inner()).recv();
+                        let Ok(j) = j else { break };
+                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(j));
+                    }
+                })
+                .is_ok();
+        }
+        if !any {
             return Err(());
         }
         *g = Some(tx);
