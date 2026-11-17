@@ -41,14 +41,14 @@ To uninstall, run the installer with --uninstall, or delete msimg32.dll from the
 
 [size=4][b]Main features[/b][/size]
 [list]
-[*]Three features in one DLL, each with its own on/off switch and hotkey (Shift+Home by default)
-[*]Health tab: every part of the mod and whether it is working, with the reason when something is off
-[*]Isolation: if a game patch breaks one feature, it turns itself off and says why; the others keep running
-[*]Signed automatic updates: a new release is downloaded only after you accept it, checked against its signature, and your settings and translations are kept
+[*][b]Three features in one DLL[/b], each with its own on/off switch and hotkey (Shift+Home by default)
+[*][b]Health tab[/b]: every part of the mod and whether it is working, with the reason when something is off
+[*][b]Isolation[/b]: if a game patch breaks one feature, it turns itself off and says why; the others keep running
+[*][b]Signed automatic updates[/b]: a new release is downloaded only after you accept it, checked against its signature, and your settings and translations are kept
 [*]Logs off by default, one switch per feature when you need to report a problem
 [*]Overlay in English or Portuguese
-[*]Installer and launcher for Windows and Linux
-[*]Client-side only: no gameplay change, nothing sent to the game's servers
+[*][b]Installer and launcher[/b] for Windows and Linux
+[*][b]Client-side only[/b]: no gameplay change, nothing sent to the game's servers
 [/list]
 
 [size=4][b]Requirements[/b][/size]

@@ -39,15 +39,15 @@ To uninstall, run the installer with --uninstall, or delete msimg32.dll from the
 
 [size=4][b]Main features[/b][/size]
 [list]
-[*]About 205 thousand translated strings, updated in the background (signed releases, checked before use)
-[*]Translations of any length: no text cut to fit the English space
-[*]Works with any client language: everything that has a translation shows in pt-BR, the rest stays in the client's language
-[*]Missing text translated on your PC, offline (processor or graphics card), at low priority
-[*]Trading Post, Gem Store and Wizard's Vault pages translated in place
-[*]F10 reapplies the translation to the text already on screen
+[*]About [b]205 thousand translated strings[/b], updated in the background (signed releases, checked before use)
+[*]Translations of [b]any length[/b]: no text cut to fit the English space
+[*]Works with [b]any client language[/b]: everything that has a translation shows in pt-BR, the rest stays in the client's language
+[*]Missing text translated [b]on your PC, offline[/b] (processor or graphics card), at low priority
+[*][b]Trading Post, Gem Store and Wizard's Vault[/b] pages translated in place
+[*][b]F10[/b] reapplies the translation to the text already on screen
 [*]In-game overlay with the options, the first-run setup and the translator's metrics
-[*]Patch resilient: if a game patch changes something, only that part turns itself off and says why; the game keeps working
-[*]Client-side only: no gameplay change, nothing sent to the game's servers
+[*][b]Patch resilient[/b]: if a game patch changes something, only that part turns itself off and says why; the game keeps working
+[*][b]Client-side only[/b]: no gameplay change, nothing sent to the game's servers
 [/list]
 
 [size=4][b]Privacy[/b][/size]

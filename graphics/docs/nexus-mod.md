@@ -37,18 +37,18 @@ To uninstall, run the installer with --uninstall, or delete msimg32.dll (and the
 [size=4][b]Main features[/b][/size]
 [list]
 [*][b]Real HDR output[/b] (scRGB, or HDR10 as an option), with paper white, peak brightness and calibration patterns
-[*]HDR bloom from the scene's true brightness
-[*]Ambient occlusion, contact shadows and sun shafts from the engine's depth
-[*]Screen-space reflections on water and wet or polished surfaces
-[*]Light halo, aerial perspective and local tone mapping
-[*]Auto exposure that adapts like an eye going from a cave into daylight
-[*]Lens streaks and flares only on compact light sources
-[*]Colour grading with presets and LUTs, sharpening, anti-aliasing and anisotropic filtering
-[*]Shell fur: real strands of fur on furred characters and creatures, with rim light and soft subsurface light on skin
-[*]Photo mode: full-resolution PNG and linear HDR (.hdr) captures, optionally without the UI
-[*]Every effect on its own switch, live, plus one switch to compare with the original game
-[*]Runs next to ReShade
-[*]Client-side only: no gameplay change, nothing sent to the game's servers
+[*][b]HDR bloom[/b] from the scene's true brightness
+[*][b]Ambient occlusion[/b], [b]contact shadows[/b] and [b]sun shafts[/b] from the engine's depth
+[*][b]Screen-space reflections[/b] on water and wet or polished surfaces
+[*][b]Light halo[/b], [b]aerial perspective[/b] and [b]local tone mapping[/b]
+[*][b]Auto exposure[/b] that adapts like an eye going from a cave into daylight
+[*][b]Lens streaks and flares[/b] only on compact light sources
+[*][b]Colour grading[/b] with presets and LUTs, [b]sharpening[/b], [b]anti-aliasing[/b] and [b]anisotropic filtering[/b]
+[*][b]Shell fur[/b]: real strands of fur on furred characters and creatures, with rim light and soft subsurface light on skin
+[*][b]Photo mode[/b]: full-resolution PNG and linear HDR (.hdr) captures, optionally without the UI
+[*][b]Every effect on its own switch[/b], live, plus one switch to compare with the original game
+[*]Runs next to [b]ReShade[/b]
+[*][b]Client-side only[/b]: no gameplay change, nothing sent to the game's servers
 [/list]
 
 [size=4][b]Requirements[/b][/size]
