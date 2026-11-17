@@ -51,7 +51,7 @@ mod tonemap;
 mod output;
 mod hdr10;
 mod calib;
-mod photo;
+pub mod photo;
 mod debugshot;
 mod toggles;
 mod clampemu;

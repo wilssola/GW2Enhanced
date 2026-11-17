@@ -80,6 +80,10 @@ pub fn parse_key(v: &str) -> Option<(u32, u32)> {
 
 static VISIBLE: AtomicBool = AtomicBool::new(false);
 
+/// The enhanced overlay shows the photo mode in its own Screenshots tab (one place for every feature's captures): the
+/// Graphics tab then leaves its Photo section out.
+pub static PHOTO_HOSTED: AtomicBool = AtomicBool::new(false);
+
 /// The overlay window is open.
 pub fn visible() -> bool {
     VISIBLE.load(Ordering::Relaxed)
@@ -341,7 +345,7 @@ impl Overlay {
             self.fx_toggle(ui, crate::toggles::Fx::Rim, tr("Rim light", "Luz de contorno"));
             self.sec_rim(ui);
         }
-        if section(ui, tr("Photo mode###sec-photo", "Modo foto###sec-photo"), false) {
+        if !PHOTO_HOSTED.load(Ordering::Relaxed) && section(ui, tr("Photo mode###sec-photo", "Modo foto###sec-photo"), false) {
             self.sec_photo(ui);
         }
         if section(ui, tr("HDR calibration###sec-calib", "Calibração de HDR###sec-calib"), false) {
@@ -1230,6 +1234,11 @@ impl Overlay {
         }
     }
 
+    /// The photo mode's controls, for the enhanced overlay's Screenshots tab.
+    pub fn photo_section(&mut self, ui: &Ui) {
+        self.sec_photo(ui);
+    }
+
     fn sec_photo(&mut self, ui: &Ui) {
         help(ui, tr(
             "Saves the current frame at full resolution, with the mod's effects, into GW2Graphics\\photos: a PNG (sRGB, what an SDR screen would show), a Radiance .hdr (linear, 1.0 = paper white, values above 1.0 kept) and a .txt with every setting. Purely visual. Only one capture runs at a time; further requests wait in a queue.",
@@ -1250,10 +1259,16 @@ impl Overlay {
         if ui.checkbox(tr("Hide the UI (3D scene only)", "Esconder a interface (só a cena 3D)"), &mut hide) {
             photo::set_hide_ui(hide);
             self.cfg.photo_hide_ui = hide;
+            // Kept right away, like the main switch (the Screenshots tab of the enhanced overlay has no Save button).
+            let mut saved = Config::load(&self.path);
+            saved.photo_hide_ui = hide;
+            if let Err(e) = saved.save(&self.path) {
+                log!("overlay: could not save photo_hide_ui={hide} to {}: {e}", self.path.display());
+            }
         }
         help(ui, tr(
-            "Takes the 3D scene from the engine's pre-UI copy instead of the finished frame (single captures only; the comparison always includes the UI). If that copy is not seen within about 1.5 s the normal photo is taken. Save keeps this switch.",
-            "Pega a cena 3D da cópia do motor anterior à interface em vez do quadro pronto (só capturas simples; a comparação sempre inclui a interface). Se essa cópia não aparecer em cerca de 1.5 s, a foto normal é tirada. Salvar mantém esta opção.",
+            "Takes the 3D scene from the engine's pre-UI copy instead of the finished frame (the comparison too). If that copy is not seen within about 1.5 s the normal photo is taken.",
+            "Pega a cena 3D da cópia do motor anterior à interface em vez do quadro pronto (a comparação também). Se essa cópia não aparecer em cerca de 1.5 s, a foto normal é tirada.",
         ));
         ui.text_wrapped(trf!("Status: {}", "Situação: {}", photo::status_text()));
         ui.text_wrapped(trf!("Hotkey: {} (config key photo_key, needs a restart)", "Tecla de atalho: {} (chave photo_key do config, precisa reiniciar)", self.cfg.photo_key));

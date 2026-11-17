@@ -1005,7 +1005,7 @@ fn prepare_depth_arms_waits_takes_and_gives_up_and_always_disarms() {
         d.why.clear();
     };
     reset();
-    let mut st = State { machine: PairMachine::new(), guard: None, last_ms: None, gpu: None, pair_id: 0, pair_photo: false, scene_wait: None, depth: None, depth_note: None };
+    let mut st = State { machine: PairMachine::new(), guard: None, last_ms: None, gpu: None, pair_id: 0, pair_photo: false, pair_scene: false, scene_wait: None, depth: None, depth_note: None };
     // The first call asks the light-adjust draw of the next frame for the depth and tells the AO to capture it.
     assert!(!prepare_depth_with(&mut st, 100, true), "the shot waits");
     assert!(DEPTH_ARMED.load(Relaxed));

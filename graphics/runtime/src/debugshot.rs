@@ -1359,10 +1359,12 @@ enum Kind {
 }
 
 /// A shot that belongs to photo mode (`photo.rs`): written to `GW2Graphics\photos` at full resolution.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct PhotoTag {
     /// The picture is the grabbed pre-UI scene (display-referred): converted with the final pass' maths first.
     scene: Option<photo::SceneMap>,
+    /// A named shot (the overlay's comparisons): its own file name.
+    label: Option<photo::Label>,
 }
 
 struct Meta {
@@ -1719,13 +1721,14 @@ fn process_photo(job: Job, pending: &mut Option<PendingMod>) -> Result<(), Strin
     if let Err(e) = &r {
         log!("photo: {e}");
         photo::set_status(format!("not saved: {e}"));
+        photo::note_failed();
     }
     Ok(())
 }
 
 fn photo_inner(job: Job, pending: &mut Option<PendingMod>) -> Result<(), String> {
     let dir = PHOTO_DIR.get().ok_or("no photo folder")?.clone();
-    let tag = job.meta.photo.ok_or("not a photo")?;
+    let tag = job.meta.photo.clone().ok_or("not a photo")?;
     let Job { meta, w, h, fmt, mut scale, mut data } = job;
     if let (Some(map), PixFmt::F16) = (tag.scene, fmt) {
         photo::scene_to_scrgb_f16(&mut data, &map);
@@ -1739,8 +1742,12 @@ fn photo_inner(job: Job, pending: &mut Option<PendingMod>) -> Result<(), String>
     let note = if tag.scene.is_some() { " (3D scene without the UI)" } else { "" };
     match meta.kind {
         Kind::Single => {
-            let stem = photo::unique_stem(id, taken);
-            let saved = photo::save_files(&dir, &stem, "", w, h, &lin, &meta.text, true)?;
+            let (stem, suffix) = match &tag.label {
+                Some(l) => (l.stem.clone(), l.suffix.clone()),
+                None => (photo::unique_stem(id, taken), String::new()),
+            };
+            let saved = photo::save_files(&dir, &stem, &suffix, w, h, &lin, &meta.text, true)?;
+            let stem = format!("{stem}{suffix}");
             let t = format!(
                 "GW2 Enhanced Graphics photo {stem}{note}\nfiles: {stem}.png (sRGB, full resolution, paper white = 1.0, highlights clipped), {stem}.hdr (Radiance RGBE, linear, 1.0 = paper white, values above 1.0 kept)\n{STATS_NOTE}\n\n== statistics ==\n{}\n== settings ==\n{}",
                 stat_rows(&c.stats).iter().map(|(k, v)| format!("{k}={v}\n")).collect::<String>(),
@@ -1872,6 +1879,9 @@ struct SceneWait {
     since: u64,
     id: u64,
     text: String,
+    /// Which shot the scene is for: a single photo, or the mod / vanilla shot of a UI-free pair.
+    kind: Kind,
+    label: Option<photo::Label>,
 }
 
 struct State {
@@ -1882,6 +1892,8 @@ struct State {
     pair_id: u64,
     /// The running pair is a photo pair (its shots go to the photo folder).
     pair_photo: bool,
+    /// The running photo pair takes both shots from the pre-UI scene (`photo_hide_ui`).
+    pair_scene: bool,
     scene_wait: Option<SceneWait>,
     /// The depth read-back `prepare_depth` made ready for the shot that is issued right after it.
     depth: Option<DepthData>,
@@ -1889,7 +1901,7 @@ struct State {
     depth_note: Option<String>,
 }
 
-static STATE: Mutex<State> = Mutex::new(State { machine: PairMachine::new(), guard: None, last_ms: None, gpu: None, pair_id: 0, pair_photo: false, scene_wait: None, depth: None, depth_note: None });
+static STATE: Mutex<State> = Mutex::new(State { machine: PairMachine::new(), guard: None, last_ms: None, gpu: None, pair_id: 0, pair_photo: false, pair_scene: false, scene_wait: None, depth: None, depth_note: None });
 
 /// Called once per present, BEFORE the overlay is drawn (so the copy has no overlay in it). Never unwinds, never waits
 /// for the GPU. Cheap (a few atomics) while nothing is requested.
@@ -1920,6 +1932,7 @@ unsafe fn frame_inner() {
         st.guard = None;
         set_status("pair aborted (watchdog restored the user values)");
         st.pair_photo = false;
+        st.pair_scene = false;
         send(Msg::Abort(st.pair_id, "watchdog".to_string()));
     }
     let due = !st.machine.is_forced() && capture_due(now, st.last_ms, secs);
@@ -1953,6 +1966,7 @@ fn end_pair(st: &mut State, why: &str) {
         restore_now(why);
         set_status(format!("pair aborted: {why}"));
         st.pair_photo = false;
+        st.pair_scene = false;
         send(Msg::Abort(st.pair_id, why.to_string()));
     }
 }
@@ -2018,13 +2032,23 @@ unsafe fn capture_step(st: &mut State, frame: u64, now: u64, bb: Obj, d: &Tex2dD
         // 2. A running pair: is the pipeline rebuilt for the disabled state?
         let settled = shaders::substitutes().pending_count() == 0;
         match st.machine.step(now, frame, settled) {
+            PairStep::Capture if st.pair_scene => {
+                // A UI-free pair: the vanilla shot is the pre-UI scene too. `Enabled` stays forced off until the copy is read back.
+                let id = st.pair_id;
+                photo::arm_scene(frame);
+                let text = settings_text("photo pair, shot B: vanilla emulation (Enabled forced off, 3D scene without the UI)", frame, screen, d.format);
+                st.scene_wait = Some(SceneWait { since: frame, id, text, kind: Kind::PairVanilla, label: None });
+                photo::set_status(format!("photo pair {id}: waiting for the UI-free vanilla scene"));
+                return Ok(());
+            }
             PairStep::Capture => {
                 let id = st.pair_id;
-                let tag = st.pair_photo.then_some(PhotoTag { scene: None });
+                let tag = st.pair_photo.then_some(PhotoTag { scene: None, label: None });
                 let r = issue(st, frame, bb, ctx, (Kind::PairVanilla, id), screen, d.format, tag);
                 st.guard = None; // drop = restore the user's values
                 restore_now("vanilla shot taken");
                 st.pair_photo = false;
+                st.pair_scene = false;
                 if r.is_err() {
                     send(Msg::Abort(id, "vanilla shot failed".to_string()));
                 }
@@ -2034,8 +2058,12 @@ unsafe fn capture_step(st: &mut State, frame: u64, now: u64, bb: Obj, d: &Tex2dD
                 st.guard = None;
                 restore_now("pair timed out");
                 set_status("pair aborted: the pipeline did not settle in time");
-                photo::set_status("photo pair aborted: the pipeline did not settle in time");
+                if st.pair_photo {
+                    photo::set_status("photo pair aborted: the pipeline did not settle in time");
+                    photo::note_failed();
+                }
                 st.pair_photo = false;
+                st.pair_scene = false;
                 send(Msg::Abort(st.pair_id, "timeout".to_string()));
                 return Ok(());
             }
@@ -2049,29 +2077,78 @@ unsafe fn capture_step(st: &mut State, frame: u64, now: u64, bb: Obj, d: &Tex2dD
                     st.scene_wait = None;
                     let hdr = output::mode() == output::OutputMode::ScRgb;
                     let (paper, peak) = (output::paper_white(), output::peak());
-                    let (pfmt, scale) = if sd.fmt == 10 { (PixFmt::F16, 80.0 / if hdr { paper.max(1.0) } else { 80.0 }) } else { (PixFmt::Bgra8, 1.0) };
-                    let meta = Meta { kind: Kind::Single, id: sw.id, paper, text: sw.text, photo: Some(PhotoTag { scene: (sd.fmt == 10).then_some(photo::SceneMap { hdr, paper, peak, gamma: output::active_sdr_gamma() }) }), depth: None };
+                    let pfmt = pixfmt(sd.fmt).unwrap_or(PixFmt::Bgra8);
+                    let scale = if pfmt == PixFmt::F16 { 80.0 / if hdr { paper.max(1.0) } else { 80.0 } } else { 1.0 };
+                    let scene = (pfmt == PixFmt::F16).then_some(photo::SceneMap { hdr, paper, peak, gamma: output::active_sdr_gamma() });
+                    let meta = Meta { kind: sw.kind, id: sw.id, paper, text: sw.text, photo: Some(PhotoTag { scene, label: sw.label }), depth: None };
                     photo::note_scene("UI-free scene copy used (3D scene with the mod's effects, without the UI)");
-                    photo::set_status(format!("photo {}: UI-free scene copied, writing", sw.id));
                     if !send(Msg::Image(Job { meta, w: sd.w, h: sd.h, fmt: pfmt, scale, data: sd.data })) {
                         photo::set_status("a photo was dropped: the writer is busy");
+                        photo::note_failed();
+                    }
+                    match sw.kind {
+                        Kind::Single => photo::set_status(format!("photo {}: UI-free scene copied, writing", sw.id)),
+                        Kind::PairMod => {
+                            // The mod shot is in: force the vanilla look for shot B (the pair machine waits for the pipeline to settle).
+                            if force_off(now) {
+                                st.guard = Some(ForceGuard);
+                                st.machine.begin(now, frame);
+                                st.pair_photo = true;
+                                st.pair_scene = true;
+                                photo::set_status(format!("photo pair {}: UI-free mod shot taken, Enabled forced off for the vanilla one", sw.id));
+                            } else {
+                                send(Msg::Abort(sw.id, "Enabled could not be forced off".to_string()));
+                            }
+                        }
+                        Kind::PairVanilla => {
+                            st.guard = None;
+                            restore_now("UI-free vanilla shot taken");
+                            st.pair_photo = false;
+                            st.pair_scene = false;
+                            photo::set_status(format!("photo pair {}: UI-free vanilla scene copied, writing", sw.id));
+                        }
                     }
                     return Ok(());
                 }
                 Ok(None) if photo::scene_step(sw.since, frame) == photo::SceneStep::Wait => return Ok(()),
                 other => {
-                    // Timeout or error: the normal photo (with the UI) instead.
+                    // Timeout or error: the shot is taken from the finished frame instead (with the UI).
                     let why = match other {
                         Err(e) => e,
                         _ => "the pre-UI copy pass was not seen".to_string(),
                     };
                     st.scene_wait = None;
                     photo::disarm_scene(&format!("UI-free copy not available ({why}); photos include the UI"));
-                    if st.gpu.as_ref().is_some_and(|g| g.slots.free_count() >= 1) {
-                        issue(st, frame, bb, ctx, (Kind::Single, sw.id), screen, d.format, Some(PhotoTag { scene: None }))?;
-                        photo::set_status(format!("photo {}: no UI-free copy ({why}), taken with the UI", sw.id));
-                    } else {
+                    if !st.gpu.as_ref().is_some_and(|g| g.slots.free_count() >= 1) {
                         photo::set_status("photo skipped: the ring is busy");
+                        photo::note_failed();
+                        if sw.kind != Kind::Single {
+                            st.guard = None;
+                            restore_now("UI-free pair given up");
+                            st.pair_photo = false;
+                            st.pair_scene = false;
+                            send(Msg::Abort(sw.id, why));
+                        }
+                        return Ok(());
+                    }
+                    issue(st, frame, bb, ctx, (sw.kind, sw.id), screen, d.format, Some(PhotoTag { scene: None, label: sw.label }))?;
+                    photo::set_status(format!("photo {}: no UI-free copy ({why}), taken with the UI", sw.id));
+                    match sw.kind {
+                        Kind::Single => {}
+                        Kind::PairMod => {
+                            if force_off(now) {
+                                st.guard = Some(ForceGuard);
+                                st.machine.begin(now, frame);
+                                st.pair_photo = true;
+                                st.pair_scene = false;
+                            }
+                        }
+                        Kind::PairVanilla => {
+                            st.guard = None;
+                            restore_now("vanilla shot taken");
+                            st.pair_photo = false;
+                            st.pair_scene = false;
+                        }
                     }
                     return Ok(());
                 }
@@ -2086,13 +2163,16 @@ unsafe fn capture_step(st: &mut State, frame: u64, now: u64, bb: Obj, d: &Tex2dD
             photo::Plan::Single => {
                 photo::pop_queued();
                 let id = next_id();
-                if photo::hide_ui() {
+                let label = photo::take_label();
+                let hide = label.as_ref().map_or(photo::hide_ui(), |l| l.hide_ui);
+                let what = label.as_ref().map(|l| format!(", {}", l.note)).unwrap_or_default();
+                if hide {
                     photo::arm_scene(frame);
-                    let text = settings_text("photo, single shot, mod on (3D scene without the UI)", frame, screen, d.format);
-                    st.scene_wait = Some(SceneWait { since: frame, id, text });
+                    let text = settings_text(&format!("photo, single shot{what} (3D scene without the UI)"), frame, screen, d.format);
+                    st.scene_wait = Some(SceneWait { since: frame, id, text, kind: Kind::Single, label });
                     photo::set_status(format!("photo {id}: waiting for the UI-free copy"));
                 } else {
-                    issue(st, frame, bb, ctx, (Kind::Single, id), screen, d.format, Some(PhotoTag { scene: None }))?;
+                    issue(st, frame, bb, ctx, (Kind::Single, id), screen, d.format, Some(PhotoTag { scene: None, label }))?;
                     photo::set_status(format!("photo {id} taken, writing"));
                 }
                 return Ok(());
@@ -2101,7 +2181,15 @@ unsafe fn capture_step(st: &mut State, frame: u64, now: u64, bb: Obj, d: &Tex2dD
                 photo::pop_queued();
                 let id = next_id();
                 st.pair_id = id;
-                issue(st, frame, bb, ctx, (Kind::PairMod, id), screen, d.format, Some(PhotoTag { scene: None }))?;
+                if photo::hide_ui() {
+                    // Shot A from the pre-UI scene; `Enabled` is forced off once it is in (2b).
+                    photo::arm_scene(frame);
+                    let text = settings_text("photo pair, shot A: mod on (3D scene without the UI)", frame, screen, d.format);
+                    st.scene_wait = Some(SceneWait { since: frame, id, text, kind: Kind::PairMod, label: None });
+                    photo::set_status(format!("photo pair {id}: waiting for the UI-free mod scene"));
+                    return Ok(());
+                }
+                issue(st, frame, bb, ctx, (Kind::PairMod, id), screen, d.format, Some(PhotoTag { scene: None, label: None }))?;
                 if force_off(now) {
                     st.guard = Some(ForceGuard);
                     st.machine.begin(now, frame);

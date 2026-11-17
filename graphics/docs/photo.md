@@ -33,7 +33,7 @@ The Radiance format has no colour-space tag; the `.hdr` is linear Rec.709 relati
 - **Default (with UI).** A copy of swapchain buffer 0 taken at present time, just before the overlay is drawn: the final picture
   including the game's own UI, without the mod's overlay (the same moment and the same staging ring as the debug capture; the
   render thread only issues a GPU copy and one memcpy, conversion, PNG and file writing run on a background thread).
-- **`photo_hide_ui=1` (3D scene without the UI), single captures only.** The UI is drawn after the engine's pre-UI copy pass
+- **`photo_hide_ui=1` (3D scene without the UI).** The UI is drawn after the engine's pre-UI copy pass
   (`ps#c0ad1686`), so the UI-free scene is the texture that pass reads. The request arms a one-shot GPU copy; at the next draw
   of that pass the `Draw*` hook copies the texture bound as t0, AFTER the mod's passes (AA, lens, grading) bound their result,
   so the photo contains every mod effect (AO, reflections, shafts, contact shadows, aerial perspective, fur/rim, bloom, AA,
@@ -41,8 +41,12 @@ The Radiance format has no colour-space tag; the `.hdr` is linear Rec.709 relati
   (decode, energy bleach, tone shoulder, paper white, clamp at the peak) are applied on the CPU (`photo::final_pass_cpu`, tested
   against the shader's reference). Without HDR output the scene is clamped and decoded like the SDR final pass.
   If that pass is not seen within 90 presents, or the copy fails, the normal photo (with UI) is taken and the status line says
-  why. **The comparison always includes the UI**: its two shots are taken at the present boundary, and a scene copy would need
-  one more frame between forcing the mod off and restoring it.
+  why. The texture can be float16 (the HDR upgrade) or 8-bit (`R8G8B8A8` / `B8G8R8A8`, plain or sRGB).
+- **The comparison without the UI.** With `photo_hide_ui=1` both shots of a comparison come from that pass: the mod shot first;
+  once its copy is read back `Enabled` is forced off, the pair machine waits for the pipeline to settle, the vanilla scene is
+  copied and read back, and only then are the user's values restored (a few frames longer than the UI pair, well inside the 2 s
+  watchdog). If either copy does not arrive, that shot is taken from the finished frame (with the UI) and the status line says
+  so.
 - Limits: an MSAA back buffer or an unsupported format is skipped with a status message. Screens where the engine does not run
   that pre-UI copy pass (possibly the loading screen or character select) make `photo_hide_ui` fall back to the normal photo.
 
@@ -54,6 +58,12 @@ timer and the debug buttons do not start** (so a photo cannot be starved), and a
 A photo comparison is the debug pair state machine itself, with all its guarantees: the user's `Enabled`, paper white and peak are
 restored after the vanilla shot, on any error, on a panic (`ForceGuard`), and by the watchdog thread 2 s after the force even if
 the render loop stopped. If the mod is already off, a comparison request becomes a single shot.
+
+## Named shots for the other features
+
+The enhanced overlay's Screenshots section compares the translation and the HD textures on and off. It asks for named single
+shots (`photo::request_named`: stem `gw2-<timestamp>-<feature>`, suffix `-on` / `-off`, with or without the UI), switches the
+feature between them and waits for `photo::finished_count` (saved or failed) to move before going on.
 
 ## Disk space
 

@@ -12,8 +12,11 @@
 //! pre-UI copy pass (`ps#c0ad1686`) reads - the 3D scene with every mod effect (AA, lens, grading, AO, ...) but without the UI - and
 //! applies the final pass' maths on the CPU (decode, energy bleach, tone shoulder, paper white) so the result matches the picture. It
 //! needs that pass to be seen in the frame (the GPU copy is armed by the request and taken at the next pre-UI copy draw); if it does
-//! not arrive within `SCENE_TIMEOUT_FRAMES` presents the normal photo (with UI) is taken and the status line says so. Pair captures
-//! always include the UI.
+//! not arrive within `SCENE_TIMEOUT_FRAMES` presents the normal photo (with UI) is taken and the status line says so. A pair takes
+//! both shots that way: the mod shot first, then `Enabled` is forced off and the vanilla scene is copied before it is restored.
+//!
+//! Other parts of the mod ask for named single shots (`request_named`, the overlay's on/off comparisons of the translation and the
+//! textures) and wait for `finished_count` to move.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -350,6 +353,53 @@ pub(crate) fn set_status(s: impl Into<String>) {
 
 pub(crate) fn note_saved() {
     SAVED.fetch_add(1, Relaxed);
+    FINISHED.fetch_add(1, Relaxed);
+}
+
+/// A photo that ended without being saved (write error, low disk space, a busy ring).
+pub(crate) fn note_failed() {
+    FINISHED.fetch_add(1, Relaxed);
+}
+
+static FINISHED: AtomicU64 = AtomicU64::new(0);
+
+/// Photos that ended so far, saved or not: another part of the mod waits for this to move after its request.
+pub fn finished_count() -> u64 {
+    FINISHED.load(Relaxed)
+}
+
+/// Photos saved so far.
+pub fn saved_count() -> u64 {
+    SAVED.load(Relaxed)
+}
+
+/// A named single shot asked for by another part of the mod (the overlay's comparisons): written as
+/// `<stem><suffix>.png/.hdr/.txt`, with or without the UI whatever `photo_hide_ui` says.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Label {
+    pub stem: String,
+    pub suffix: String,
+    pub hide_ui: bool,
+    /// One line for the settings text ("textures on", ...).
+    pub note: String,
+}
+
+static LABEL: Mutex<Option<Label>> = Mutex::new(None);
+
+/// Requests a named single shot. Only one named shot waits at a time: the caller waits for `finished_count` before the next.
+pub fn request_named(label: Label) -> String {
+    *LABEL.lock().unwrap_or_else(|e| e.into_inner()) = Some(label);
+    request(PhotoKind::Single)
+}
+
+/// The label of the single shot that starts now, if it is a named one.
+pub(crate) fn take_label() -> Option<Label> {
+    LABEL.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
+/// The stem of a comparison: `gw2-<timestamp>-<what>`.
+pub fn compare_stem(unix: u64, what: &str) -> String {
+    format!("gw2-{}-{what}", format_utc(unix))
 }
 
 /// Requests a photo (overlay button or hotkey). Returns what to tell the player.
@@ -611,7 +661,7 @@ unsafe fn grab_inner(ctx: Obj) {
         let tex = crate::ao::texture_of(srv);
         release(srv);
         let Some((res, d)) = tex else { return };
-        let ok = d.samples == 1 && d.array == 1 && d.mips == 1 && d.width >= 320 && d.height >= 200 && (d.format == 10 || d.format == 87);
+        let ok = d.samples == 1 && d.array == 1 && d.mips == 1 && d.width >= 320 && d.height >= 200 && matches!(d.format, 10 | 28 | 29 | 87 | 91);
         if !ok {
             release(res);
             *LAST_SCENE.lock().unwrap_or_else(|e| e.into_inner()) = format!("the pre-UI copy reads an unsupported texture (format {}, {}x{})", d.format, d.width, d.height);
@@ -663,7 +713,7 @@ pub(crate) unsafe fn take_scene(ctx: Obj, frame: u64) -> Result<Option<SceneData
         s.pending = None;
         return Err("the scene staging texture is gone".to_string());
     };
-    let bpp = if fmt == 10 { 8 } else { 4 };
+    let bpp = if fmt == 10 { 8 } else { 4 }; // float16 or one of the 8-bit formats `grab_inner` accepts
     match unsafe { debugshot::read_texture(ctx, g.tex, 0x10_0000, w, h, bpp) } {
         Some(data) => {
             s.pending = None;
