@@ -7,6 +7,16 @@ It is the graphics feature of [GW2 Enhanced](../README.md): a library (`runtime/
 the mod's single proxy DLL, `msimg32.dll`, next to the translation and HD textures features. It runs alongside
 ReShade (`dxgi.dll`). Design: [docs/specs/graphics-design.md](docs/specs/graphics-design.md).
 
+![Graphics: Glowing statue](../docs/images/cmp-graphics-statue.jpg)
+![Graphics: Portal and fields](../docs/images/cmp-graphics-portal.jpg)
+![Graphics: Airship and plaza](../docs/images/cmp-graphics-ship.jpg)
+![Graphics: Bronze floor](../docs/images/cmp-graphics-gears.jpg)
+![Graphics: Cobblestones in the sun](../docs/images/cmp-graphics-square.jpg)
+![Graphics: Tower in shadow](../docs/images/cmp-graphics-tower.jpg)
+
+*Crops of in-game screenshots: the game's own look on the left, the same frame with the graphics on the right (the photo
+mode's comparison, 3D scene without the UI).*
+
 ## What it does
 
 The game draws the scene into 8-bit targets and its post chain clamps colour to 0..1, so a fire spell

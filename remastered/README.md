@@ -7,6 +7,17 @@ It is the HD textures feature of [GW2 Enhanced](../README.md): a library (`nativ
 compiled into the mod's single proxy DLL, `msimg32.dll`, next to the translation and graphics features. It runs
 alongside ReShade (`dxgi.dll`).
 
+![HD textures: House front](../docs/images/cmp-textures-houses.jpg)
+![HD textures: Village and tree](../docs/images/cmp-textures-village.jpg)
+![HD textures: Rooftops and castle](../docs/images/cmp-textures-castle.jpg)
+![HD textures: Well and fields](../docs/images/cmp-textures-well.jpg)
+![HD textures: Cobblestones and grass](../docs/images/cmp-textures-cobbles.jpg)
+![HD textures: Stone tower](../docs/images/cmp-textures-tower.jpg)
+![HD textures: Bronze floor](../docs/images/cmp-textures-gears.jpg)
+![HD textures: Airship hull](../docs/images/cmp-textures-ship.jpg)
+
+*Crops of in-game screenshots: the game's own textures on the left, the same moment with the HD pack on the right (the overlay's comparison capture).*
+
 ## How it works
 
 1. An offline pipeline decodes the game's textures from `Gw2.dat`, upscales them with the 4x-UltraSharp

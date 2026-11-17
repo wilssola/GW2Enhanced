@@ -33,6 +33,40 @@ Tudo vem em **um único arquivo, `msimg32.dll`**, colocado ao lado do `Gw2-64.ex
 
 *Esquerda: a textura do jogo, ampliada. Direita: a mesma textura do pacote HD. Recortes das próprias texturas, não capturas de tela do jogo.*
 
+### No jogo
+
+Recortes de capturas do jogo feitas com as comparações do próprio mod (a aba Capturas do overlay): o mesmo momento sem
+e com o recurso.
+
+**Tradução**
+
+![Tradução: Rastreador de missões](docs/images/cmp-translation-quest.jpg)
+![Tradução: História e eventos bônus](docs/images/cmp-translation-tracker.jpg)
+![Tradução: Nomes de lugares](docs/images/cmp-translation-places.jpg)
+![Tradução: Nomes de objetos](docs/images/cmp-translation-statue.jpg)
+![Tradução: Caixa do chat](docs/images/cmp-translation-chat.jpg)
+![Tradução: Minimapa](docs/images/cmp-translation-map.jpg)
+
+**Texturas HD**
+
+![Texturas HD: Fachada de casa](docs/images/cmp-textures-houses.jpg)
+![Texturas HD: Vilarejo e árvore](docs/images/cmp-textures-village.jpg)
+![Texturas HD: Telhados e castelo](docs/images/cmp-textures-castle.jpg)
+![Texturas HD: Poço e plantação](docs/images/cmp-textures-well.jpg)
+![Texturas HD: Calçamento e grama](docs/images/cmp-textures-cobbles.jpg)
+![Texturas HD: Torre de pedra](docs/images/cmp-textures-tower.jpg)
+![Texturas HD: Piso de bronze](docs/images/cmp-textures-gears.jpg)
+![Texturas HD: Casco de aeronave](docs/images/cmp-textures-ship.jpg)
+
+**Gráficos** (cena 3D sem a interface)
+
+![Gráficos: Estátua iluminada](docs/images/cmp-graphics-statue.jpg)
+![Gráficos: Portal e plantação](docs/images/cmp-graphics-portal.jpg)
+![Gráficos: Aeronave e praça](docs/images/cmp-graphics-ship.jpg)
+![Gráficos: Piso de bronze](docs/images/cmp-graphics-gears.jpg)
+![Gráficos: Calçamento ao sol](docs/images/cmp-graphics-square.jpg)
+![Gráficos: Torre na sombra](docs/images/cmp-graphics-tower.jpg)
+
 ## Como as texturas HD foram feitas
 
 O pacote HD é uma **remasterização das próprias texturas do jogo**, não arte nova. Nada foi desenhado, pintado, pedido

@@ -33,6 +33,40 @@ Everything ships as **one file, `msimg32.dll`**, placed next to `Gw2-64.exe`. Th
 
 *Left: the game's texture, enlarged. Right: the same texture from the HD pack. Crops of the textures themselves, not in-game screenshots.*
 
+### In the game
+
+Crops of in-game screenshots taken with the mod's own comparison captures (the Screenshots tab of the overlay), the same
+moment without and with the feature.
+
+**Translation**
+
+![Translation: Quest tracker](docs/images/cmp-translation-quest.jpg)
+![Translation: Story and bonus events](docs/images/cmp-translation-tracker.jpg)
+![Translation: Place names](docs/images/cmp-translation-places.jpg)
+![Translation: Object names](docs/images/cmp-translation-statue.jpg)
+![Translation: Chat box](docs/images/cmp-translation-chat.jpg)
+![Translation: Minimap](docs/images/cmp-translation-map.jpg)
+
+**HD textures**
+
+![HD textures: House front](docs/images/cmp-textures-houses.jpg)
+![HD textures: Village and tree](docs/images/cmp-textures-village.jpg)
+![HD textures: Rooftops and castle](docs/images/cmp-textures-castle.jpg)
+![HD textures: Well and fields](docs/images/cmp-textures-well.jpg)
+![HD textures: Cobblestones and grass](docs/images/cmp-textures-cobbles.jpg)
+![HD textures: Stone tower](docs/images/cmp-textures-tower.jpg)
+![HD textures: Bronze floor](docs/images/cmp-textures-gears.jpg)
+![HD textures: Airship hull](docs/images/cmp-textures-ship.jpg)
+
+**Graphics** (3D scene without the UI)
+
+![Graphics: Glowing statue](docs/images/cmp-graphics-statue.jpg)
+![Graphics: Portal and fields](docs/images/cmp-graphics-portal.jpg)
+![Graphics: Airship and plaza](docs/images/cmp-graphics-ship.jpg)
+![Graphics: Bronze floor](docs/images/cmp-graphics-gears.jpg)
+![Graphics: Cobblestones in the sun](docs/images/cmp-graphics-square.jpg)
+![Graphics: Tower in shadow](docs/images/cmp-graphics-tower.jpg)
+
 ## How the HD textures were made
 
 The HD pack is a **remaster of the game's own textures**, not new art. Nothing was drawn, painted, prompted or

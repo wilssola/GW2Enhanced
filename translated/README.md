@@ -15,6 +15,15 @@ Compiled into the mod's single proxy DLL, `msimg32.dll`, placed in the game fold
 
 Player chat is never translated, saved or sent.
 
+![Translation: Quest tracker](../docs/images/cmp-translation-quest.jpg)
+![Translation: Story and bonus events](../docs/images/cmp-translation-tracker.jpg)
+![Translation: Place names](../docs/images/cmp-translation-places.jpg)
+![Translation: Object names](../docs/images/cmp-translation-statue.jpg)
+![Translation: Chat box](../docs/images/cmp-translation-chat.jpg)
+![Translation: Minimap](../docs/images/cmp-translation-map.jpg)
+
+*Crops of in-game screenshots: the game in English on the left, the same moment with the translation on the right (the overlay's comparison capture).*
+
 ## Installation
 
 Close the game and run `GW2Enhanced-Installer.exe` from the package (`All` or one of the `Translation` packages, see the [root README](../README.md#downloads)). It finds the game folder on its own (Steam or the official launcher) or lets you choose it. A `msimg32.dll` from another mod is backed up and restored on uninstall. The `version.dll` of the earlier separate GW2 Translated is removed (and a `version.dll` of another mod that it had backed up is put back); `GW2Translated\` keeps its settings and collected data.
