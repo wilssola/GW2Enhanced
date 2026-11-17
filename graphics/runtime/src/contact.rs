@@ -719,6 +719,7 @@ mod tests {
 
     #[test]
     fn strength_zero_releases_the_depth_consumer_and_a_positive_one_registers_it() {
+        let _g = crate::testlock::lock();
         let (ks, kl, km) = (strength(), length(), mode());
         set_strength(0.0);
         assert_eq!(ao::depth_consumers() & ao::DEPTH_FOR_CONTACT, 0, "consumer must be released at strength 0");

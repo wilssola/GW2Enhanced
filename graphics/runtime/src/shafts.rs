@@ -935,6 +935,7 @@ mod tests {
 
     #[test]
     fn strength_zero_releases_the_depth_consumer_and_a_positive_one_registers_it() {
+        let _g = crate::testlock::lock();
         // Only this test touches STRENGTH / LENGTH and the SHAFTS bit among the host tests.
         let (ks, kl) = (strength(), length());
         set_strength(0.0);

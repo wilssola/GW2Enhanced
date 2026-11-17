@@ -996,7 +996,8 @@ mod tests {
 
     #[test]
     fn strength_drives_the_depth_consumer() {
-        // Only this test touches STRENGTH and the SSR depth-consumer bit among the host tests.
+        let _g = crate::testlock::lock();
+        // strength() reads through the effect switches, which other tests turn off for a moment (the global lock).
         let keep = strength();
         set_strength(0.0);
         assert_eq!(strength(), 0.0);

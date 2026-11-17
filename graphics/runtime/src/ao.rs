@@ -725,6 +725,7 @@ mod tests {
 
     #[test]
     fn wants_needs_gate_strength_and_not_done() {
+        let _g = crate::testlock::lock();
         // Only this test touches ENABLED / DONE / STRENGTH among the host tests.
         let keep = strength();
         set_enabled(false);

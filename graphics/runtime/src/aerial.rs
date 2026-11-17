@@ -221,6 +221,7 @@ mod tests {
 
     #[test]
     fn strength_registers_the_depth_consumer() {
+        let _g = crate::testlock::lock();
         let k = strength();
         set_strength(0.0);
         assert_eq!(ao::depth_consumers() & ao::DEPTH_FOR_AERIAL, 0);

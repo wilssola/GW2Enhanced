@@ -124,6 +124,7 @@ fn srgb_round_trips_and_matches_the_final_pass() {
 
 #[test]
 fn settings_setters_clamp_and_report() {
+    let _g = crate::testlock::lock();
     // Only this test writes the lens atomics among the host tests.
     let saved = (strength(), threshold(), ghost(), streak_length());
     assert_eq!(set_strength(5.0), 1.0);
