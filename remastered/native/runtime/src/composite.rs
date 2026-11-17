@@ -21,10 +21,15 @@ pub static SCALE: AtomicU32 = AtomicU32::new(2);
 /// Read when a composite is created, so a change applies to characters built after it.
 pub static ALL_4X: AtomicBool = AtomicBool::new(false);
 /// On the character select (from the start of the game until a composite of a character in the world, and again when a preview without
-/// a character is built) the textures mod stays out of the way, as if switched off: no 4x, nothing served from the pack, no prefetch.
-/// The select loads while the system can be short of commit, and our cache and files made the game's own texture allocations fail:
-/// a black scene that switching the mod off and on again, once the select had loaded, cleared.
+/// a character is built). The select loads while the system can be short of commit, and our cache and files then made the game's own
+/// texture allocations fail: a black scene that switching the mod off and on again, once the select had loaded, cleared. So there the
+/// pack is used only while the free commit is fine ([`select_blocks_pack`]), and the prefetch waits for the world.
 pub static AT_SELECT: AtomicBool = AtomicBool::new(true);
+
+/// The pack stays out of the character select only while the system is short of commit (memory guard not at "fine").
+pub fn select_blocks_pack() -> bool {
+    AT_SELECT.load(Ordering::Relaxed) && crate::diag::COMMIT_LEVEL.load(Ordering::Relaxed) != 0
+}
 
 /// Records where the game is from a character composite's constructor (`select` = no character and none controlled).
 pub fn note_select(select: bool, ch: usize, ctrl: usize) {

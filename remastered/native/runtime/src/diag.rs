@@ -828,7 +828,7 @@ unsafe extern "system" fn block_cb(data: *const u8, size: u64, offset: u32, file
             let char4x = !is_comp
                 && PACK_CHAR4X.get().is_some_and(|p| p.contains_key(&file_id))
                 && LOADER_FUNCS.lock().unwrap_or_else(|e| e.into_inner()).contains(&ctx.cast::<u8>().add(0x28).cast::<usize>().read())
-                && !crate::composite::AT_SELECT.load(std::sync::atomic::Ordering::Relaxed)
+                && !crate::composite::select_blocks_pack()
                 && (crate::composite::ALL_4X.load(std::sync::atomic::Ordering::Relaxed) || own_model_texture(ctx));
             if char4x {
                 send(Event::Skipped { file_id, reason: "model texture at 4x (local player)" });
@@ -837,9 +837,9 @@ unsafe extern "system" fn block_cb(data: *const u8, size: u64, offset: u32, file
             let ckey = (src * 2 + is_comp as u8, file_id);
             if let Some((path, src_bytes, hd_w)) = (if src == 1 { &PACK4 } else if src == 2 { &PACK_CHAR4X } else { &PACK })
                 .get()
-                // Nothing from the pack on the character select (as with the mod off: the pieces get the plain upscale below): its textures
-                // load while the system is short of commit, and our files there made the game's own allocations fail (black scene).
-                .filter(|_| !crate::composite::AT_SELECT.load(std::sync::atomic::Ordering::Relaxed))
+                // Nothing from the pack on the character select while the system is short of commit (the pieces get the plain upscale
+                // below): the select loads then, and our files there made the game's own allocations fail (black scene).
+                .filter(|_| !crate::composite::select_blocks_pack())
                 .filter(|_| if is_comp { crate::overlay::pieces_on() } else { crate::overlay::enabled() })
                 .and_then(|p| p.get(&file_id))
                 .filter(|e| scale_ok(e.2))
