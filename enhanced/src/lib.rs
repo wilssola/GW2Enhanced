@@ -9,6 +9,7 @@
 
 mod hotkeys;
 mod proxy;
+mod screens;
 mod update;
 
 use std::ffi::c_void;
@@ -156,6 +157,48 @@ fn hotkey_targets() -> Vec<hotkeys::Target> {
     v
 }
 
+/// The Screenshots tab: in a build with several features, when the graphics (whose photo mode takes the pictures) are in.
+fn screens_tab() -> bool {
+    full_build() && cfg!(feature = "graphics")
+}
+
+/// The Screenshots tab: the photo mode, then the on/off comparisons of the other features.
+#[cfg(feature = "graphics")]
+fn screens_body(ui: &Ui, g: &mut gw2graphics::overlay::Overlay, s: &mut screens::Screens) {
+    ui.text_wrapped(tr(
+        "Every capture of the mod is made here and saved into GW2Graphics\\photos at full resolution.",
+        "Todas as capturas do mod são feitas aqui e salvas em GW2Graphics\\photos em resolução total.",
+    ));
+    ui.separator();
+    ui.text(tr("Graphics", "Gráficos"));
+    g.photo_section(ui);
+    let compare: &[(screens::Subject, &str, &str)] = &[
+        #[cfg(feature = "translation")]
+        (screens::Subject::Translation, "Compare translation on and off", "Comparar tradução ligada e desligada"),
+        #[cfg(feature = "textures")]
+        (screens::Subject::Textures, "Compare HD textures on and off", "Comparar texturas HD ligadas e desligadas"),
+    ];
+    if compare.is_empty() {
+        return;
+    }
+    ui.separator();
+    ui.text(tr("Other features", "Outros recursos"));
+    let busy = s.busy();
+    for (subject, en, pt) in compare {
+        let _d = ui.begin_disabled(busy);
+        if ui.button(tr(en, pt)) {
+            s.start(*subject);
+        }
+    }
+    dim_text(ui, tr(
+        "Two photos, -on and -off: the feature is switched between them and put back after. The translation keeps the UI (its text is in it); the textures follow \"Hide the UI\" and take about 10 s (the game reloads them).",
+        "Duas fotos, -on e -off: o recurso é trocado entre elas e volta como estava depois. A tradução mantém a interface (o texto está nela); as texturas seguem \"Esconder a interface\" e levam cerca de 10 s (o jogo as recarrega).",
+    ));
+    if !s.status().is_empty() {
+        ui.text_wrapped(gw2enhanced_core::trf!("Comparison: {}", "Comparação: {}", s.status()));
+    }
+}
+
 fn full_build() -> bool {
     cfg!(feature = "translation") as u8 + cfg!(feature = "textures") as u8 + cfg!(feature = "graphics") as u8 > 1
 }
@@ -258,6 +301,8 @@ struct Overlay {
     /// When the start-up notice appeared (None: not yet / already gone).
     toast_from: Option<Instant>,
     toast_done: bool,
+    /// The Screenshots tab (full builds with the graphics: their photo mode takes every capture).
+    screens: screens::Screens,
 }
 
 /// How long the start-up notice stays (the last second fades out).
@@ -379,6 +424,11 @@ impl ImguiRenderLoop for Overlay {
                 registry::report("graphics", "overlay", State::Off("frame work panicked".into()));
             }
         }
+        // A running on/off comparison goes on with the window closed.
+        #[cfg(feature = "graphics")]
+        if self.graphics.is_some() {
+            self.screens.tick();
+        }
         // The update prompt is a window of its own, shown with the main panel closed too.
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| update::draw(ui))).is_err() {
             registry::report("update", "overlay", State::Off("update window panicked".into()));
@@ -425,6 +475,14 @@ impl ImguiRenderLoop for Overlay {
                         && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.body(ui))).is_err()
                     {
                         registry::report("graphics", "overlay", State::Off("panel panicked".into()));
+                    }
+                    #[cfg(feature = "graphics")]
+                    if screens_tab()
+                        && let Some(o) = self.graphics.as_mut()
+                        && let Some(_t) = ui.tab_item(tr("Screenshots###tab-screens", "Capturas###tab-screens"))
+                        && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| screens_body(ui, o, &mut self.screens))).is_err()
+                    {
+                        registry::report("graphics", "screenshots", State::Off("panel panicked".into()));
                     }
                     if let Some(_t) = ui.tab_item(tr("Version###tab-version", "Versão###tab-version")) {
                         version_tab(ui, &mut self.keys);
@@ -675,7 +733,10 @@ fn install_overlay(module: usize) {
         tab: None,
         toast_from: None,
         toast_done: false,
+        screens: screens::Screens::default(),
     };
+    #[cfg(feature = "graphics")]
+    gw2graphics::overlay::PHOTO_HOSTED.store(screens_tab(), Ordering::Relaxed);
     while start.elapsed() < Duration::from_secs(40) {
         let mut all = true;
         #[cfg(feature = "translation")]

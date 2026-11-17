@@ -49,6 +49,22 @@ pub fn is_visible() -> bool {
 /// piece over an original mask is the engine's fatal "Composite mask smaller than source
 /// RGB". So pieces switch this long after the click, and the rebuild runs after that.
 pub const PIECE_SWITCH: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// How long after `set_enabled` the picture shows the new state (the composite pieces follow after `PIECE_SWITCH`, then
+/// the characters are rebuilt and the game streams the textures again).
+pub const SWITCH_SETTLE: std::time::Duration = std::time::Duration::from_secs(9);
+
+/// Turns the textures on or off, as the panel's switch does (saved, characters rebuilt, HD cache dropped when off).
+pub fn set_enabled(on: bool) {
+    ENABLED.store(on, Ordering::Relaxed);
+    *TOGGLED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+    save_settings();
+    crate::reload::request_after(PIECE_SWITCH);
+    if !on {
+        crate::diag::drop_hd_cache();
+    }
+    log!("overlay: textures {}", if on { "ON" } else { "OFF" });
+}
 static TOGGLED_AT: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 
 /// HD/upscaled mode for composite pieces (follows `enabled` after `PIECE_SWITCH`).
@@ -509,14 +525,7 @@ impl Overlay {
     pub fn body(&mut self, ui: &Ui) {
         let mut on = enabled();
         if ui.checkbox(tr("Textures on###hd", "Texturas ligadas###hd"), &mut on) {
-            ENABLED.store(on, Ordering::Relaxed);
-            *TOGGLED_AT.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
-            save_settings();
-            crate::reload::request_after(PIECE_SWITCH);
-            if !on {
-                crate::diag::drop_hd_cache();
-            }
-            log!("overlay: textures {}", if on { "ON" } else { "OFF" });
+            set_enabled(on);
         }
         hint(ui, tr("Off: the game's original textures.", "Desligadas: as texturas originais do jogo."));
         // The memory guard (diag::guard_start) pauses the HD files while Windows is short of commit: say so here, or the
