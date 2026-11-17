@@ -32,9 +32,12 @@ depth). Why not earlier (inside the opaque pass): the linear depth does not exis
 
 `classify::ao_stage(frame_so_far, cur, screen)` runs when a pass starts (from the recorder, only while the AO is on):
 
-- `DepthLinear`: the first pass after the opaque pass (full-size scene colour + full-size depth + at least 20 draws,
-  the classifier rule) whose RT0 is a full-size `R32_FLOAT`. The mod keeps a reference to that render target texture
-  for the frame.
+- `DepthLinear`: the first full-size `R32_FLOAT` pass after a pass of the opaque shape (full-size scene colour +
+  full-size depth + at least one draw); the opaque pass is the LAST pass of that shape before it (the classifier rule).
+  The mod keeps a reference to that render target texture for the frame. There is no minimum draw count: it was 20, and
+  a camera looking at the sky (the character, the sky, little else in the opaque pass) then took the effects or the UI
+  pass for the opaque one, found no linear depth and turned every effect off in those frames (`frame does not match: no
+  linear depth pass` in the log; the fur vanished at some camera angles).
 - `Effects`: after the linear depth was seen, the first pass whose RT0 and depth equal the opaque pass. The AO runs
   just before the original `OMSetRenderTargets` call that starts it, on that binding RT0.
 

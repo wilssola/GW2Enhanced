@@ -52,8 +52,29 @@ fn full_depth(p: &Pass, screen: (u32, u32)) -> bool {
     p.depth.as_ref().is_some_and(|d| is_size(d, screen))
 }
 
-/// Minimum draws of the opaque pass (the reference frame has 932; quiet scenes still have dozens).
-const MIN_OPAQUE_DRAWS: u32 = 20;
+/// A pass shaped like the opaque pass: full-size scene colour, full-size depth, something drawn. The effects pass and the UI
+/// pass have the same shape; the opaque pass is the one the linear depth pass follows (`opaque_and_depth`).
+fn opaque_shape(p: &Pass, screen: (u32, u32)) -> bool {
+    rt0_scene(p, screen) && full_depth(p, screen) && p.draws >= 1
+}
+
+/// The opaque pass and the linear depth pass: the first full-size `R32_FLOAT` pass that follows an opaque-shaped pass, and the
+/// LAST opaque-shaped pass before it. Without a linear depth pass (a prefix of the frame): the last opaque-shaped pass so far.
+/// Structural only, no draw count: a camera looking at the sky draws only a handful of objects in the opaque pass (the
+/// character, the sky, a mast), and a minimum count (it was 20) then took the effects or the UI pass for the opaque one, found
+/// no linear depth after it and turned every effect off in those frames (the fur vanished at some camera angles).
+fn opaque_and_depth(frame: &[Pass], screen: (u32, u32)) -> (Option<usize>, Option<usize>) {
+    let mut opaque = None;
+    for (i, p) in frame.iter().enumerate() {
+        if opaque.is_some() && rt0_is(p, FMT_R32_FLOAT, screen) {
+            return (opaque, Some(i));
+        }
+        if opaque_shape(p, screen) {
+            opaque = Some(i);
+        }
+    }
+    (opaque, None)
+}
 /// Minimum draws of the UI pass. The final `afdc14cb` pass has the same targets with exactly one
 /// draw, so a frame whose UI is hidden does not match.
 const MIN_UI_DRAWS: u32 = 2;
@@ -80,11 +101,11 @@ pub fn is_copy_shape(p: &Pass, screen: (u32, u32)) -> bool {
 pub fn stages_through_combine(frame: &[Pass], screen: (u32, u32)) -> Result<Stages, ClassifyError> {
     let find = |from: usize, f: &dyn Fn(&Pass) -> bool| (from..frame.len()).find(|&i| f(&frame[i]));
 
-    let Some(opaque) = find(0, &|p| rt0_scene(p, screen) && full_depth(p, screen) && p.draws >= MIN_OPAQUE_DRAWS)
-    else {
+    let (opaque, depth_linear) = opaque_and_depth(frame, screen);
+    let Some(opaque) = opaque else {
         return err("no opaque pass");
     };
-    let Some(depth_linear) = find(opaque + 1, &|p| rt0_is(p, FMT_R32_FLOAT, screen)) else {
+    let Some(depth_linear) = depth_linear else {
         return err("no linear depth pass");
     };
     // Reading: "same RT and depth as opaque" compares format and size of RT0 and of depth;
@@ -145,10 +166,10 @@ pub fn ao_stage(frame_so_far: &[Pass], cur: &Pass, screen: (u32, u32)) -> AoStag
         return AoStage::None;
     }
     let find = |from: usize, f: &dyn Fn(&Pass) -> bool| (from..frame_so_far.len()).find(|&i| f(&frame_so_far[i]));
-    let Some(opaque) = find(0, &|p| rt0_scene(p, screen) && full_depth(p, screen) && p.draws >= MIN_OPAQUE_DRAWS) else {
+    let (opaque, depth_linear) = opaque_and_depth(frame_so_far, screen);
+    let Some(opaque) = opaque else {
         return AoStage::None;
     };
-    let depth_linear = find(opaque + 1, &|p| rt0_is(p, FMT_R32_FLOAT, screen));
     match depth_linear {
         None => {
             if cand_depth { AoStage::DepthLinear } else { AoStage::None }
@@ -258,6 +279,35 @@ mod tests {
         f[18].draws = 5; // ui
         let m = classify(&f, SCREEN).unwrap();
         assert_eq!(m, SceneMap { opaque: 3, depth_linear: 4, effects: 9, luminance: 12, light_adjust: 13, bloom: vec![14], combine: 15, ui: 18 });
+    }
+
+    #[test]
+    fn a_camera_looking_at_the_sky_still_classifies() {
+        // The opaque pass draws only a few objects (the character, the sky): it is still the opaque pass, even when the effects
+        // and the UI passes after it draw more (the old minimum of 20 draws took one of them and found no linear depth after it).
+        let mut f = parse_frame_log(FIXTURE);
+        f[3].draws = 6;
+        f[9].draws = 40;
+        let m = classify(&f, SCREEN).unwrap();
+        assert_eq!(m, SceneMap { opaque: 3, depth_linear: 4, effects: 9, luminance: 12, light_adjust: 13, bloom: vec![14], combine: 15, ui: 18 });
+        let got: Vec<usize> = (0..f.len()).filter(|&i| ao_stage(&f[..i], &f[i], SCREEN) != AoStage::None).collect();
+        assert_eq!(got, vec![4, 9]);
+        // One draw is enough; an empty pass of that shape is not the opaque pass.
+        f[3].draws = 1;
+        assert_eq!(classify(&f, SCREEN).unwrap().opaque, 3);
+        f[3].draws = 0;
+        assert!(classify(&f, SCREEN).is_err());
+    }
+
+    #[test]
+    fn the_opaque_pass_is_the_one_before_the_linear_depth() {
+        // A pass of the same shape before the opaque pass (a small pre-pass) is not taken for it.
+        let mut f = parse_frame_log(FIXTURE);
+        let mut pre = f[3].clone();
+        pre.draws = 3;
+        f.insert(3, pre);
+        let m = classify(&f, SCREEN).unwrap();
+        assert_eq!((m.opaque, m.depth_linear, m.effects), (4, 5, 10));
     }
 
     #[test]
