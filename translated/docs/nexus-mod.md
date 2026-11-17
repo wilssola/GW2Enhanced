@@ -86,7 +86,7 @@ Tags: **Mod content: AI Generated** (machine translation); **Media: AI-Generated
 Describe how AI was used:
 
 > The pt-BR dictionary was machine translated from the game's English text with NVIDIA Nemotron, a language model, and
-> is improved over time by players' votes and suggestions on the project's website, which go through a review before
+> is improved over time by players votes and suggestions on the project's website, which go through a review before
 > they are used. Text missing from the dictionary is translated on the player's PC by OPUS-MT, an offline neural
 > machine translation model.
 
