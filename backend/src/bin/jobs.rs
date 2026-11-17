@@ -33,6 +33,8 @@ const API: &str = "https://api.cloudflare.com/client/v4";
 const RELEASE_PAGE: u64 = 5000;
 const BACKUP_PAGE: u64 = 5000;
 const BACKUP_PART_ROWS: usize = 50_000;
+/// Waits of 15 s after a D1 429 before the job gives up.
+const D1_RETRIES: u32 = 4;
 
 type Res<T> = Result<T, String>;
 
@@ -107,14 +109,24 @@ impl Cf {
 
     fn d1(&self, body: &Value) -> Res<Vec<Value>> {
         let url = format!("{API}/accounts/{}/d1/database/{}/query", self.account, self.db);
-        let mut resp = self
-            .agent
-            .post(&url)
-            .header("Authorization", &format!("Bearer {}", self.token))
-            .send_json(body)
-            .map_err(|e| format!("D1: {e}"))?;
-        let status = resp.status();
-        let text = resp.body_mut().with_config().limit(256 << 20).read_to_string().map_err(|e| format!("D1: {e}"))?;
+        // D1 answers 429 ("overloaded") when the database used too much in the last 10 seconds: wait it out.
+        let mut attempt = 0;
+        let (status, text) = loop {
+            let mut resp = self
+                .agent
+                .post(&url)
+                .header("Authorization", &format!("Bearer {}", self.token))
+                .send_json(body)
+                .map_err(|e| format!("D1: {e}"))?;
+            let status = resp.status();
+            let text = resp.body_mut().with_config().limit(256 << 20).read_to_string().map_err(|e| format!("D1: {e}"))?;
+            if status.as_u16() == 429 && attempt < D1_RETRIES {
+                attempt += 1;
+                std::thread::sleep(Duration::from_secs(15));
+                continue;
+            }
+            break (status, text);
+        };
         let v: Value = serde_json::from_str(&text).map_err(|_| format!("D1 HTTP {status}: {text:.300}"))?;
         if !status.is_success() || v["success"] != json!(true) {
             return Err(format!("D1 HTTP {status}: {}", v["errors"]));

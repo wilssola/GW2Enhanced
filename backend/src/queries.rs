@@ -1326,6 +1326,9 @@ pub fn release_page(lang: &str, after: &str, limit: u64) -> Q {
         .and_where(Expr::col((P, IdPairs::TextKey)).equals((C, Current::TextKey)))
         .and_where(Expr::col((P, IdPairs::State)).eq("trusted"))
         .to_owned();
+    // `current` is read in primary key order from `after` on: the CROSS JOINs keep it the outer table, and the unary
+    // `+` keeps the planner off the `lang` indexes. Without both, every page read and sorted the whole language
+    // (~900k rows read and ~6.5 s per page on D1), and the daily release job hit D1's "overloaded" limit.
     sqlite(
         &Query::select()
             .column((C, Current::TextKey))
@@ -1334,19 +1337,11 @@ pub fn release_page(lang: &str, after: &str, limit: u64) -> Q {
             .column((X, Translations::Source))
             .expr_as(ids, Alias::new("ids"))
             .from_as(Current::Table, C)
-            .join_as(
-                JoinType::InnerJoin,
-                Texts::Table,
-                T,
-                Expr::col((T, Texts::Key)).equals((C, Current::TextKey)),
-            )
-            .join_as(
-                JoinType::InnerJoin,
-                Translations::Table,
-                X,
-                Expr::col((X, Translations::Id)).equals((C, Current::TranslationId)),
-            )
-            .and_where(Expr::col((C, Current::Lang)).eq(lang))
+            .join_as(JoinType::CrossJoin, Texts::Table, T, Cond::all())
+            .join_as(JoinType::CrossJoin, Translations::Table, X, Cond::all())
+            .and_where(Expr::col((T, Texts::Key)).equals((C, Current::TextKey)))
+            .and_where(Expr::col((X, Translations::Id)).equals((C, Current::TranslationId)))
+            .and_where(Expr::cust(r#"+"c"."lang""#).eq(lang))
             .and_where(Expr::col((C, Current::TextKey)).gt(after))
             .and_where(Expr::col((T, Texts::State)).eq("trusted"))
             .and_where(Expr::col((X, Translations::Review)).eq("passed"))

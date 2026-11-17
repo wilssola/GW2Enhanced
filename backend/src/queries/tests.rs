@@ -471,6 +471,14 @@ fn listing_reads_an_index_in_order_without_sorting() {
     }
 }
 
+#[test]
+fn release_pages_read_current_in_key_order_without_sorting() {
+    let c = listing_db();
+    let p = plan(&c, &release_page("pt-BR", "k", 5000));
+    assert!(p.starts_with("SEARCH c USING INDEX sqlite_autoindex_current_1 (text_key>?)"), "{p}");
+    assert!(!p.contains("TEMP B-TREE"), "sorts: {p}");
+}
+
 fn plan(c: &Connection, (sql, v): &Q) -> String {
     rows(c, &(format!("EXPLAIN QUERY PLAN {sql}"), v.clone()))
         .iter()
