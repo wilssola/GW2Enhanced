@@ -519,6 +519,19 @@ impl Overlay {
             log!("overlay: textures {}", if on { "ON" } else { "OFF" });
         }
         hint(ui, tr("Off: the game's original textures.", "Desligadas: as texturas originais do jogo."));
+        // The memory guard (diag::guard_start) pauses the HD files while Windows is short of commit: say so here, or the
+        // pack looks as if it were not loading.
+        let (level, free_mb) = crate::commit_status();
+        if on && level > 0 {
+            let (en, pt) = if level >= 2 {
+                ("HD paused: Windows is almost out of memory ({} MB free). The game keeps its original textures until memory is freed (close other programs).",
+                 "HD pausado: o Windows está quase sem memória ({} MB livres). O jogo fica com as texturas originais até liberar memória (feche outros programas).")
+            } else {
+                ("Little memory free in Windows ({} MB): the HD cache was reduced. Close other programs if textures load slowly.",
+                 "Pouca memória livre no Windows ({} MB): o cache HD foi reduzido. Feche outros programas se as texturas demorarem.")
+            };
+            ui.text_wrapped(tr(en, pt).replace("{}", &free_mb.to_string()));
+        }
         ui.separator();
         self.folder_section(ui);
         let mut all = crate::composite::ALL_4X.load(Ordering::Relaxed);
