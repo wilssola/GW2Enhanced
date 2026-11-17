@@ -119,7 +119,7 @@ fn v15_the_dynamic_copy_windows() {
 fn v14_the_record_cap_and_the_triangle_budget() {
     // A crowd: draws arrive in the engine's order; each is admitted while fewer than MAX_RECS records and MAX_FRAME_TRIS triangles.
     // v16: 256 records / 800000 triangles (changed test: v14 pinned 64 / 400000, the replaced behaviour)
-    assert_eq!((MAX_RECS, MAX_FRAME_TRIS), (96, 300_000));
+    assert_eq!((MAX_RECS, MAX_FRAME_TRIS), (128, 450_000));
     assert_eq!(admit(0, 0, 1000), Ok(()));
     assert_eq!(admit(MAX_RECS - 1, 0, 1000), Ok(()));
     assert_eq!(admit(MAX_RECS, 0, 1000), Err("too many shell draws this frame (cap)"));
@@ -138,8 +138,8 @@ fn v14_the_record_cap_and_the_triangle_budget() {
         }
         k
     };
-    // v19: up to 96 draws (the near characters: the engine draws near to far); v16 took every draw of the largest frames (247).
-    for (n, want) in [(82usize, 82usize), (130, 96), (47, 47), (136, 96), (247, 96)] {
+    // up to 128 draws (the near characters: the engine draws near to far); v16 took every draw of the largest frames (247).
+    for (n, want) in [(82usize, 82usize), (130, 128), (47, 47), (136, 128), (247, 128)] {
         assert_eq!(crowd(n, 1100), want);
         println!("a frame of {n} fur draws: v13 {} records, v14/v15 {}, v16 {}", n.min(24), n.min(64), crowd(n, 1100));
     }

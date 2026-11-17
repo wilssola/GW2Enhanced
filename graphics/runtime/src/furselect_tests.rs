@@ -269,11 +269,14 @@ fn fur_grey_horn_on_a_light_coat_stays_bare_and_the_coat_keeps_its_fur() {
 
 #[test]
 fn fur_a_crowd_shares_one_strand_budget() {
-    use crate::shellfur::{FRAME_SHELL_BUDGET, shell_share};
-    assert_eq!(shell_share(16, 1), 16, "one character: the full count");
-    assert_eq!(shell_share(16, 48), 16, "48 draws fit the budget");
-    assert_eq!(shell_share(16, 60), 12, "more: fewer each");
-    assert_eq!(shell_share(16, 96), 12, "never under 12 (fewer show the layers as bands)");
-    assert!(60 * shell_share(16, 60) <= FRAME_SHELL_BUDGET);
-    assert_eq!(shell_share(16, 0), 16);
+    use crate::shellfur::{FRAME_SHELL_BUDGET, SHARE_MIN_SHELLS, shell_share};
+    assert_eq!(shell_share(16, 1, 0), 16, "one character: the full count");
+    assert!((0..96).all(|k| shell_share(16, 96, k) == 16), "96 draws fit the budget");
+    // A crowd: the nearest draws (first in the engine's near-to-far order) keep the full count, the far ones drop to the minimum.
+    assert_eq!(shell_share(32, 100, 0), 32, "the nearest: full");
+    assert_eq!(shell_share(32, 100, 99), SHARE_MIN_SHELLS, "the farthest: the minimum");
+    assert!((1..100).all(|k| shell_share(32, 100, k) <= shell_share(32, 100, k - 1)), "never more for a farther draw");
+    assert!((0..100).map(|k| shell_share(32, 100, k)).sum::<u32>() <= FRAME_SHELL_BUDGET, "the frame stays in the budget");
+    assert_eq!(shell_share(16, 200, 0), SHARE_MIN_SHELLS, "past the budget everyone keeps the minimum (fewer show bands)");
+    assert_eq!(shell_share(8, 3, 2), 8, "fewer shells wanted than the minimum: what is wanted");
 }

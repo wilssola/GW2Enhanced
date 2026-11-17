@@ -78,11 +78,11 @@ const SHELL_FORMAT: u32 = 41;
 /// 86 / 87). Every fur draw of those frames fits now; the LOD ends the far ones in the geometry shader at once.
 /// v19: 96. With fur_auto every charr NPC of a crowd gets the passes (stats, shells, skin): 247 draws x 16 shells stalled the game.
 /// The engine draws the characters near to far, so the cap keeps the near ones; the hysteresis keeps the choice stable.
-pub const MAX_RECS: usize = 96;
+pub const MAX_RECS: usize = 128;
 /// v16: the triangles all records of a frame may hold together (v14: 400000; the crowd frames record 60k for 64 draws, ~250k for 247).
 /// Past it, or past MAX_RECS, a draw that had shells in the previous frame takes the slot of one that did not (`Shell::victim`): the
 /// choice stays stable across frames instead of following the draw order.
-pub const MAX_FRAME_TRIS: u32 = 300_000; // v19 (v16: 800000)
+pub const MAX_FRAME_TRIS: u32 = 450_000; // v19 (v16: 800000)
 /// v14: a DYNAMIC vertex / index buffer is copied at the draw (a mod-owned DEFAULT buffer, pooled per record) when it is at most this
 /// big; the frame's copies together at most DYN_FRAME_BYTES. Larger: refused as before (fail open).
 pub const DYN_MAX_BYTES: u32 = 4 << 20;
@@ -1262,16 +1262,18 @@ pub fn ps_rect_values(d: &Discrim, count: u32) -> [[f32; 4]; 1 + MAX_UV_RECTS] {
 /// once its atlas is proven fur (until then it is only measured).
 /// v19: the shells a frame draws in all (records x shells): past it the shells of each record shrink (never under SHARE_MIN_SHELLS:
 /// fewer show the layers as horizontal bands), so a crowd shares one budget. A record is one draw (a character has several).
-pub const FRAME_SHELL_BUDGET: u32 = 768;
+/// The budget goes to the nearest draws first: the engine draws the characters near to far, so a record's rank in the frame is its
+/// distance order; every draw keeps SHARE_MIN_SHELLS and the rest of the budget fills the near ones up to `fur_shells`.
+pub const FRAME_SHELL_BUDGET: u32 = 1536;
 pub const SHARE_MIN_SHELLS: u32 = 12;
 
-/// The shells each of `n` fur draws gets this frame (`want` = `fur_shells`).
-pub fn shell_share(want: u32, n: usize) -> u32 {
-    if n == 0 {
-        return want;
-    }
-    let each = FRAME_SHELL_BUDGET / n as u32;
-    want.min(each.max(SHARE_MIN_SHELLS))
+/// The shells the fur draw of `rank` (0 = nearest, in the frame's draw order) gets this frame, out of `n` (`want` = `fur_shells`).
+pub fn shell_share(want: u32, n: usize, rank: usize) -> u32 {
+    let min = SHARE_MIN_SHELLS.min(want);
+    let spare = FRAME_SHELL_BUDGET.saturating_sub(min.saturating_mul(n as u32));
+    let extra = want - min;
+    let used_before = extra.saturating_mul(rank as u32);
+    min + extra.min(spare.saturating_sub(used_before))
 }
 
 pub fn shells_allowed(auto: bool, atlas: usize) -> bool {
@@ -3527,9 +3529,9 @@ unsafe fn replay(s: &mut Shell, dev: Obj, ctx: Obj, dsrv: Obj, c: &ShellCfg, dep
         set_gs_srv(ctx, 0, 1, &dsrv);
         set_gs_cb(ctx, 0, 1, &s.cb_gs);
         let mut drawn = 0u32;
-        // v19: the frame's strands are shared out: many fur draws on screen get fewer shells each (shell_share).
+        // v19: the frame's strands are shared out: many fur draws on screen get fewer shells each, the nearest first (shell_share).
         let n_fur = (0..s.recs.len()).filter(|&i| !gss[i].0.is_null() && shells_allowed(s.recs[i].auto, s.recs[i].tex0 as usize)).count();
-        let shared = ShellCfg { shells: shell_share(c.shells, n_fur), ..c.clone() };
+        let mut rank = 0usize;
         for i in 0..s.recs.len() {
             let (gs, _, _, _) = gss[i];
             if gs.is_null() {
@@ -3539,6 +3541,8 @@ unsafe fn replay(s: &mut Shell, dev: Obj, ctx: Obj, dsrv: Obj, c: &ShellCfg, dep
             if !shells_allowed(r.auto, r.tex0 as usize) {
                 continue;
             }
+            let shared = ShellCfg { shells: shell_share(c.shells, n_fur, rank), ..c.clone() };
+            rank += 1;
             let geom = DrawGeom { vp: [r.vp.x, r.vp.y, r.vp.w, r.vp.h], ccw: r.ccw };
             if !write_cb(ctx, s.cb_gs, &gs_cb_values(&shared, &geom, time, depth_unit, unit)) {
                 continue;
