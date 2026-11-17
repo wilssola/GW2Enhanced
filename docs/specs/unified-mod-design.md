@@ -117,10 +117,25 @@ The window is titled **GW2 Enhanced** and has a tab per built-in feature (**Tran
 | `hotkey_translation`, `hotkey_textures`, `hotkey_graphics` | every build with that feature | single-feature build: opens / closes the window; full build: opens it on that feature's tab (again on that tab: closes); equal to `hotkey`: acts as `hotkey` |
 
 The graphics feature does its per-frame work inside the render loop whether the window is open or not (it is the
-frame tick of its passes). The translation's first-run setup and the update prompt are windows of their own, shown
-with the main window closed. Every panel is drawn inside `catch_unwind`: a panel that panics is turned off and
+frame tick of its passes). The first-time setup and the update prompt are windows of their own, shown with the main
+window closed. Every panel is drawn inside `catch_unwind`: a panel that panics is turned off and
 recorded in the registry, and the other tabs keep working. The mouse cursor is drawn while any window is open, never
 under HDR10 output (it would be drawn at 10000 nits).
+
+### First-time setup and Screenshots
+
+The general parts are each feature's own in a build with one feature, and one shared part in a build with several:
+
+- **First-time setup** (`core/src/setup.rs`, `enhanced/src/setup.rs`). Each feature gives its pages (`SETUP_PAGES`,
+  `setup_page`), says whether it still needs them (`setup_pending`: translation `onboarded`, textures no pack and no
+  `setup_done`, graphics `graphics_setup_done`) and marks them done (`setup_finish`). The host shows one window 20 s
+  after the start: a welcome page with the overlay language, then the pages of every feature still pending; the pages
+  are fixed when the window opens. Finishing or skipping marks every feature shown as done. A single-feature build
+  shows only that feature's pages, and its tab has a "Run the first-time setup again" button; the full build hides
+  those buttons (`setup::set_hosted`) and has one in the Version tab, which shows every feature's pages again.
+- **Screenshots** (`enhanced/src/screens.rs`). In a build with the graphics and another feature, the Graphics tab's
+  photo section moves to a Screenshots tab (`PHOTO_HOSTED`), next to on/off comparisons of the translation and of the
+  HD textures, taken by the graphics photo mode (`graphics/docs/photo.md`, named shots).
 
 ### Health tab
 

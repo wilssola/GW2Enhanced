@@ -17,6 +17,7 @@ pub mod registry;
 pub mod release;
 pub mod resolve;
 pub mod settings;
+pub mod setup;
 pub mod signed;
 pub mod site;
 

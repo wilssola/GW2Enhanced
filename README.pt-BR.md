@@ -128,6 +128,7 @@ O `GW2Enhanced\config.ini` na pasta do jogo guarda as configurações compartilh
 | `log_translation` | `0` | Log da tradução: `GW2Translated\gw2translated_log.txt` |
 | `log_textures` | `0` | Log das texturas HD: `GW2Remastered\gw2remastered_log.txt` |
 | `log_graphics` | `0` | Log dos gráficos: `GW2Graphics\gw2graphics_log.txt` |
+| `graphics_setup_done` | `false` | A parte dos gráficos da configuração inicial foi concluída ou pulada (`false` mostra de novo) |
 | `check_updates` | `true` | Procurar uma nova versão ao iniciar |
 
 Os logs ficam **desligados por padrão**: nenhum arquivo de log é escrito. Ao relatar um problema, primeiro ligue os **Logs** da parte que

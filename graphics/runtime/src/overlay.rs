@@ -84,6 +84,9 @@ static VISIBLE: AtomicBool = AtomicBool::new(false);
 /// Graphics tab then leaves its Photo section out.
 pub static PHOTO_HOSTED: AtomicBool = AtomicBool::new(false);
 
+/// `graphics_setup_done`: 0 = not read yet, 1 = no, 2 = yes.
+static SETUP_DONE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 /// The overlay window is open.
 pub fn visible() -> bool {
     VISIBLE.load(Ordering::Relaxed)
@@ -288,6 +291,10 @@ impl Overlay {
             "Desligados: o visual original do jogo, já no próximo quadro. Com saída HDR, a conversão final continua ligada (brilho SDR simples); para desfazer a saída HDR por completo é preciso reiniciar.",
         ));
         help(ui, &trf!("Effects: {}", "Efeitos: {}", crate::toggles::status_text()));
+        // One shared button in a build with several features (the Version tab), this one when the graphics are alone.
+        if !gw2enhanced_core::setup::hosted() && ui.button(tr("Run the first-time setup again###setup-again", "Refazer a configuração inicial###setup-again")) {
+            gw2enhanced_core::setup::request_again();
+        }
         ui.separator();
         if section(ui, tr("General / HDR###sec-general", "Geral / HDR###sec-general"), true) {
             self.sec_general(ui);
@@ -1232,6 +1239,86 @@ impl Overlay {
             self.picker_open = false;
             self.picker_sel = None;
         }
+    }
+
+    /// Pages of the graphics in the first-time setup (the host draws the window, with the other features' pages).
+    pub const SETUP_PAGES: usize = 1;
+
+    /// The graphics part of the setup was never completed or skipped (`graphics_setup_done` in GW2Enhanced\config.ini).
+    pub fn setup_pending() -> bool {
+        match SETUP_DONE.load(Ordering::Relaxed) {
+            0 => {
+                let done = gw2enhanced_core::settings::get(&gw2enhanced_core::settings::read(), "graphics_setup_done")
+                    .and_then(|v| gw2enhanced_core::settings::parse_bool(&v))
+                    .unwrap_or(false);
+                SETUP_DONE.store(if done { 2 } else { 1 }, Ordering::Relaxed);
+                !done
+            }
+            v => v == 1,
+        }
+    }
+
+    pub fn setup_finish() {
+        if SETUP_DONE.swap(2, Ordering::Relaxed) != 2
+            && let Err(e) = gw2enhanced_core::settings::save("graphics_setup_done", "true", Some("The graphics part of the first-time setup was done"))
+        {
+            log!("overlay: could not save graphics_setup_done: {e}");
+        }
+    }
+
+    /// The setup page: the main switch, HDR output and the brightness levels; each choice is kept right away.
+    pub fn setup_page(&mut self, ui: &Ui, _i: usize) -> bool {
+        ui.text_wrapped(tr(
+            "Graphics: HDR, lighting and effects inside the game's own renderer, before the UI. Every effect has its own switch in the Graphics tab.",
+            "Gráficos: HDR, iluminação e efeitos dentro do próprio renderizador do jogo, antes da interface. Cada efeito tem sua chave na aba Gráficos.",
+        ));
+        let mut on = self.cfg.enabled && !crate::toggles::master_off();
+        if ui.checkbox(tr("Graphics on###setup-gfx", "Gráficos ligados###setup-gfx"), &mut on) {
+            self.set_graphics_on(on);
+        }
+        ui.spacing();
+        let mut idx = match self.cfg.hdr_output {
+            HdrOutput::Auto => 0,
+            HdrOutput::On => 1,
+            HdrOutput::Off => 2,
+        };
+        if ui.combo_simple_string(tr("HDR output###setup-hdr", "Saída HDR###setup-hdr"), &mut idx, &[tr("Auto", "Automático"), tr("On", "Ligado"), tr("Off", "Desligado")]) {
+            self.cfg.hdr_output = [HdrOutput::Auto, HdrOutput::On, HdrOutput::Off][idx.min(2)];
+            let mut saved = Config::load(&self.path);
+            saved.hdr_output = self.cfg.hdr_output;
+            if let Err(e) = saved.save(&self.path) {
+                log!("overlay: could not save hdr_output to {}: {e}", self.path.display());
+            }
+        }
+        help(ui, tr(
+            "For an HDR monitor with Windows HDR on. Applies at the next game start.",
+            "Para um monitor HDR com o HDR do Windows ligado. Vale a partir do próximo início do jogo.",
+        ));
+        let (mut pw, mut peak) = (self.cfg.paper_white_nits, self.cfg.peak_nits);
+        let c1 = ui.slider(tr("Paper white (nits)###setup-pw", "Branco de referência (nits)###setup-pw"), PAPER_WHITE_RANGE.0, PAPER_WHITE_RANGE.1, &mut pw);
+        let k1 = ui.is_item_deactivated_after_edit();
+        let c2 = ui.slider(tr("Peak (nits)###setup-peak", "Pico (nits)###setup-peak"), PEAK_RANGE.0, PEAK_RANGE.1, &mut peak);
+        let k2 = ui.is_item_deactivated_after_edit();
+        if c1 || c2 {
+            let (pw, peak, _) = clamp_levels(pw, peak, self.cfg.bloom_strength);
+            self.cfg.paper_white_nits = pw;
+            self.cfg.peak_nits = peak;
+        }
+        if k1 || k2 {
+            if output::mode() == OutputMode::ScRgb && self.cfg.enabled {
+                output::set_levels(self.cfg.paper_white_nits, self.cfg.peak_nits);
+            }
+            let mut saved = Config::load(&self.path);
+            (saved.paper_white_nits, saved.peak_nits) = (self.cfg.paper_white_nits, self.cfg.peak_nits);
+            if let Err(e) = saved.save(&self.path) {
+                log!("overlay: could not save the HDR levels to {}: {e}", self.path.display());
+            }
+        }
+        help(ui, tr(
+            "Paper white: how bright white paper and the UI look (about 200-300 for a room with light). Peak: your monitor's highest brightness. HDR output only; the calibration patterns are in the Graphics tab.",
+            "Branco de referência: o brilho do papel branco e da interface (cerca de 200-300 num ambiente iluminado). Pico: o brilho máximo do seu monitor. Só com saída HDR; os padrões de calibração estão na aba Gráficos.",
+        ));
+        false
     }
 
     /// The photo mode's controls, for the enhanced overlay's Screenshots tab.

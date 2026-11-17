@@ -128,6 +128,7 @@ To uninstall, delete `msimg32.dll` from the game folder (or run the installer wi
 | `log_translation` | `0` | Log of the translation: `GW2Translated\gw2translated_log.txt` |
 | `log_textures` | `0` | Log of the HD textures: `GW2Remastered\gw2remastered_log.txt` |
 | `log_graphics` | `0` | Log of the graphics: `GW2Graphics\gw2graphics_log.txt` |
+| `graphics_setup_done` | `false` | The graphics part of the first-time setup was finished or skipped (`false` shows it again) |
 | `check_updates` | `true` | Look for a new release at start |
 
 Logs are **off by default**: no log file is written. When you report a problem, turn on **Logs** for the part that

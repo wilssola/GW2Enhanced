@@ -5,9 +5,9 @@
 //! - Language selector (saved to `config.ini`, used after a restart).
 //! - Options that apply immediately (see [`crate::runtime`]).
 //! - "Refresh texts now" and a status line.
-//! - A first-time setup (onboarding) shown until it is completed: language,
-//!   what to translate, where the local translator runs (GPU or CPU), speech
-//!   bubbles and the invitation to contribute.
+//! - The pages of the first-time setup (onboarding), drawn by the host's setup window until it is completed:
+//!   language, what to translate, where the local translator runs (GPU or CPU), speech bubbles and the
+//!   invitation to contribute.
 //!
 //! Text shown here follows the overlay language ([`gw2enhanced_core::i18n`], [`crate::ui_text`]), which is not the
 //! language the game is translated into.
@@ -25,22 +25,16 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindow
 use crate::config::{Contribute, Device};
 use crate::runtime::{self, Flag};
 use crate::ui_text::{T, language_name, text};
-use gw2enhanced_core::i18n::{self, Lang};
+use gw2enhanced_core::i18n;
 use crate::{gpu, live, log, refresh};
 
-/// The first-time setup waits for the game to finish its first loading screen.
-const INVITE_DELAY: Duration = Duration::from_secs(20);
-/// Steps of the first-time setup.
-const WIZARD_STEPS: usize = 5;
 /// How often the graphics card list (free memory) is read again.
 const GPU_REFRESH: Duration = Duration::from_secs(5);
 
 static VISIBLE: AtomicBool = AtomicBool::new(false);
-static INVITING: AtomicBool = AtomicBool::new(false);
-
-/// The window or the invitation is on screen (the host then draws the cursor and passes input through).
+/// The window is on screen (the host then draws the cursor and passes input through).
 pub fn is_visible() -> bool {
-    VISIBLE.load(Ordering::Relaxed) || INVITING.load(Ordering::Relaxed)
+    VISIBLE.load(Ordering::Relaxed)
 }
 
 /// Opens or closes the window (the host uses it when translation is the only feature built in).
@@ -54,16 +48,11 @@ pub static HIDE_HOST: AtomicBool = AtomicBool::new(false);
 pub struct Overlay {
     key: i32,
     key_down: bool,
-    started: Instant,
     /// Language in use (the one loaded at startup).
     language: String,
     languages: Vec<String>,
     selected: usize,
     language_changed: bool,
-    /// Current step of the first-time setup.
-    step: usize,
-    /// Run the first-time setup again (from the main window).
-    wizard_again: bool,
     gpus: Vec<gpu::Gpu>,
     gpus_read: Option<Instant>,
 }
@@ -89,94 +78,62 @@ impl Overlay {
         &self.gpus
     }
 
-    fn finish_wizard(&mut self) {
-        runtime::set_onboarded();
-        self.wizard_again = false;
-        self.step = 0;
+    /// Pages of the translation in the first-time setup (the host draws the window, with the other features' pages).
+    pub const SETUP_PAGES: usize = 5;
+
+    /// The setup has not been completed or skipped yet.
+    pub fn setup_pending() -> bool {
+        !runtime::onboarded()
     }
 
-    /// First-time setup, centered, until completed or skipped.
-    pub fn wizard(&mut self, ui: &Ui) {
-        let show = (self.wizard_again || !runtime::onboarded()) && self.started.elapsed() >= INVITE_DELAY;
-        INVITING.store(show, Ordering::Relaxed);
-        if !show {
-            return;
-        }
-        let [w, h] = ui.io().display_size;
-        let title = format!(
-            "{}  ({} {}/{})###gw2translated-setup",
-            self.t(T::WizTitle),
-            self.t(T::WizStep),
-            self.step + 1,
-            WIZARD_STEPS
-        );
-        ui.window(title)
-            .position([w / 2.0, h / 2.0], Condition::Always)
-            .position_pivot([0.5, 0.5])
-            .size([620.0 * ui.io().font_global_scale, 0.0], Condition::Always)
-            .flags(WindowFlags::NO_COLLAPSE | WindowFlags::NO_RESIZE | WindowFlags::NO_MOVE)
-            .build(|| {
-                match self.step {
-                    0 => {
-                        ui.text_wrapped(self.t(T::WizIntro));
-                        ui.spacing();
-                        overlay_language_picker(ui);
-                        ui.spacing();
-                        self.language_picker(ui);
-                    }
-                    1 => {
-                        ui.text(self.t(T::WizTranslateTitle));
-                        ui.separator();
-                        self.flag(ui, Flag::Translate, T::Translate);
-                        self.flag(ui, Flag::LiveTranslate, T::LiveTranslate);
-                        self.flag(ui, Flag::WebTranslate, T::WebTranslate);
-                    }
-                    2 => {
-                        ui.text(self.t(T::WizDeviceTitle));
-                        ui.separator();
-                        ui.text_wrapped(self.t(T::WizDeviceHint));
-                        ui.spacing();
-                        self.device_picker(ui);
-                    }
-                    3 => {
-                        ui.text(self.t(T::WizBubbleTitle));
-                        ui.separator();
-                        self.bubble_wait(ui);
-                    }
-                    _ => {
-                        ui.text(self.t(T::PopupTitle));
-                        ui.separator();
-                        ui.text_wrapped(self.t(T::PopupBody));
-                        ui.spacing();
-                        if ui.button(self.t(T::PopupYes)) {
-                            runtime::set_contribute(true);
-                            self.finish_wizard();
-                        }
-                        ui.same_line();
-                        if ui.button(self.t(T::PopupNo)) {
-                            runtime::set_contribute(false);
-                            self.finish_wizard();
-                        }
-                    }
-                }
+    pub fn setup_finish() {
+        runtime::set_onboarded();
+    }
+
+    /// Page `i` of the setup. True: the page was answered and the setup moves on (the contribution question).
+    pub fn setup_page(&mut self, ui: &Ui, i: usize) -> bool {
+        match i {
+            0 => {
+                ui.text_wrapped(self.t(T::WizIntro));
                 ui.spacing();
+                self.language_picker(ui);
+            }
+            1 => {
+                ui.text(self.t(T::WizTranslateTitle));
                 ui.separator();
-                if self.step > 0 && ui.button(self.t(T::Back)) {
-                    self.step -= 1;
+                self.flag(ui, Flag::Translate, T::Translate);
+                self.flag(ui, Flag::LiveTranslate, T::LiveTranslate);
+                self.flag(ui, Flag::WebTranslate, T::WebTranslate);
+            }
+            2 => {
+                ui.text(self.t(T::WizDeviceTitle));
+                ui.separator();
+                ui.text_wrapped(self.t(T::WizDeviceHint));
+                ui.spacing();
+                self.device_picker(ui);
+            }
+            3 => {
+                ui.text(self.t(T::WizBubbleTitle));
+                ui.separator();
+                self.bubble_wait(ui);
+            }
+            _ => {
+                ui.text(self.t(T::PopupTitle));
+                ui.separator();
+                ui.text_wrapped(self.t(T::PopupBody));
+                ui.spacing();
+                if ui.button(self.t(T::PopupYes)) {
+                    runtime::set_contribute(true);
+                    return true;
                 }
-                if self.step + 1 < WIZARD_STEPS {
-                    if self.step > 0 {
-                        ui.same_line();
-                    }
-                    if ui.button(self.t(T::Next)) {
-                        self.step += 1;
-                    }
-                    ui.same_line();
-                    if ui.button(self.t(T::Skip)) {
-                        self.finish_wizard();
-                    }
+                ui.same_line();
+                if ui.button(self.t(T::PopupNo)) {
+                    runtime::set_contribute(false);
+                    return true;
                 }
-            });
+            }
+        }
+        false
     }
 
     fn language_picker(&mut self, ui: &Ui) {
@@ -286,11 +243,11 @@ impl Overlay {
         }
 
         ui.separator();
-        if ui.button(self.t(T::OnboardAgain)) {
-            self.wizard_again = true;
-            self.step = 0;
+        // One shared button in a build with several features (the Version tab), this one when translation is alone.
+        if !gw2enhanced_core::setup::hosted() && ui.button(self.t(T::OnboardAgain)) {
+            gw2enhanced_core::setup::request_again();
             VISIBLE.store(false, Ordering::Relaxed);
-        HIDE_HOST.store(true, Ordering::Relaxed);
+            HIDE_HOST.store(true, Ordering::Relaxed);
         }
         if ui.button(self.t(T::RefreshNow)) {
             refresh::request_now();
@@ -349,7 +306,7 @@ impl ImguiRenderLoop for Overlay {
     }
 
     fn before_render<'a>(&'a mut self, ctx: &mut Context, _render_context: &'a mut dyn RenderContext) {
-        let interactive = VISIBLE.load(Ordering::Relaxed) || INVITING.load(Ordering::Relaxed);
+        let interactive = VISIBLE.load(Ordering::Relaxed);
         let io = ctx.io_mut();
         // Readable on 1080p and above; the default font is 13 px.
         io.font_global_scale = (io.display_size[1] / 1080.0).clamp(1.0, 2.0);
@@ -359,7 +316,6 @@ impl ImguiRenderLoop for Overlay {
     fn render(&mut self, ui: &mut Ui) {
         self.poll_key();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.wizard(ui);
             if VISIBLE.load(Ordering::Relaxed) {
                 self.main_window(ui);
             }
@@ -370,27 +326,10 @@ impl ImguiRenderLoop for Overlay {
     }
 
     fn message_filter(&self, _io: &Io) -> MessageFilter {
-        if VISIBLE.load(Ordering::Relaxed) || INVITING.load(Ordering::Relaxed) {
+        if VISIBLE.load(Ordering::Relaxed) {
             MessageFilter::InputAll
         } else {
             MessageFilter::empty()
-        }
-    }
-}
-
-/// The overlay language (the same setting as the selector above the main window's tabs), for the first-time setup,
-/// which is a window of its own.
-fn overlay_language_picker(ui: &Ui) {
-    let cur = i18n::current();
-    ui.text(i18n::tr("Overlay language", "Idioma do overlay"));
-    if let Some(_c) = ui.begin_combo("##wizard-overlay-language", cur.name()) {
-        for l in Lang::ALL {
-            if ui.selectable_config(l.name()).selected(l == cur).build()
-                && l != cur
-                && let Err(e) = i18n::choose(l)
-            {
-                log!("overlay: could not save ui_language: {e}");
-            }
         }
     }
 }
@@ -434,13 +373,10 @@ pub fn install(_module: usize, language: &str, languages_dir: PathBuf, key: u32)
     let overlay = Overlay {
         key: key as i32,
         key_down: false,
-        started: Instant::now(),
         language: language.to_owned(),
         languages,
         selected,
         language_changed: false,
-        step: 0,
-        wizard_again: false,
         gpus: Vec::new(),
         gpus_read: None,
     };

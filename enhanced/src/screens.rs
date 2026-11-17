@@ -4,6 +4,9 @@
 //!
 //! A comparison shoots the current state, switches the feature, waits until the picture follows, shoots again and puts the
 //! feature back. The steps are a small pure machine (`advance`, tested); `Screens::tick` drives it once per frame.
+//!
+//! Only a build with the graphics and another feature has the tab; in the others this module is unused.
+#![cfg_attr(not(all(feature = "graphics", any(feature = "translation", feature = "textures"))), allow(dead_code, unused_variables))]
 
 use std::time::{Duration, Instant};
 

@@ -10,6 +10,7 @@
 mod hotkeys;
 mod proxy;
 mod screens;
+mod setup;
 mod update;
 
 use std::ffi::c_void;
@@ -158,6 +159,7 @@ fn hotkey_targets() -> Vec<hotkeys::Target> {
 }
 
 /// The Screenshots tab: in a build with several features, when the graphics (whose photo mode takes the pictures) are in.
+#[cfg(feature = "graphics")]
 fn screens_tab() -> bool {
     full_build() && cfg!(feature = "graphics")
 }
@@ -203,12 +205,8 @@ fn full_build() -> bool {
     cfg!(feature = "translation") as u8 + cfg!(feature = "textures") as u8 + cfg!(feature = "graphics") as u8 > 1
 }
 
-/// The hotkeys, and the first-run prompt of the textures (opens the panel once when there is no pack).
+/// The hotkeys.
 fn host_tick(o: &mut Overlay) {
-    #[cfg(feature = "textures")]
-    if let Some(p) = o.textures.as_mut() {
-        p.tick();
-    }
     match o.keys.poll(&hotkey_targets(), full_build()) {
         Some(hotkeys::Action::Toggle) => host_set_visible(!host_shown()),
         Some(hotkeys::Action::Tab(t)) => {
@@ -271,11 +269,7 @@ fn host_hide() {
 
 /// Some window of ours is on screen (the main one, or the translation's first-time setup).
 fn any_window() -> bool {
-    #[cfg(feature = "translation")]
-    if gw2translated::overlay::is_visible() {
-        return true;
-    }
-    host_shown()
+    setup::SHOWN.load(Ordering::Relaxed) || host_shown()
 }
 
 fn hdr10_active() -> bool {
@@ -302,7 +296,14 @@ struct Overlay {
     toast_from: Option<Instant>,
     toast_done: bool,
     /// The Screenshots tab (full builds with the graphics: their photo mode takes every capture).
+    #[cfg_attr(not(feature = "graphics"), allow(dead_code))]
     screens: screens::Screens,
+    /// When the overlay started (the setup waits for the first loading screen).
+    started: Instant,
+    /// The setup's current page, whether it was asked for again, and its pages (fixed while it is open).
+    setup_page: usize,
+    setup_again: bool,
+    setup_list: Option<Vec<(setup::Part, usize)>>,
 }
 
 /// How long the start-up notice stays (the last second fades out).
@@ -404,12 +405,11 @@ impl ImguiRenderLoop for Overlay {
         if gw2translated::overlay::HIDE_HOST.swap(false, Ordering::Relaxed) {
             host_hide();
         }
-        #[cfg(feature = "translation")]
-        if let Some(o) = self.translated.as_mut()
-            && std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| o.wizard(ui))).is_err()
-        {
-            self.translated = None;
-            registry::report("translation", "overlay", State::Off("setup window panicked".into()));
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.setup_window(ui))).is_err() {
+            self.setup_list = None;
+            self.setup_again = false;
+            setup::SHOWN.store(false, Ordering::Relaxed);
+            registry::report("overlay", "setup", State::Off("setup window panicked".into()));
         }
         let shown = host_shown();
         // Graphics works every frame (it is the frame tick of its passes), open panel or not.
@@ -498,7 +498,7 @@ impl ImguiRenderLoop for Overlay {
     }
 
     fn message_filter(&self, io: &Io) -> MessageFilter {
-        let mut f = if host_shown() || update::window_visible() {
+        let mut f = if any_window() || update::window_visible() {
             MessageFilter::InputAll
         } else {
             MessageFilter::empty()
@@ -607,6 +607,9 @@ fn version_tab(ui: &Ui, keys: &mut hotkeys::Poller) {
         && !update::checking()
     {
         update::check_now();
+    }
+    if full_build() && ui.button(tr("Run the first-time setup again###setup-again", "Refazer a configuração inicial###setup-again")) {
+        gw2enhanced_core::setup::request_again();
     }
     ui.separator();
     hotkey_rows(ui, keys);
@@ -734,7 +737,13 @@ fn install_overlay(module: usize) {
         toast_from: None,
         toast_done: false,
         screens: screens::Screens::default(),
+        started: Instant::now(),
+        setup_page: 0,
+        setup_again: false,
+        setup_list: None,
     };
+    // One setup and one "run it again" button for every feature in a build with several.
+    gw2enhanced_core::setup::set_hosted(full_build());
     #[cfg(feature = "graphics")]
     gw2graphics::overlay::PHOTO_HOSTED.store(screens_tab(), Ordering::Relaxed);
     while start.elapsed() < Duration::from_secs(40) {

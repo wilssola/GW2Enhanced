@@ -28,8 +28,6 @@ pub enum T {
     PopupYes,
     PopupNo,
     Resources,
-    WizTitle,
-    WizStep,
     WizIntro,
     WizTranslateTitle,
     WizDeviceTitle,
@@ -89,8 +87,6 @@ fn en(t: T) -> &'static str {
         T::PopupYes => "Yes, I want to help",
         T::PopupNo => "Not now",
         T::Resources => "Translator usage:",
-        T::WizTitle => "Welcome to GW2 Translated",
-        T::WizStep => "Step",
         T::WizIntro => {
             "Let's set up the translation in a few steps. You can change everything later in this overlay (Insert key)."
         }
@@ -157,8 +153,6 @@ fn pt_br(t: T) -> &'static str {
         T::PopupYes => "Sim, quero ajudar",
         T::PopupNo => "Agora não",
         T::Resources => "Uso do tradutor:",
-        T::WizTitle => "Bem-vindo ao GW2 Translated",
-        T::WizStep => "Passo",
         T::WizIntro => {
             "Vamos configurar a tradução em poucos passos. Dá para mudar tudo depois neste overlay (tecla Insert)."
         }
@@ -223,7 +217,7 @@ mod tests {
         T::Title, T::Language, T::LanguageRestart, T::Options, T::Translate, T::LiveTranslate, T::WebTranslate,
         T::Collect, T::Contribute, T::ContributeHint, T::RefreshNow, T::Status, T::StatusTexts, T::StatusLive,
         T::StatusLiveOff, T::CloseHint, T::PopupTitle, T::PopupBody, T::PopupYes, T::PopupNo, T::Resources,
-        T::WizTitle, T::WizStep, T::WizIntro, T::WizTranslateTitle, T::WizDeviceTitle, T::WizDeviceHint,
+        T::WizIntro, T::WizTranslateTitle, T::WizDeviceTitle, T::WizDeviceHint,
         T::DeviceAuto, T::DeviceCuda, T::DeviceDirectMl, T::DeviceCpu, T::GpuDetected, T::GpuNone, T::GpuFree,
         T::GpuNotEnough, T::DeviceInUse, T::GpuComing, T::TranslatorOff, T::Threads, T::WizBubbleTitle,
         T::BubbleWait, T::BubbleWaitHint, T::Performance, T::Back, T::Next, T::Skip, T::OnboardAgain,

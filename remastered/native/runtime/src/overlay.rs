@@ -394,8 +394,6 @@ pub struct Overlay {
     /// Text box with the pack folder (filled from the config on first use).
     path: String,
     path_ready: bool,
-    /// The first-run prompt already opened the panel once.
-    welcomed: bool,
     /// Last message about the folder, shown under the box.
     note: Option<Note>,
 }
@@ -432,16 +430,37 @@ impl Note {
 }
 
 impl Overlay {
-    /// Once per frame: the hotkey, and the first-run prompt (opens the panel once when there is no pack).
-    pub fn tick(&mut self) {
-        if !self.welcomed && NO_PACK.load(Ordering::Relaxed) && !SETUP_DONE.load(Ordering::Relaxed) {
-            self.welcomed = true;
-            VISIBLE.store(true, Ordering::Relaxed);
+    /// Pages of the HD textures in the first-time setup (the host draws the window, with the other features' pages).
+    pub const SETUP_PAGES: usize = 1;
+
+    /// No pack was found and the folder was never chosen or skipped.
+    pub fn setup_pending() -> bool {
+        NO_PACK.load(Ordering::Relaxed) && !SETUP_DONE.load(Ordering::Relaxed)
+    }
+
+    pub fn setup_finish() {
+        if !SETUP_DONE.swap(true, Ordering::Relaxed) {
+            save_settings();
         }
     }
 
+    /// The setup page: the switch and the pack folder.
+    pub fn setup_page(&mut self, ui: &Ui, _i: usize) -> bool {
+        ui.text_wrapped(tr(
+            "HD textures: upscaled versions of the game's own textures, read from the HD pack (a separate download).",
+            "Texturas HD: versões ampliadas das texturas do próprio jogo, lidas do pacote HD (um download separado).",
+        ));
+        let mut on = enabled();
+        if ui.checkbox(tr("Textures on###setup-hd", "Texturas ligadas###setup-hd"), &mut on) {
+            set_enabled(on);
+        }
+        ui.spacing();
+        self.folder_section(ui);
+        false
+    }
 
-    /// Pack folder section: text box, Browse, Apply. Also the first-run prompt.
+
+    /// Pack folder section: text box, Browse, Apply. Also the first-run text (the setup page shows this section).
     fn folder_section(&mut self, ui: &Ui) {
         if !self.path_ready {
             self.path = PACK_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -543,6 +562,10 @@ impl Overlay {
         }
         ui.separator();
         self.folder_section(ui);
+        // One shared button in a build with several features (the Version tab), this one when the textures are alone.
+        if !gw2enhanced_core::setup::hosted() && ui.button(tr("Run the first-time setup again###setup-again", "Refazer a configuração inicial###setup-again")) {
+            gw2enhanced_core::setup::request_again();
+        }
         let mut all = crate::composite::ALL_4X.load(Ordering::Relaxed);
         if ui.checkbox(tr("4x for all players###all4x", "4x para todos os jogadores###all4x"), &mut all) {
             crate::composite::ALL_4X.store(all, Ordering::Relaxed);
@@ -684,7 +707,6 @@ impl ImguiRenderLoop for Overlay {
     }
 
     fn render(&mut self, ui: &mut Ui) {
-        self.tick();
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if VISIBLE.load(Ordering::Relaxed) {
                 self.window(ui);
@@ -702,7 +724,7 @@ impl ImguiRenderLoop for Overlay {
 
 /// The panel, ready to be drawn by a render loop (the unified mod draws it next to the other features').
 pub fn panel() -> Overlay {
-    Overlay { path: String::new(), path_ready: false, welcomed: false, note: None }
+    Overlay { path: String::new(), path_ready: false, note: None }
 }
 
 /// Panel waiting for the unified overlay to pick it up (when the DLL is not standalone).
