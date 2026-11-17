@@ -23,8 +23,13 @@ pub static ALL_4X: AtomicBool = AtomicBool::new(false);
 /// On the character select (from the start of the game until a composite of a character in the world, and again when a preview without
 /// a character is built). The select loads while the system can be short of commit, and our cache and files then made the game's own
 /// texture allocations fail: a black scene that switching the mod off and on again, once the select had loaded, cleared. So there the
-/// pack is used only while the free commit is fine ([`select_blocks_pack`]), and the prefetch waits for the world.
+/// pack is used only while the free commit is fine ([`select_blocks_pack`]), the prefetch waits for the world, and as a fallback every
+/// visit to the select gets that off/on by itself: one rebuild of the characters [`SELECT_REBUILD`] after its first preview.
 pub static AT_SELECT: AtomicBool = AtomicBool::new(true);
+/// This visit to the select already has its automatic rebuild scheduled.
+static SELECT_KICKED: AtomicBool = AtomicBool::new(false);
+/// How long after the first preview of the select the automatic rebuild runs (the select has loaded by then).
+pub const SELECT_REBUILD: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The pack stays out of the character select only while the system is short of commit (memory guard not at "fine").
 pub fn select_blocks_pack() -> bool {
@@ -35,8 +40,13 @@ pub fn select_blocks_pack() -> bool {
 pub fn note_select(select: bool, ch: usize, ctrl: usize) {
     if select {
         AT_SELECT.store(true, Ordering::Relaxed);
+        if !SELECT_KICKED.swap(true, Ordering::Relaxed) && crate::overlay::enabled() {
+            crate::log!("character select: automatic rebuild of the characters in {} s", SELECT_REBUILD.as_secs());
+            crate::reload::request_after(SELECT_REBUILD);
+        }
     } else if ch != 0 || ctrl != 0 {
         AT_SELECT.store(false, Ordering::Relaxed);
+        SELECT_KICKED.store(false, Ordering::Relaxed);
     }
 }
 /// Composites built at 4× so far (overlay counter).
